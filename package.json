@@ -1,0 +1,72 @@
+{
+  "name": "prepora",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @prepora/web dev",
+    "build": "pnpm --filter @prepora/web build",
+    "start": "pnpm --filter @prepora/web start",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:generate": "pnpm --filter @prepora/db db:generate",
+    "db:migrate": "pnpm --filter @prepora/db db:migrate",
+    "db:studio": "pnpm --filter @prepora/db db:studio",
+    "content:validate": "tsx scripts/validate-content.ts",
+    "content:import": "tsx scripts/import-content.ts",
+    "content:duplicates": "tsx scripts/check-duplicates.ts",
+    "content:sitemap": "tsx scripts/generate-sitemap.ts",
+    "content:rss": "tsx scripts/generate-rss.ts",
+    "content:report": "tsx scripts/content-report.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "puppeteer": "^25.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "^3",
+      "@tanstack/directive-functions-plugin": "~1.120.0",
+      "@tanstack/history": "~1.120.0",
+      "@tanstack/react-router": "~1.120.0",
+      "@tanstack/react-router-devtools": "~1.120.0",
+      "@tanstack/react-start": "~1.120.0",
+      "@tanstack/react-start-client": "~1.120.0",
+      "@tanstack/react-start-plugin": "~1.120.0",
+      "@tanstack/react-start-router-manifest": "~1.120.0",
+      "@tanstack/react-start-server": "~1.120.0",
+      "@tanstack/router-core": "~1.120.0",
+      "@tanstack/router-devtools": "~1.120.0",
+      "@tanstack/router-devtools-core": "~1.120.0",
+      "@tanstack/router-generator": "~1.120.0",
+      "@tanstack/router-plugin": "~1.120.0",
+      "@tanstack/server-functions-plugin": "~1.120.0",
+      "@tanstack/start": "~1.120.0",
+      "@tanstack/start-api-routes": "~1.120.0",
+      "@tanstack/start-client-core": "~1.120.0",
+      "@tanstack/start-config": "~1.120.0",
+      "@tanstack/start-plugin-core": "~1.120.0",
+      "@tanstack/start-server-core": "~1.120.0",
+      "@tanstack/start-server-functions-client": "~1.120.0",
+      "@tanstack/start-server-functions-fetcher": "~1.120.0",
+      "@tanstack/start-server-functions-handler": "~1.120.0",
+      "@tanstack/start-server-functions-server": "~1.120.0",
+      "@tanstack/start-server-functions-ssr": "~1.120.0",
+      "@tanstack/zod-adapter": "~1.120.0"
+    },
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "zod"
+      ]
+    }
+  }
+}

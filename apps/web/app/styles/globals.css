@@ -1,0 +1,134 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@layer base {
+  :root {
+    /* Linear-inspired Dark Slate Core Palette (Default) */
+    --background: #080c14;
+    --foreground: #f8fafc;
+
+    --card: #0f172a;
+    --card-foreground: #f8fafc;
+
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+
+    --border: #1e293b;
+    --input: #1e293b;
+
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+
+    --secondary: #172033;
+    --secondary-foreground: #60a5fa;
+
+    --accent: #0f2b1d;
+    --accent-foreground: #34d399;
+
+    --success: #10b981;
+    --success-foreground: #ffffff;
+
+    --warning: #f59e0b;
+    --warning-foreground: #000000;
+
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+
+    --ring: #3b82f6;
+
+    --radius: 0.6rem;
+
+    /* Typography */
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+  }
+
+  .dark {
+    --background: #080c14;
+    --foreground: #f8fafc;
+
+    --card: #0f172a;
+    --card-foreground: #f8fafc;
+
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+
+    --border: #1e293b;
+    --input: #1e293b;
+
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+
+    --secondary: #172033;
+    --secondary-foreground: #60a5fa;
+
+    --accent: #0f2b1d;
+    --accent-foreground: #34d399;
+  }
+
+  * {
+    @apply border-[#1e293b];
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Focus ring */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-blue-500 rounded-sm;
+  }
+
+  /* Smooth scroll */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ─── Typography prose ─────────────────────────────────────────────────────── */
+.prose {
+  @apply max-w-none text-slate-200;
+
+  p { @apply mb-4 leading-relaxed text-slate-300; }
+  h2 { @apply text-xl font-semibold text-white mb-3 mt-6 tracking-tight; }
+  h3 { @apply text-lg font-medium text-white mb-2 mt-5; }
+  code { @apply font-mono text-sm bg-slate-900 border border-slate-800 text-blue-400 px-1.5 py-0.5 rounded; }
+  pre { @apply bg-slate-900 border border-slate-800 p-4 rounded-xl overflow-x-auto mb-4; }
+  pre code { @apply bg-transparent p-0 border-none text-slate-200; }
+  strong { @apply font-semibold text-white; }
+  ul { @apply list-disc pl-5 mb-4 space-y-1 text-slate-300; }
+  ol { @apply list-decimal pl-5 mb-4 space-y-1 text-slate-300; }
+}
+
+/* ─── Minimal Question Options ────────────────────────────────────────────────── */
+.question-option {
+  @apply flex items-start gap-3.5 p-4 rounded-xl border border-slate-800/80 bg-slate-900/50
+         cursor-pointer transition-all duration-150 text-slate-200
+         hover:border-blue-500/50 hover:bg-slate-900;
+}
+
+.question-option.selected {
+  @apply border-blue-500 bg-blue-950/20 text-white shadow-sm shadow-blue-500/10;
+}
+
+.question-option.correct {
+  @apply border-emerald-500/80 bg-emerald-950/30 text-emerald-100 shadow-sm shadow-emerald-500/10;
+}
+
+.question-option.incorrect {
+  @apply border-rose-500/80 bg-rose-950/30 text-rose-100 shadow-sm shadow-rose-500/10;
+}
+
+/* ─── Animations ───────────────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
