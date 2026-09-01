@@ -11,6 +11,7 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as SettingsImport } from './routes/settings'
 import { Route as SearchImport } from './routes/search'
 import { Route as PracticeImport } from './routes/practice'
 import { Route as ContributeImport } from './routes/contribute'
@@ -22,11 +23,18 @@ import { Route as AdminIndexImport } from './routes/admin/index'
 import { Route as TopicsTopicSlugImport } from './routes/topics/$topicSlug'
 import { Route as SubjectsSubjectSlugImport } from './routes/subjects/$subjectSlug'
 import { Route as QuestionSetsSlugImport } from './routes/question-sets/$slug'
+import { Route as AuthSigninImport } from './routes/auth/signin'
 import { Route as AdminContributionsImport } from './routes/admin/contributions'
 import { Route as ExamsExamSlugIndexImport } from './routes/exams/$examSlug/index'
 import { Route as QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugImport } from './routes/questions/$examSlug.$variantSlug.$year.$subjectSlug.$questionSlug'
 
 // Create/Update Routes
+
+const SettingsRoute = SettingsImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const SearchRoute = SearchImport.update({
   id: '/search',
@@ -94,6 +102,12 @@ const QuestionSetsSlugRoute = QuestionSetsSlugImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AuthSigninRoute = AuthSigninImport.update({
+  id: '/auth/signin',
+  path: '/auth/signin',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const AdminContributionsRoute = AdminContributionsImport.update({
   id: '/contributions',
   path: '/contributions',
@@ -152,12 +166,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchImport
       parentRoute: typeof rootRoute
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsImport
+      parentRoute: typeof rootRoute
+    }
     '/admin/contributions': {
       id: '/admin/contributions'
       path: '/contributions'
       fullPath: '/admin/contributions'
       preLoaderRoute: typeof AdminContributionsImport
       parentRoute: typeof AdminImport
+    }
+    '/auth/signin': {
+      id: '/auth/signin'
+      path: '/auth/signin'
+      fullPath: '/auth/signin'
+      preLoaderRoute: typeof AuthSigninImport
+      parentRoute: typeof rootRoute
     }
     '/question-sets/$slug': {
       id: '/question-sets/$slug'
@@ -238,7 +266,9 @@ export interface FileRoutesByFullPath {
   '/contribute': typeof ContributeRoute
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
   '/topics/$topicSlug': typeof TopicsTopicSlugRoute
@@ -254,7 +284,9 @@ export interface FileRoutesByTo {
   '/contribute': typeof ContributeRoute
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
   '/topics/$topicSlug': typeof TopicsTopicSlugRoute
@@ -272,7 +304,9 @@ export interface FileRoutesById {
   '/contribute': typeof ContributeRoute
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
   '/topics/$topicSlug': typeof TopicsTopicSlugRoute
@@ -291,7 +325,9 @@ export interface FileRouteTypes {
     | '/contribute'
     | '/practice'
     | '/search'
+    | '/settings'
     | '/admin/contributions'
+    | '/auth/signin'
     | '/question-sets/$slug'
     | '/subjects/$subjectSlug'
     | '/topics/$topicSlug'
@@ -306,7 +342,9 @@ export interface FileRouteTypes {
     | '/contribute'
     | '/practice'
     | '/search'
+    | '/settings'
     | '/admin/contributions'
+    | '/auth/signin'
     | '/question-sets/$slug'
     | '/subjects/$subjectSlug'
     | '/topics/$topicSlug'
@@ -322,7 +360,9 @@ export interface FileRouteTypes {
     | '/contribute'
     | '/practice'
     | '/search'
+    | '/settings'
     | '/admin/contributions'
+    | '/auth/signin'
     | '/question-sets/$slug'
     | '/subjects/$subjectSlug'
     | '/topics/$topicSlug'
@@ -340,6 +380,8 @@ export interface RootRouteChildren {
   ContributeRoute: typeof ContributeRoute
   PracticeRoute: typeof PracticeRoute
   SearchRoute: typeof SearchRoute
+  SettingsRoute: typeof SettingsRoute
+  AuthSigninRoute: typeof AuthSigninRoute
   QuestionSetsSlugRoute: typeof QuestionSetsSlugRoute
   SubjectsSubjectSlugRoute: typeof SubjectsSubjectSlugRoute
   TopicsTopicSlugRoute: typeof TopicsTopicSlugRoute
@@ -355,6 +397,8 @@ const rootRouteChildren: RootRouteChildren = {
   ContributeRoute: ContributeRoute,
   PracticeRoute: PracticeRoute,
   SearchRoute: SearchRoute,
+  SettingsRoute: SettingsRoute,
+  AuthSigninRoute: AuthSigninRoute,
   QuestionSetsSlugRoute: QuestionSetsSlugRoute,
   SubjectsSubjectSlugRoute: SubjectsSubjectSlugRoute,
   TopicsTopicSlugRoute: TopicsTopicSlugRoute,
@@ -380,6 +424,8 @@ export const routeTree = rootRoute
         "/contribute",
         "/practice",
         "/search",
+        "/settings",
+        "/auth/signin",
         "/question-sets/$slug",
         "/subjects/$subjectSlug",
         "/topics/$topicSlug",
@@ -408,9 +454,15 @@ export const routeTree = rootRoute
     "/search": {
       "filePath": "search.tsx"
     },
+    "/settings": {
+      "filePath": "settings.tsx"
+    },
     "/admin/contributions": {
       "filePath": "admin/contributions.tsx",
       "parent": "/admin"
+    },
+    "/auth/signin": {
+      "filePath": "auth/signin.tsx"
     },
     "/question-sets/$slug": {
       "filePath": "question-sets/$slug.tsx"

@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   server: {
-    preset: "node-server",
+    preset: "cloudflare-pages",
   },
   vite: {
     plugins: [tailwindcss()],

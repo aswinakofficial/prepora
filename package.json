@@ -22,11 +22,13 @@
     "content:report": "tsx scripts/content-report.ts"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260901.1",
     "@playwright/test": "^1.49.0",
     "puppeteer": "^25.9.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "wrangler": "^4.128.0"
   },
   "engines": {
     "node": ">=20.0.0",
