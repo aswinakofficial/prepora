@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { reactStartCookies } from "better-auth/react-start";
 import { db, users, sessions, accounts, verifications } from "@prepora/db";
+
 
 const trustedOrigins = Array.from(
   new Set([
@@ -23,12 +25,14 @@ const getBaseUrl = () => {
 export const getAuth = () => {
   return betterAuth({
     secret: process.env.BETTER_AUTH_SECRET,
+    plugins: [reactStartCookies()],
     logger: {
       level: "debug",
       disabled: false,
     },
     baseURL: getBaseUrl(),
     trustedOrigins,
+
     rateLimit: {
       window: 60,
       max: 10000,

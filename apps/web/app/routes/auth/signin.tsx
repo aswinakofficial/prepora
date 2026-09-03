@@ -20,16 +20,20 @@ function SignInPage() {
     setErrorMsg(null);
     try {
       const callbackURL = typeof window !== "undefined" ? `${window.location.origin}/` : "/";
+      console.log("🔍 [CLIENT SIGNIN] Initiating Google Auth with callbackURL:", callbackURL);
       const result = await authClient.signIn.social({
         provider: "google",
         callbackURL,
       });
+      console.log("🔍 [CLIENT SIGNIN RESULT]:", result);
 
       if (result && "error" in result && result.error) {
-        setErrorMsg(result.error.message || "Failed to initiate Google Authentication.");
+        console.error("❌ [CLIENT SIGNIN ERROR DETAILS]:", result.error);
+        const detail = (result.error as any)?.details || (result.error as any)?.message;
+        setErrorMsg(detail || "Failed to initiate Google Authentication.");
       }
     } catch (err: any) {
-      console.error("❌ Google Auth Error:", err);
+      console.error("❌ [CLIENT SIGNIN EXCEPTION]:", err);
       setErrorMsg(
         err?.message || "Authentication request failed. Please check server environment configuration."
       );
@@ -37,6 +41,7 @@ function SignInPage() {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="flex min-h-[80vh] items-center justify-center p-4">
