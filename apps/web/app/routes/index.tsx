@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { SearchCommandModal } from "../components/search/SearchCommandModal";
+import { authClient } from "../../lib/auth-client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -78,6 +79,11 @@ function HomePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const navigate = useNavigate();
 
+  const { data: session } = authClient.useSession();
+  if (session) {
+    console.log("✅ SUCCESSFUL LOGIN DETECTED. Session data:", session);
+  }
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -108,9 +114,18 @@ function HomePage() {
 
           {/* Action Col */}
           <div className="col-span-1 md:col-span-3 p-6 flex items-center justify-between md:justify-end gap-6">
-            <Link to={"/auth/signin" as any} className="text-slate-500 hover:text-white transition-colors shrink-0">
-              Sign In
-            </Link>
+            {session ? (
+              <button
+                onClick={async () => await authClient.signOut()}
+                className="text-slate-500 hover:text-white transition-colors shrink-0 font-mono uppercase tracking-widest text-xs"
+              >
+                Sign out
+              </button>
+            ) : (
+              <Link to={"/auth/signin" as any} className="text-slate-500 hover:text-white transition-colors shrink-0">
+                Sign In
+              </Link>
+            )}
             <button
               onClick={() => setModalOpen(true)}
               className="text-slate-500 hover:text-white transition-colors flex items-center gap-2 shrink-0 group"

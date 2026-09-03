@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/start";
-import { getWebRequest } from "@tanstack/start/server";
+import { createServerFn } from "@tanstack/react-start";
+import { getWebRequest } from "@tanstack/react-start/server";
 import { auth } from "../../lib/auth";
 
 export const getSession = createServerFn({ method: "GET" }).handler(async () => {

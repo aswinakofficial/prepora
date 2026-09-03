@@ -1,6 +1,5 @@
 import React from "react";
-import { createRootRoute, Outlet, ScrollRestoration, Link } from "@tanstack/react-router";
-import { Meta, Scripts } from "@tanstack/start";
+import { createRootRoute, Outlet, Link, HeadContent, Scripts } from "@tanstack/react-router";
 import globalsCss from "../styles/globals.css?url";
 
 export const Route = createRootRoute({
@@ -28,13 +27,12 @@ function RootLayout() {
   return (
     <html lang="en">
       <head>
-        <Meta />
+        <HeadContent />
       </head>
       <body className="bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white">
         <main id="main-content">
           <Outlet />
         </main>
-        <ScrollRestoration />
         <Scripts />
       </body>
     </html>

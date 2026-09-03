@@ -6,6 +6,11 @@ export const Route = createFileRoute("/auth/signin")({
 });
 
 function SignInPage() {
+  const { data: session } = authClient.useSession();
+  if (session) {
+    console.log("✅ SUCCESSFUL LOGIN DETECTED. Session data:", session);
+  }
+
   const handleGoogleSignIn = async () => {
     await authClient.signIn.social({
       provider: "google",

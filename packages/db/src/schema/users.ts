@@ -4,6 +4,7 @@ import {
   boolean,
   integer,
   index,
+  timestamp,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
@@ -34,7 +35,7 @@ export const sessions = pgTable("sessions", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   token: text("token").notNull().unique(),
-  expiresAt: text("expires_at").notNull(),
+  expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   ...timestamps,
@@ -49,7 +50,12 @@ export const accounts = pgTable("accounts", {
   providerId: text("provider_id").notNull(),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
-  expiresAt: text("expires_at"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { mode: "date" }),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { mode: "date" }),
+  scope: text("scope"),
+  password: text("password"),
+  expiresAt: timestamp("expires_at", { mode: "date" }),
   ...timestamps,
 });
 
@@ -57,7 +63,7 @@ export const verifications = pgTable("verifications", {
   id: id(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(),
-  expiresAt: text("expires_at").notNull(),
+  expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
   ...timestamps,
 });
 
