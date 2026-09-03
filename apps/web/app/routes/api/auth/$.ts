@@ -1,17 +1,16 @@
-import { createAPIFileRoute } from "@tanstack/react-start/api";
+import { createFileRoute } from "@tanstack/react-router";
 import { auth } from "../../../../lib/auth";
 
-const handleAuth = async (ctx: any) => {
-  const request: Request = ctx.request || ctx;
+const handleAuth = async (request: Request, ctx?: any) => {
   const url = new URL(request.url);
 
   // Extract Cloudflare runtime bindings from all possible context properties
   const cfEnv =
-    ctx.env ||
-    ctx.context?.cloudflare?.env ||
-    ctx.nativeEvent?.context?.cloudflare?.env ||
-    ctx.event?.context?.cloudflare?.env ||
-    (ctx.request as any)?.env ||
+    (ctx as any)?.env ||
+    (ctx as any)?.context?.cloudflare?.env ||
+    (ctx as any)?.nativeEvent?.context?.cloudflare?.env ||
+    (ctx as any)?.event?.context?.cloudflare?.env ||
+    (ctx as any)?.request?.env ||
     (request as any)?.env ||
     (request as any)?.cf?.env ||
     (globalThis as any)?.env ||
@@ -27,7 +26,6 @@ const handleAuth = async (ctx: any) => {
     }
   }
 
-
   const envAudit = {
     NODE_ENV: process.env.NODE_ENV,
     hasClientId: !!process.env.GOOGLE_CLIENT_ID,
@@ -41,7 +39,6 @@ const handleAuth = async (ctx: any) => {
   };
 
   console.log(`🔍 [AUTH API REQUEST] ${request.method} ${url.pathname}${url.search}`);
-  console.log(`🔍 [AUTH API CTX KEYS]`, Object.keys(ctx || {}));
   console.log(`🔍 [AUTH API ENV AUDIT]`, envAudit);
 
   if (url.pathname.endsWith("/health") || url.pathname.endsWith("/debug")) {
@@ -65,7 +62,6 @@ const handleAuth = async (ctx: any) => {
       }
     );
   }
-
 
   try {
     const response = await auth.handler(request);
@@ -113,12 +109,11 @@ const handleAuth = async (ctx: any) => {
   }
 };
 
-export const APIRoute = createAPIFileRoute("/api/auth/$")({
-  GET: (ctx) => handleAuth(ctx),
-  POST: (ctx) => handleAuth(ctx),
+export const Route = (createFileRoute("/api/auth/$" as any) as any)({
+  server: {
+    handlers: {
+      GET: async ({ request }: { request: Request }) => handleAuth(request),
+      POST: async ({ request }: { request: Request }) => handleAuth(request),
+    },
+  },
 });
-
-
-
-
-
