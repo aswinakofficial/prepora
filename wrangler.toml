@@ -2,3 +2,12 @@ name = "prepora"
 compatibility_date = "2024-04-05"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "apps/web/dist"
+
+[vars]
+BETTER_AUTH_URL = "https://prepora.xpar.in"
+BETTER_AUTH_TRUSTED_ORIGINS = "https://prepora-9g4.pages.dev,https://prepora.xpar.in"
+APP_URL = "https://prepora.xpar.in"
+NODE_ENV = "production"
+STORAGE_BUCKET = "prepora-media"
+STORAGE_REGION = "auto"
+AI_PROVIDER = "google"
