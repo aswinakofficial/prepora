@@ -20,36 +20,46 @@ const getBaseUrl = () => {
   return url;
 };
 
-export const auth = betterAuth({
-  secret: process.env.BETTER_AUTH_SECRET,
-  logger: {
-    level: "debug",
-    disabled: false,
-  },
-  baseURL: getBaseUrl(),
-  trustedOrigins,
+export const getAuth = () => {
+  return betterAuth({
+    secret: process.env.BETTER_AUTH_SECRET,
+    logger: {
+      level: "debug",
+      disabled: false,
+    },
+    baseURL: getBaseUrl(),
+    trustedOrigins,
+    rateLimit: {
+      window: 60,
+      max: 10000,
+    },
+    database: drizzleAdapter(db, {
+      provider: "pg",
+      schema: {
+        user: users,
+        session: sessions,
+        account: accounts,
+        verification: verifications,
+      },
+    }),
+    emailAndPassword: {
+      enabled: true,
+    },
+    socialProviders: {
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID || "",
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      },
+    },
+  });
+};
 
-  rateLimit: {
-    window: 60,
-    max: 10000,
-  },
-  database: drizzleAdapter(db, {
-    provider: "pg",
-    schema: {
-      user: users,
-      session: sessions,
-      account: accounts,
-      verification: verifications,
-    },
-  }),
-  emailAndPassword: {
-    enabled: true,
-  },
-  socialProviders: {
-    google: {
-      clientId: (process.env.GOOGLE_CLIENT_ID as string) || "",
-      clientSecret: (process.env.GOOGLE_CLIENT_SECRET as string) || "",
-    },
+export const auth = new Proxy({} as ReturnType<typeof betterAuth>, {
+  get(_target, prop) {
+    const instance = getAuth();
+    const value = (instance as any)[prop];
+    return typeof value === "function" ? value.bind(instance) : value;
   },
 });
+
 
