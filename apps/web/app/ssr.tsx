@@ -12,7 +12,7 @@ const startHandler = createStartHandler({
   getRouterManifest,
 })(defaultStreamHandler);
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   const request = toWebRequest(event);
   if (request.url.includes("/api/auth")) {
     try {
