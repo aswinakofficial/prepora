@@ -5,21 +5,28 @@ const handleAuth = async (ctx: any) => {
   const request: Request = ctx.request || ctx;
   const url = new URL(request.url);
 
-  // Extract Cloudflare runtime bindings from any available context
+  // Extract Cloudflare runtime bindings from all possible context properties
   const cfEnv =
     ctx.env ||
     ctx.context?.cloudflare?.env ||
-    (request as any).env ||
-    (request as any).cf?.env ||
-    (globalThis as any).__env__;
+    ctx.nativeEvent?.context?.cloudflare?.env ||
+    ctx.event?.context?.cloudflare?.env ||
+    (ctx.request as any)?.env ||
+    (request as any)?.env ||
+    (request as any)?.cf?.env ||
+    (globalThis as any)?.env ||
+    (globalThis as any)?.__env__ ||
+    (globalThis as any)?.process?.env;
 
   if (cfEnv && typeof cfEnv === "object") {
     for (const key of Object.keys(cfEnv)) {
-      if (cfEnv[key] && !process.env[key]) {
+      if (cfEnv[key] !== undefined && cfEnv[key] !== null) {
         process.env[key] = cfEnv[key];
+        (globalThis as any)[key] = cfEnv[key];
       }
     }
   }
+
 
   const envAudit = {
     NODE_ENV: process.env.NODE_ENV,

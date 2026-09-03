@@ -23,8 +23,12 @@ const getBaseUrl = () => {
 };
 
 export const getAuth = () => {
+  const secret = process.env.BETTER_AUTH_SECRET || (globalThis as any)?.BETTER_AUTH_SECRET || "";
+  const clientId = process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "";
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "";
+
   return betterAuth({
-    secret: process.env.BETTER_AUTH_SECRET,
+    secret,
     plugins: [reactStartCookies()],
     logger: {
       level: "debug",
@@ -51,12 +55,13 @@ export const getAuth = () => {
     },
     socialProviders: {
       google: {
-        clientId: process.env.GOOGLE_CLIENT_ID || "",
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+        clientId,
+        clientSecret,
       },
     },
   });
 };
+
 
 export const auth = new Proxy({} as ReturnType<typeof betterAuth>, {
   get(_target, prop) {

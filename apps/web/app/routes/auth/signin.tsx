@@ -33,8 +33,9 @@ function SignInPage() {
 
         // Query server health to check environment audit status
         try {
-          const healthRes = await fetch("/api/health");
+          const healthRes = await fetch("/api/auth/health");
           const healthData = await healthRes.json();
+
 
           console.error("🔍 [SERVER AUTH HEALTH AUDIT]:", healthData);
           if (healthData?.envAudit) {
