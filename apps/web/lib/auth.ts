@@ -12,14 +12,23 @@ const trustedOrigins = Array.from(
   ])
 );
 
+const getBaseUrl = () => {
+  const url = process.env.BETTER_AUTH_URL;
+  if (url && process.env.NODE_ENV === "production" && url.includes("localhost")) {
+    return undefined;
+  }
+  return url;
+};
+
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   logger: {
     level: "debug",
     disabled: false,
   },
-  baseURL: process.env.BETTER_AUTH_URL,
+  baseURL: getBaseUrl(),
   trustedOrigins,
+
   rateLimit: {
     window: 60,
     max: 10000,
