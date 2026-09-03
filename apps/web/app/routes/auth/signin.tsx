@@ -30,8 +30,31 @@ function SignInPage() {
       if (result && "error" in result && result.error) {
         console.error("❌ [CLIENT SIGNIN ERROR DETAILS]:", result.error);
         const detail = (result.error as any)?.details || (result.error as any)?.message;
-        setErrorMsg(detail || "Failed to initiate Google Authentication.");
+
+        // Query server health to check environment audit status
+        try {
+          const healthRes = await fetch("/api/auth/health");
+          const healthData = await healthRes.json();
+          console.error("🔍 [SERVER AUTH HEALTH AUDIT]:", healthData);
+          if (healthData?.envAudit) {
+            const missing: string[] = [];
+            if (!healthData.envAudit.hasClientId) missing.push("GOOGLE_CLIENT_ID");
+            if (!healthData.envAudit.hasClientSecret) missing.push("GOOGLE_CLIENT_SECRET");
+            if (!healthData.envAudit.hasAuthSecret) missing.push("BETTER_AUTH_SECRET");
+            if (!healthData.envAudit.hasDbUrl) missing.push("DATABASE_URL");
+
+            if (missing.length > 0) {
+              setErrorMsg(`Missing Cloudflare Secret(s): ${missing.join(", ")}. Please configure them in Cloudflare Dashboard.`);
+              return;
+            }
+          }
+        } catch (hErr) {
+          console.error("Failed to query auth health:", hErr);
+        }
+
+        setErrorMsg(detail || "Failed to initiate Google Authentication. Check server environment.");
       }
+
     } catch (err: any) {
       console.error("❌ [CLIENT SIGNIN EXCEPTION]:", err);
       setErrorMsg(

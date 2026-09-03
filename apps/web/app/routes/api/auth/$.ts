@@ -37,6 +37,29 @@ const handleAuth = async (ctx: any) => {
   console.log(`🔍 [AUTH API CTX KEYS]`, Object.keys(ctx || {}));
   console.log(`🔍 [AUTH API ENV AUDIT]`, envAudit);
 
+  if (url.pathname.endsWith("/health") || url.pathname.endsWith("/debug")) {
+    return new Response(
+      JSON.stringify(
+        {
+          status: "ok",
+          timestamp: new Date().toISOString(),
+          envAudit,
+          cfEnvKeys: cfEnv ? Object.keys(cfEnv) : [],
+          processEnvKeys: Object.keys(process.env || {}).filter(
+            (k) => !k.startsWith("npm_") && !k.startsWith("PNPM_")
+          ),
+        },
+        null,
+        2
+      ),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
+
   try {
     const response = await auth.handler(request);
     console.log(`🔍 [AUTH API RESPONSE STATUS] ${response.status} ${response.statusText}`);
