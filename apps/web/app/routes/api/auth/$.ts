@@ -1,54 +1,59 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { auth } from "../../../../lib/auth";
 
-const handleAuth = async (request: Request, ctx?: any) => {
+const handleAuth = async (event: any) => {
+  const request: Request = event?.request || event;
   const url = new URL(request.url);
 
-  // Extract Cloudflare runtime bindings from all possible context properties
-  const cfEnv =
-    (ctx as any)?.env ||
-    (ctx as any)?.context?.cloudflare?.env ||
-    (ctx as any)?.nativeEvent?.context?.cloudflare?.env ||
-    (ctx as any)?.event?.context?.cloudflare?.env ||
-    (ctx as any)?.request?.env ||
-    (request as any)?.env ||
-    (request as any)?.cf?.env ||
-    (globalThis as any)?.env ||
-    (globalThis as any)?.__env__ ||
-    (globalThis as any)?.process?.env;
+  // Search for Cloudflare env across event, request, context, nativeEvent, and globalThis
+  const envSources = [
+    event?.env,
+    event?.context?.cloudflare?.env,
+    event?.nativeEvent?.context?.cloudflare?.env,
+    event?.event?.context?.cloudflare?.env,
+    (request as any)?.env,
+    (request as any)?.cf?.env,
+    (globalThis as any)?.env,
+    (globalThis as any)?.__env__,
+    process.env,
+  ];
 
-  if (cfEnv && typeof cfEnv === "object") {
-    for (const key of Object.keys(cfEnv)) {
-      if (cfEnv[key] !== undefined && cfEnv[key] !== null) {
-        process.env[key] = cfEnv[key];
-        (globalThis as any)[key] = cfEnv[key];
+  for (const src of envSources) {
+    if (src && typeof src === "object") {
+      for (const key of Object.keys(src)) {
+        if (src[key] !== undefined && src[key] !== null) {
+          process.env[key] = src[key];
+          (globalThis as any)[key] = src[key];
+        }
       }
     }
   }
 
   const envAudit = {
     NODE_ENV: process.env.NODE_ENV,
-    hasClientId: !!process.env.GOOGLE_CLIENT_ID,
-    hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
-    hasAuthSecret: !!process.env.BETTER_AUTH_SECRET,
-    hasDbUrl: !!process.env.DATABASE_URL,
-    clientIdLength: process.env.GOOGLE_CLIENT_ID?.length || 0,
-    clientSecretLength: process.env.GOOGLE_CLIENT_SECRET?.length || 0,
-    authSecretLength: process.env.BETTER_AUTH_SECRET?.length || 0,
-    dbUrlLength: process.env.DATABASE_URL?.length || 0,
+    hasClientId: !!(process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID),
+    hasClientSecret: !!(process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET),
+    hasAuthSecret: !!(process.env.BETTER_AUTH_SECRET || (globalThis as any)?.BETTER_AUTH_SECRET),
+    hasDbUrl: !!(process.env.DATABASE_URL || (globalThis as any)?.DATABASE_URL),
+    clientIdLength: (process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "").length,
+    clientSecretLength: (process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "").length,
+    authSecretLength: (process.env.BETTER_AUTH_SECRET || (globalThis as any)?.BETTER_AUTH_SECRET || "").length,
+    dbUrlLength: (process.env.DATABASE_URL || (globalThis as any)?.DATABASE_URL || "").length,
   };
 
   console.log(`🔍 [AUTH API REQUEST] ${request.method} ${url.pathname}${url.search}`);
   console.log(`🔍 [AUTH API ENV AUDIT]`, envAudit);
 
-  if (url.pathname.endsWith("/health") || url.pathname.endsWith("/debug")) {
+  // Return diagnostic audit for any URL containing "health" or "debug"
+  if (url.pathname.includes("health") || url.pathname.includes("debug")) {
     return new Response(
       JSON.stringify(
         {
           status: "ok",
           timestamp: new Date().toISOString(),
+          pathname: url.pathname,
           envAudit,
-          cfEnvKeys: cfEnv ? Object.keys(cfEnv) : [],
+          eventKeys: event ? Object.keys(event) : [],
           processEnvKeys: Object.keys(process.env || {}).filter(
             (k) => !k.startsWith("npm_") && !k.startsWith("PNPM_")
           ),
@@ -112,8 +117,8 @@ const handleAuth = async (request: Request, ctx?: any) => {
 export const Route = (createFileRoute("/api/auth/$" as any) as any)({
   server: {
     handlers: {
-      GET: async ({ request }: { request: Request }) => handleAuth(request),
-      POST: async ({ request }: { request: Request }) => handleAuth(request),
+      GET: async (event: any) => handleAuth(event),
+      POST: async (event: any) => handleAuth(event),
     },
   },
 });

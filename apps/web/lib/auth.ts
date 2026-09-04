@@ -27,7 +27,15 @@ export const getAuth = () => {
   const clientId = process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "";
 
+  if (!secret) {
+    console.error("❌ [BETTER AUTH INIT WARNING] BETTER_AUTH_SECRET is empty!");
+  }
+  if (!clientId || !clientSecret) {
+    console.error("❌ [BETTER AUTH INIT WARNING] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is empty!");
+  }
+
   return betterAuth({
+
     secret,
     plugins: [reactStartCookies()],
     logger: {
