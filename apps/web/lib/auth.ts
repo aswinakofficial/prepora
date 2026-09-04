@@ -3,7 +3,6 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { reactStartCookies } from "better-auth/react-start";
 import { db, users, sessions, accounts, verifications } from "@prepora/db";
 
-
 const trustedOrigins = Array.from(
   new Set([
     "http://localhost:3000",
@@ -22,7 +21,9 @@ const getBaseUrl = () => {
   return url;
 };
 
-export const getAuth = () => {
+let runtimeAuthInstance: ReturnType<typeof betterAuth> | null = null;
+
+export const createBetterAuthInstance = () => {
   const secret = process.env.BETTER_AUTH_SECRET || (globalThis as any)?.BETTER_AUTH_SECRET || "";
   const clientId = process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "";
@@ -35,7 +36,6 @@ export const getAuth = () => {
   }
 
   return betterAuth({
-
     secret,
     plugins: [reactStartCookies()],
     logger: {
@@ -44,7 +44,6 @@ export const getAuth = () => {
     },
     baseURL: getBaseUrl(),
     trustedOrigins,
-
     rateLimit: {
       window: 60,
       max: 10000,
@@ -70,6 +69,26 @@ export const getAuth = () => {
   });
 };
 
+export const setAuth = (envBindings?: Record<string, any>) => {
+  if (envBindings && typeof envBindings === "object") {
+    for (const key of Object.keys(envBindings)) {
+      const val = envBindings[key];
+      if (val !== undefined && val !== null) {
+        process.env[key] = val;
+        (globalThis as any)[key] = val;
+      }
+    }
+  }
+  runtimeAuthInstance = createBetterAuthInstance();
+  return runtimeAuthInstance;
+};
+
+export const getAuth = () => {
+  if (runtimeAuthInstance) {
+    return runtimeAuthInstance;
+  }
+  return createBetterAuthInstance();
+};
 
 export const auth = new Proxy({} as ReturnType<typeof betterAuth>, {
   get(_target, prop) {
@@ -78,5 +97,3 @@ export const auth = new Proxy({} as ReturnType<typeof betterAuth>, {
     return typeof value === "function" ? value.bind(instance) : value;
   },
 });
-
-
