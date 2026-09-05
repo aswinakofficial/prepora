@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { auth } from "../../../../lib/auth";
+import { setAuth, getAuth } from "../../../lib/auth";
 
 const handleAuth = async (event: any) => {
   const request: Request = event?.request || event;
   const url = new URL(request.url);
 
-  // Search for Cloudflare env across event, request, context, nativeEvent, and globalThis
+  // Synchronize Cloudflare environment variables across all context sources
   const envSources = [
     event?.env,
     event?.context?.cloudflare?.env,
@@ -20,12 +20,7 @@ const handleAuth = async (event: any) => {
 
   for (const src of envSources) {
     if (src && typeof src === "object") {
-      for (const key of Object.keys(src)) {
-        if (src[key] !== undefined && src[key] !== null) {
-          process.env[key] = src[key];
-          (globalThis as any)[key] = src[key];
-        }
-      }
+      setAuth(src);
     }
   }
 
@@ -54,9 +49,6 @@ const handleAuth = async (event: any) => {
           pathname: url.pathname,
           envAudit,
           eventKeys: event ? Object.keys(event) : [],
-          processEnvKeys: Object.keys(process.env || {}).filter(
-            (k) => !k.startsWith("npm_") && !k.startsWith("PNPM_")
-          ),
         },
         null,
         2
@@ -69,6 +61,7 @@ const handleAuth = async (event: any) => {
   }
 
   try {
+    const auth = getAuth();
     const response = await auth.handler(request);
     console.log(`🔍 [AUTH API RESPONSE STATUS] ${response.status} ${response.statusText}`);
 

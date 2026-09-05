@@ -12,8 +12,26 @@ const startHandler = createStartHandler({
   getRouterManifest,
 })(defaultStreamHandler);
 
+import { setAuth } from "../lib/auth";
+
 export default defineEventHandler(async (event) => {
   const request = toWebRequest(event);
+  
+  // Synchronize Cloudflare environment variables
+  const envSources = [
+    (event?.context as any)?.cloudflare?.env,
+    (event?.node?.req as any)?.cf?.env,
+    (request as any)?.cf?.env,
+    (globalThis as any)?.env,
+    process.env,
+  ];
+
+  for (const src of envSources) {
+    if (src && typeof src === "object") {
+      setAuth(src);
+    }
+  }
+
   if (request.url.includes("/api/auth")) {
     try {
       console.log("[AUTH_DEBUG] Handling auth request:", request.url);

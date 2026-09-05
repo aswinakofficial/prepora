@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { reactStartCookies } from "better-auth/react-start";
-import { db, users, sessions, accounts, verifications } from "@prepora/db";
+import { getDb, users, sessions, accounts, verifications } from "@prepora/db";
 
 const trustedOrigins = Array.from(
   new Set([
@@ -28,12 +28,14 @@ export const createBetterAuthInstance = () => {
   const clientId = process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "";
 
-  if (!secret) {
-    console.error("❌ [BETTER AUTH INIT WARNING] BETTER_AUTH_SECRET is empty!");
-  }
-  if (!clientId || !clientSecret) {
-    console.error("❌ [BETTER AUTH INIT WARNING] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is empty!");
-  }
+  console.log(`🔐 [AUTH INIT] createBetterAuthInstance executing!`);
+  console.log(`🔐 [AUTH INIT] BETTER_AUTH_SECRET length: ${secret.length}`);
+  console.log(`🔐 [AUTH INIT] GOOGLE_CLIENT_ID length: ${clientId.length}`);
+  console.log(`🔐 [AUTH INIT] DATABASE_URL length: ${(process.env.DATABASE_URL || "").length}`);
+  console.log(`🔐 [AUTH INIT] BETTER_AUTH_URL: ${getBaseUrl()}`);
+
+  if (!secret) console.error("❌ [BETTER AUTH INIT ERROR] BETTER_AUTH_SECRET is explicitly empty!");
+  if (!clientId || !clientSecret) console.error("❌ [BETTER AUTH INIT ERROR] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is explicitly empty!");
 
   return betterAuth({
     secret,
@@ -48,7 +50,7 @@ export const createBetterAuthInstance = () => {
       window: 60,
       max: 10000,
     },
-    database: drizzleAdapter(db, {
+    database: drizzleAdapter(getDb(), {
       provider: "pg",
       schema: {
         user: users,
@@ -70,16 +72,32 @@ export const createBetterAuthInstance = () => {
 };
 
 export const setAuth = (envBindings?: Record<string, any>) => {
+  let hasNewBindings = false;
+  
   if (envBindings && typeof envBindings === "object") {
-    for (const key of Object.keys(envBindings)) {
-      const val = envBindings[key];
-      if (val !== undefined && val !== null) {
-        process.env[key] = val;
-        (globalThis as any)[key] = val;
+    // Check if we actually have auth-related bindings that need applying
+    if (envBindings.GOOGLE_CLIENT_ID || envBindings.DATABASE_URL || envBindings.BETTER_AUTH_SECRET) {
+      for (const key of Object.keys(envBindings)) {
+        const val = envBindings[key];
+        if (val !== undefined && val !== null) {
+          if (process.env[key] !== val) {
+             process.env[key] = val;
+             (globalThis as any)[key] = val;
+             hasNewBindings = true;
+          }
+        }
       }
     }
   }
-  runtimeAuthInstance = createBetterAuthInstance();
+  
+  if (hasNewBindings) {
+    console.log(`⚙️ [AUTH CONFIG] Environment variables were successfully updated via Cloudflare Worker bindings. Re-initializing auth!`);
+  }
+
+  if (!runtimeAuthInstance || hasNewBindings) {
+    runtimeAuthInstance = createBetterAuthInstance();
+  }
+  
   return runtimeAuthInstance;
 };
 
