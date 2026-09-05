@@ -33,6 +33,30 @@ export default defineEventHandler(async (event) => {
   }
 
   if (request.url.includes("/api/auth")) {
+    const url = new URL(request.url);
+    if (url.pathname.includes("health") || url.pathname.includes("debug")) {
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          timestamp: new Date().toISOString(),
+          envAudit: {
+            NODE_ENV: process.env.NODE_ENV,
+            hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+            hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+            hasAuthSecret: !!process.env.BETTER_AUTH_SECRET,
+            hasDbUrl: !!process.env.DATABASE_URL,
+            clientIdLength: (process.env.GOOGLE_CLIENT_ID || "").length,
+            clientSecretLength: (process.env.GOOGLE_CLIENT_SECRET || "").length,
+            authSecretLength: (process.env.BETTER_AUTH_SECRET || "").length,
+            dbUrlLength: (process.env.DATABASE_URL || "").length,
+            hasCloudflareContext: !!(event?.context as any)?.cloudflare,
+            hasCloudflareEnv: !!(event?.context as any)?.cloudflare?.env,
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    
     try {
       console.log("[AUTH_DEBUG] Handling auth request:", request.url);
       console.log("[AUTH_DEBUG] GOOGLE_CLIENT_ID present:", !!process.env.GOOGLE_CLIENT_ID);
