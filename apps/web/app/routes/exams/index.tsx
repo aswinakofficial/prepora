@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { z } from "zod";
 import { orpc } from "../../../lib/orpc";
 
 const examsSearchSchema = z.object({
@@ -13,9 +13,17 @@ export const Route = createFileRoute("/exams/")({
   head: () => ({
     meta: [
       { title: "Exam Directory — Prepora" },
-      { name: "description", content: "Explore official previous-year question repositories for Kerala PSC, GATE, SSC JE, Azure, ISTQB, and university exams." },
+      {
+        name: "description",
+        content:
+          "Explore official previous-year question repositories for Kerala PSC, GATE, SSC JE, Azure, ISTQB, and university exams.",
+      },
       { property: "og:title", content: "Exam Directory — Prepora" },
-      { property: "og:description", content: "Explore official previous-year question repositories for global and local competitive exams, university papers, and strict certifications." },
+      {
+        property: "og:description",
+        content:
+          "Explore official previous-year question repositories for global and local competitive exams, university papers, and strict certifications.",
+      },
     ],
   }),
   component: ExamsPage,
@@ -62,7 +70,9 @@ function ExamsPage() {
     });
   };
 
-  const { data: realExams, isLoading } = useQuery(orpc.exams.list.queryOptions({ input: { limit: 100 } }));
+  const { data: realExams, isLoading } = useQuery(
+    orpc.exams.list.queryOptions({ input: { limit: 100 } }),
+  );
 
   const examsToRender = (realExams || []).map((dbExam: any) => ({
     slug: dbExam.slug || "unknown",
@@ -81,13 +91,28 @@ function ExamsPage() {
     if (selectedCategory === "ALL") {
       matchesCategory = true;
     } else if (selectedCategory === "CERTIFICATION") {
-      matchesCategory = examCat.includes("CERTIFICATION") || examCat.includes("MICROSOFT") || examCat.includes("AZURE");
+      matchesCategory =
+        examCat.includes("CERTIFICATION") ||
+        examCat.includes("MICROSOFT") ||
+        examCat.includes("AZURE");
     } else if (selectedCategory === "GOVERNMENT") {
-      matchesCategory = examCat.includes("GOVERNMENT") || examCat.includes("GOVT") || examCat.includes("PSC") || examCat.includes("STATE") || examCat.includes("CENTRAL");
+      matchesCategory =
+        examCat.includes("GOVERNMENT") ||
+        examCat.includes("GOVT") ||
+        examCat.includes("PSC") ||
+        examCat.includes("STATE") ||
+        examCat.includes("CENTRAL");
     } else if (selectedCategory === "COMPETITIVE") {
-      matchesCategory = examCat.includes("COMPETITIVE") || examCat.includes("ENGINEERING") || examCat.includes("GATE") || examCat.includes("SSC");
+      matchesCategory =
+        examCat.includes("COMPETITIVE") ||
+        examCat.includes("ENGINEERING") ||
+        examCat.includes("GATE") ||
+        examCat.includes("SSC");
     } else if (selectedCategory === "UNIVERSITY") {
-      matchesCategory = examCat.includes("UNIVERSITY") || examCat.includes("ACADEMIC") || examCat.includes("SEMESTER");
+      matchesCategory =
+        examCat.includes("UNIVERSITY") ||
+        examCat.includes("ACADEMIC") ||
+        examCat.includes("SEMESTER");
     } else {
       matchesCategory = examCat === selectedCategory;
     }
@@ -104,7 +129,10 @@ function ExamsPage() {
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Breadcrumb section */}
       <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
-        <Link to="/" className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors">
+        <Link
+          to="/"
+          className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
+        >
           ← BACK TO INDEX
         </Link>
       </div>
@@ -112,7 +140,9 @@ function ExamsPage() {
       <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-32 border-b border-slate-900 pb-4">
-          <Link to="/" className="hover:text-white transition-colors">ROOT</Link>
+          <Link to="/" className="hover:text-white transition-colors">
+            ROOT
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
           <span className="text-slate-300">EXAM DIRECTORY</span>
         </div>
@@ -129,8 +159,14 @@ function ExamsPage() {
           </div>
 
           <div className="flex flex-col gap-2 shrink-0">
-            <label className="font-mono text-[10px] text-slate-600 tracking-widest uppercase">Quick Filter</label>
+            <label
+              htmlFor="exams-quick-filter"
+              className="font-mono text-[10px] text-slate-600 tracking-widest uppercase"
+            >
+              Quick Filter
+            </label>
             <input
+              id="exams-quick-filter"
               type="text"
               value={filterQuery}
               onChange={(e) => setFilterQuery(e.target.value)}
@@ -145,10 +181,13 @@ function ExamsPage() {
           <div className="flex items-center gap-6 font-mono text-xs tracking-widest text-slate-500 min-w-max">
             {CATEGORIES.map((cat) => (
               <button
+                type="button"
                 key={cat.id}
                 onClick={() => handleCategorySelect(cat.id)}
                 className={`hover:text-white transition-colors py-1 ${
-                  selectedCategory === cat.id ? "text-sky-400 font-bold border-b-2 border-sky-400" : ""
+                  selectedCategory === cat.id
+                    ? "text-sky-400 font-bold border-b-2 border-sky-400"
+                    : ""
                 }`}
               >
                 [{cat.label}]
@@ -183,7 +222,7 @@ function ExamsPage() {
                 <div className="col-span-2 font-mono text-xs text-slate-500 group-hover:text-white transition-colors">
                   {exam.code.toUpperCase()}
                 </div>
-                
+
                 <div className="col-span-4 text-slate-300 group-hover:text-white transition-colors text-lg font-light truncate flex items-center gap-3">
                   {exam.logoUrl && (
                     <img src={exam.logoUrl} alt="" className="w-6 h-6 shrink-0 object-contain" />
@@ -216,4 +255,3 @@ function ExamsPage() {
     </div>
   );
 }
-

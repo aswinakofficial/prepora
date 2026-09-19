@@ -1,10 +1,21 @@
-import { os, ORPCError } from "@orpc/server";
+import { ORPCError } from "@orpc/server";
+import { isAdminUser } from "@prepora/auth";
+import { getDb } from "@prepora/db";
+import {
+  auditLogs,
+  media,
+  questionAnswers,
+  questionOccurrences,
+  questionOptions,
+  questionSets,
+  questions,
+  questionTags,
+  scrapedQuestions,
+  users,
+} from "@prepora/db/schema";
+import { count, desc, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure } from "../context.js";
-import { getDb } from "@prepora/db";
-import { questions, scrapedQuestions, questionSets, users, questionOptions, questionAnswers, questionOccurrences, questionTags, media, auditLogs } from "@prepora/db/schema";
-import { count, eq, desc, ilike, sql } from "drizzle-orm";
-import { isAdminUser } from "@prepora/auth";
 
 // Typed confirmation required before wipeDatabase executes — see docs/roadmap/engineering-roadmap.md
 // item 6. Exported so the frontend prompts for exactly this string rather than hardcoding a second
@@ -23,7 +34,7 @@ async function writeAuditLog(
     entityId: string;
     oldValue?: unknown;
     newValue?: unknown;
-  }
+  },
 ) {
   await db.insert(auditLogs).values({
     actorId: entry.actorId,
@@ -67,14 +78,18 @@ function getScraperAuthHeaders(): Record<string, string> {
   const token = process.env.PIPELINE_SERVICE_TOKEN;
   if (!token) {
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
-      message: "PIPELINE_SERVICE_TOKEN is not configured. Set it in the environment (see .env.example) to enable scraping.",
+      message:
+        "PIPELINE_SERVICE_TOKEN is not configured. Set it in the environment (see .env.example) to enable scraping.",
     });
   }
   return { Authorization: `Bearer ${token}` };
 }
 
 async function fetchScraper(path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = { ...getScraperAuthHeaders(), ...(init.headers as Record<string, string> | undefined) };
+  const headers = {
+    ...getScraperAuthHeaders(),
+    ...(init.headers as Record<string, string> | undefined),
+  };
   return fetch(`${getScraperBaseUrl()}${path}`, { ...init, headers });
 }
 
@@ -88,8 +103,14 @@ export const adminRouter = {
     .handler(async () => {
       const db = getDb();
       const [publishedQs] = await db.select({ val: count(questions.id) }).from(questions);
-      const [sets] = await db.select({ val: count(questionSets.id) }).from(questionSets).catch(() => [{ val: 0 }]);
-      const [pending] = await db.select({ val: count(scrapedQuestions.id) }).from(scrapedQuestions).where(eq(scrapedQuestions.status, "pending"));
+      const [sets] = await db
+        .select({ val: count(questionSets.id) })
+        .from(questionSets)
+        .catch(() => [{ val: 0 }]);
+      const [pending] = await db
+        .select({ val: count(scrapedQuestions.id) })
+        .from(scrapedQuestions)
+        .where(eq(scrapedQuestions.status, "pending"));
       const [userCount] = await db.select({ val: count(users.id) }).from(users);
 
       return {
@@ -109,9 +130,13 @@ export const adminRouter = {
     .handler(async () => {
       const db = getDb();
       // Using distinct approach for cross-DB compatibility since $count isn't available everywhere
-      const [scrapedCounts] = await db.select({ count: count(scrapedQuestions.id) }).from(scrapedQuestions);
+      const [scrapedCounts] = await db
+        .select({ count: count(scrapedQuestions.id) })
+        .from(scrapedQuestions);
       const [questionCounts] = await db.select({ count: count(questions.id) }).from(questions);
-      const [optionCounts] = await db.select({ count: count(questionOptions.id) }).from(questionOptions);
+      const [optionCounts] = await db
+        .select({ count: count(questionOptions.id) })
+        .from(questionOptions);
 
       return {
         scrapedBatches: scrapedCounts?.count || 0,
@@ -139,7 +164,8 @@ export const adminRouter = {
       const allowInProduction = process.env.ALLOW_DESTRUCTIVE_ADMIN_OPS === "true";
       if (process.env.NODE_ENV === "production" && !allowInProduction) {
         throw new ORPCError("FORBIDDEN", {
-          message: "Wiping the database is disabled in production. Set ALLOW_DESTRUCTIVE_ADMIN_OPS=true to override.",
+          message:
+            "Wiping the database is disabled in production. Set ALLOW_DESTRUCTIVE_ADMIN_OPS=true to override.",
         });
       }
 
@@ -148,7 +174,14 @@ export const adminRouter = {
       // Count what's about to be destroyed *before* destroying it — after a TRUNCATE every one of
       // these reads back as zero, so this is the only chance to record what was actually wiped.
       const [
-        [qCount], [qsCount], [scrapedCount], [optCount], [ansCount], [occCount], [tagCount], [mediaCount],
+        [qCount],
+        [qsCount],
+        [scrapedCount],
+        [optCount],
+        [ansCount],
+        [occCount],
+        [tagCount],
+        [mediaCount],
       ] = await Promise.all([
         db.select({ val: count(questions.id) }).from(questions),
         db.select({ val: count(questionSets.id) }).from(questionSets),
@@ -184,19 +217,21 @@ export const adminRouter = {
 
       try {
         // Try Postgres TRUNCATE CASCADE first for instant atomic wipe
-        await db.execute(
-          sql`TRUNCATE TABLE question_answers, question_occurrences, question_options, question_tags, media, questions, scraped_questions, question_sets CASCADE;`
-        ).catch(async () => {
-          // Fallback to sequential deletion in correct dependency order
-          await db.delete(questionAnswers).catch(() => {});
-          await db.delete(questionOccurrences).catch(() => {});
-          await db.delete(questionTags).catch(() => {});
-          await db.delete(media).catch(() => {});
-          await db.delete(questionOptions).catch(() => {});
-          await db.delete(questions).catch(() => {});
-          await db.delete(scrapedQuestions).catch(() => {});
-          await db.delete(questionSets).catch(() => {});
-        });
+        await db
+          .execute(
+            sql`TRUNCATE TABLE question_answers, question_occurrences, question_options, question_tags, media, questions, scraped_questions, question_sets CASCADE;`,
+          )
+          .catch(async () => {
+            // Fallback to sequential deletion in correct dependency order
+            await db.delete(questionAnswers).catch(() => {});
+            await db.delete(questionOccurrences).catch(() => {});
+            await db.delete(questionTags).catch(() => {});
+            await db.delete(media).catch(() => {});
+            await db.delete(questionOptions).catch(() => {});
+            await db.delete(questions).catch(() => {});
+            await db.delete(scrapedQuestions).catch(() => {});
+            await db.delete(questionSets).catch(() => {});
+          });
 
         console.log(`[WIPE DATABASE] Wiped by ${context.user.email}:`, affectedCounts);
         return { success: true, wiped: affectedCounts };
@@ -242,7 +277,7 @@ export const adminRouter = {
           if (typeof parsedData === "string") {
             try {
               parsedData = JSON.parse(parsedData);
-            } catch (e) {}
+            } catch (_e) {}
           }
           const elements = parsedData?.extractedElements || [];
           if (elements.length > 0) {
@@ -258,9 +293,9 @@ export const adminRouter = {
           }
           return {
             ...row,
-            hasCollision: duplicates > 0
+            hasCollision: duplicates > 0,
           };
-        })
+        }),
       );
       return items;
     }),
@@ -271,15 +306,20 @@ export const adminRouter = {
       path: "/admin/review/process",
       summary: "Process a review item",
     })
-    .input(z.object({
-      id: z.string(),
-      action: z.enum(["approve", "reject"]),
-    }))
+    .input(
+      z.object({
+        id: z.string(),
+        action: z.enum(["approve", "reject"]),
+      }),
+    )
     .handler(async ({ input, context }) => {
       const db = getDb();
 
       if (input.action === "reject") {
-        await db.update(scrapedQuestions).set({ status: "rejected" }).where(eq(scrapedQuestions.id, input.id));
+        await db
+          .update(scrapedQuestions)
+          .set({ status: "rejected" })
+          .where(eq(scrapedQuestions.id, input.id));
         await writeAuditLog(db, {
           actorId: context.user.id,
           action: "reject_scraped_question",
@@ -292,40 +332,58 @@ export const adminRouter = {
       }
 
       // Approve logic
-      const item = await db.select().from(scrapedQuestions).where(eq(scrapedQuestions.id, input.id)).limit(1);
+      const item = await db
+        .select()
+        .from(scrapedQuestions)
+        .where(eq(scrapedQuestions.id, input.id))
+        .limit(1);
       if (!item.length) {
         throw new ORPCError("NOT_FOUND", { message: "Item not found" });
       }
 
       let parsedData: any = item[0].parsedData;
       if (typeof parsedData === "string") {
-        try { parsedData = JSON.parse(parsedData); } catch (e) {}
+        try {
+          parsedData = JSON.parse(parsedData);
+        } catch (_e) {}
       }
 
       const elements = parsedData?.extractedElements || [];
-      const meta = parsedData?.metadata || {};
+      const _meta = parsedData?.metadata || {};
 
       let publishCount = 0;
       for (const el of elements) {
         if (!el.questionText || !el.options || !el.answer) continue;
 
-        const insertedQ = await db.insert(questions).values({
-          slug: el.questionText.slice(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') + "-" + Math.random().toString(36).substring(2, 6),
-          questionText: el.questionText,
-          explanation: el.explanation || null,
-          questionType: "mcq",
-          status: "published",
-        }).returning({ id: questions.id });
+        const insertedQ = await db
+          .insert(questions)
+          .values({
+            slug:
+              el.questionText
+                .slice(0, 30)
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-") +
+              "-" +
+              Math.random().toString(36).substring(2, 6),
+            questionText: el.questionText,
+            explanation: el.explanation || null,
+            questionType: "mcq",
+            status: "published",
+          })
+          .returning({ id: questions.id });
 
         const qId = insertedQ[0].id;
         let seq = 1;
         for (const opt of el.options) {
-          const insertedOpt = await db.insert(questionOptions).values({
-            questionId: qId,
-            optionKey: String.fromCharCode(64 + seq),
-            optionText: opt,
-            sequence: seq++,
-          }).returning({ id: questionOptions.id });
+          const insertedOpt = await db
+            .insert(questionOptions)
+            .values({
+              questionId: qId,
+              optionKey: String.fromCharCode(64 + seq),
+              optionText: opt,
+              sequence: seq++,
+            })
+            .returning({ id: questionOptions.id });
 
           if (opt === el.answer) {
             await db.insert(questionAnswers).values({
@@ -337,7 +395,10 @@ export const adminRouter = {
         publishCount++;
       }
 
-      await db.update(scrapedQuestions).set({ status: "approved" }).where(eq(scrapedQuestions.id, input.id));
+      await db
+        .update(scrapedQuestions)
+        .set({ status: "approved" })
+        .where(eq(scrapedQuestions.id, input.id));
 
       await writeAuditLog(db, {
         actorId: context.user.id,
@@ -371,7 +432,10 @@ export const adminRouter = {
           // configuration problem, not "the service is down".
           return { status: "misconfigured" as const, reason: err.message };
         }
-        return { status: "offline" as const, reason: err?.message || `Scraper is unreachable at ${getScraperBaseUrl()}` };
+        return {
+          status: "offline" as const,
+          reason: err?.message || `Scraper is unreachable at ${getScraperBaseUrl()}`,
+        };
       }
     }),
 
@@ -403,7 +467,9 @@ export const adminRouter = {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new ORPCError("BAD_GATEWAY", {
-          message: body?.detail || `Scraper returned ${res.status} while launching Microsoft authentication.`,
+          message:
+            body?.detail ||
+            `Scraper returned ${res.status} while launching Microsoft authentication.`,
         });
       }
       return body;
@@ -426,7 +492,10 @@ export const adminRouter = {
         if (err instanceof ORPCError) {
           return { status: "misconfigured", logs: [`[SYSTEM]: ${err.message}`] };
         }
-        return { status: "offline", logs: [`[SYSTEM]: Scraper service at ${getScraperBaseUrl()} is currently offline.`] };
+        return {
+          status: "offline",
+          logs: [`[SYSTEM]: Scraper service at ${getScraperBaseUrl()} is currently offline.`],
+        };
       }
     }),
 
@@ -436,15 +505,17 @@ export const adminRouter = {
       path: "/admin/scrape/trigger",
       summary: "Trigger a scraping job",
     })
-    .input(z.object({
-      url: z.string(),
-      parserMode: z.string().optional(),
-      targetExam: z.string().optional(),
-      targetSubject: z.string().optional(),
-      jobId: z.string().optional(),
-      maxQuestions: z.number().optional(),
-      headless: z.boolean().optional(),
-    }))
+    .input(
+      z.object({
+        url: z.string(),
+        parserMode: z.string().optional(),
+        targetExam: z.string().optional(),
+        targetSubject: z.string().optional(),
+        jobId: z.string().optional(),
+        maxQuestions: z.number().optional(),
+        headless: z.boolean().optional(),
+      }),
+    )
     .handler(async ({ input }) => {
       const {
         url,
@@ -452,7 +523,7 @@ export const adminRouter = {
         targetExam = "Kerala PSC AE Civil",
         targetSubject = "Strength of Materials",
         maxQuestions = 50,
-        headless = true
+        headless = true,
       } = input;
 
       // Proxy to the Python scraper service. There is no fallback: a scrape
@@ -494,21 +565,27 @@ export const adminRouter = {
       let insertedDbRecordId = null;
       if (!responseData.db_saved) {
         const db = getDb();
-        const inserted = await db.insert(scrapedQuestions).values({
-          sourceUrl: url,
-          rawData: responseData.rawHtml ? responseData.rawHtml.slice(0, 2000) : "Scraped via Python Engine",
-          parsedData: {
-            extractedElements: responseData.extractedElements || [],
-            metadata: {
-              exam: targetExam,
-              subject: targetSubject,
-              parserMode,
-              engine: responseData.mode || "Python FastAPI",
-              extractedCount: responseData.extracted_count || (responseData.extractedElements?.length || 0)
-            }
-          },
-          status: "pending",
-        }).returning();
+        const inserted = await db
+          .insert(scrapedQuestions)
+          .values({
+            sourceUrl: url,
+            rawData: responseData.rawHtml
+              ? responseData.rawHtml.slice(0, 2000)
+              : "Scraped via Python Engine",
+            parsedData: {
+              extractedElements: responseData.extractedElements || [],
+              metadata: {
+                exam: targetExam,
+                subject: targetSubject,
+                parserMode,
+                engine: responseData.mode || "Python FastAPI",
+                extractedCount:
+                  responseData.extracted_count || responseData.extractedElements?.length || 0,
+              },
+            },
+            status: "pending",
+          })
+          .returning();
         insertedDbRecordId = inserted[0]?.id || null;
       }
 

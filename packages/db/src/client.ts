@@ -5,7 +5,7 @@ import * as schema from "./schema/index.ts";
 function cleanConnectionString(urlStr: string): string {
   // Neon's pooled connection strings include channel_binding, which some libpq/driver
   // combinations don't accept as a connection parameter — strip it defensively.
-  return urlStr.replace(/[\?&]channel_binding=[^&]+/g, "");
+  return urlStr.replace(/[?&]channel_binding=[^&]+/g, "");
 }
 
 // Cloudflare Workers pass per-request environment bindings to the fetch handler rather than
@@ -26,7 +26,7 @@ export const getDb = (baseUrl?: string) => {
   if (!rawString) {
     throw new Error(
       "DATABASE_URL is not set. Copy .env.example to .env and fill in a real Postgres connection " +
-        "string (see the Database section), or configure it in your deployment environment."
+        "string (see the Database section), or configure it in your deployment environment.",
     );
   }
 

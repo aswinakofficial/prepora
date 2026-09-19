@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "@tanstack/react-router";
 import { GraduationCap } from "lucide-react";
 
@@ -14,8 +13,8 @@ export function SiteFooter() {
               Prepora
             </Link>
             <p className="text-sm text-[var(--muted-foreground)] leading-relaxed max-w-xs">
-              Prepare smarter with previous-year questions and detailed explanations.
-              Free, open, and community-driven.
+              Prepare smarter with previous-year questions and detailed explanations. Free, open,
+              and community-driven.
             </p>
           </div>
 

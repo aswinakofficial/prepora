@@ -1,8 +1,11 @@
 import re
-from typing import List, Dict
-from bs4 import BeautifulSoup
+from typing import Dict, List
 from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
+
 from .base import BaseScraperHandler
+
 
 class GenericHandler(BaseScraperHandler):
     name = "Generic"

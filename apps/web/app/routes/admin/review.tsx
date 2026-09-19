@@ -1,21 +1,18 @@
-import React, { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { orpc } from "../../../lib/orpc";
-import { 
-  ArrowLeft, 
-  CheckCircle, 
-  Trash2, 
-  Edit2, 
-  AlertCircle, 
-  ExternalLink,
+import {
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  CheckCircle,
   ChevronDown,
   ChevronUp,
-  HelpCircle,
-  CheckCircle2,
-  BookOpen,
-  Sparkles
+  ExternalLink,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
+import React, { useState } from "react";
+import { orpc } from "../../../lib/orpc";
 
 interface QuestionElement {
   questionText?: string;
@@ -49,8 +46,13 @@ function normalizeReadingTitle(text: string) {
 
 function extractSection(content: string, label: string, stopLabels: string[]) {
   const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const escapedStops = stopLabels.map((stop) => stop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const regex = new RegExp(`${escapedLabel}:\\s*([\\s\\S]*?)(?=\\n\\s*(?:${escapedStops}):|$)`, "i");
+  const escapedStops = stopLabels
+    .map((stop) => stop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const regex = new RegExp(
+    `${escapedLabel}:\\s*([\\s\\S]*?)(?=\\n\\s*(?:${escapedStops}):|$)`,
+    "i",
+  );
   const match = content.match(regex);
   return match?.[1]?.trim() || "";
 }
@@ -71,7 +73,10 @@ function parseAdditionalReadingText(content: string) {
     .filter((line) => line.length > 0);
 }
 
-function mergeAdditionalReadings(q: QuestionElement, fullContent: string): AdditionalReadingResource[] {
+function mergeAdditionalReadings(
+  q: QuestionElement,
+  fullContent: string,
+): AdditionalReadingResource[] {
   const resources = new Map<string, AdditionalReadingResource>();
 
   const addResource = (text?: string, url?: string) => {
@@ -86,22 +91,30 @@ function mergeAdditionalReadings(q: QuestionElement, fullContent: string): Addit
     });
   };
 
-  parseAdditionalReadingText(fullContent).forEach((title) => addResource(title));
+  parseAdditionalReadingText(fullContent).forEach((title) => {
+    addResource(title);
+  });
 
   const rawAdditionalReadings = q.additionalReadings || q.additionalReading;
   if (Array.isArray(rawAdditionalReadings)) {
-    rawAdditionalReadings.forEach((title) => addResource(title));
+    rawAdditionalReadings.forEach((title) => {
+      addResource(title);
+    });
   } else if (typeof rawAdditionalReadings === "string") {
-    rawAdditionalReadings.split(/\n+/).forEach((title) => addResource(title));
+    rawAdditionalReadings.split(/\n+/).forEach((title) => {
+      addResource(title);
+    });
   }
 
-  (q.additionalReadingLinks || []).forEach((link) => addResource(link.text, link.url));
+  (q.additionalReadingLinks || []).forEach((link) => {
+    addResource(link.text, link.url);
+  });
 
   return Array.from(resources.values());
 }
 
 function parseQuestionElement(q: QuestionElement, index: number) {
-  let rawText = q.questionText || q.question || q.rawText || q.prompt || `Question ${index + 1}`;
+  const rawText = q.questionText || q.question || q.rawText || q.prompt || `Question ${index + 1}`;
   let options: string[] = [];
   if (Array.isArray(q.options) && q.options.length > 0) options = q.options;
   else if (Array.isArray(q.choices) && q.choices.length > 0) options = q.choices;
@@ -115,20 +128,26 @@ function parseQuestionElement(q: QuestionElement, index: number) {
   const existingExplanation = q.explanation || q.rationale || "";
   const fullContent = `${rawText}\n${existingExplanation}`;
 
-  const rationaleMatch = fullContent.match(/Rationale:\s*([\s\S]*?)(?=\n\s*(?:Objective:|What This Item Tests:|Additional Reading:)|$)/i);
-  if (rationaleMatch && rationaleMatch[1]) {
+  const rationaleMatch = fullContent.match(
+    /Rationale:\s*([\s\S]*?)(?=\n\s*(?:Objective:|What This Item Tests:|Additional Reading:)|$)/i,
+  );
+  if (rationaleMatch?.[1]) {
     explanationParts.push(`Rationale:\n${rationaleMatch[1].trim()}`);
   } else if (existingExplanation && !existingExplanation.includes("Extracted directly")) {
     explanationParts.push(existingExplanation);
   }
 
-  const objMatch = fullContent.match(/Objective:\s*([\s\S]*?)(?=\n\s*(?:What This Item Tests:|Additional Reading:|Rationale:)|$)/i);
-  if (objMatch && objMatch[1]) {
+  const objMatch = fullContent.match(
+    /Objective:\s*([\s\S]*?)(?=\n\s*(?:What This Item Tests:|Additional Reading:|Rationale:)|$)/i,
+  );
+  if (objMatch?.[1]) {
     explanationParts.push(`Objective:\n${objMatch[1].trim()}`);
   }
 
   // 3. Strip metadata sections from question body
-  cleanText = cleanText.split(/\n\s*(?:Objective:|What This Item Tests:|Additional Reading:|Rationale:)/i)[0].trim();
+  cleanText = cleanText
+    .split(/\n\s*(?:Objective:|What This Item Tests:|Additional Reading:|Rationale:)/i)[0]
+    .trim();
 
   // 4. Strip choice text if concatenated into question body
   options.forEach((opt) => {
@@ -144,7 +163,8 @@ function parseQuestionElement(q: QuestionElement, index: number) {
     .filter((p) => p && !/^Question\s+\d+/i.test(p) && !/^Select\s+all/i.test(p));
 
   const questionText = paragraphs.join("\n\n") || cleanText;
-  const explanation = explanationParts.join("\n\n") || "Extracted directly from Microsoft Learn Practice Assessment.";
+  const explanation =
+    explanationParts.join("\n\n") || "Extracted directly from Microsoft Learn Practice Assessment.";
   const answer = q.answer || q.correctAnswer || options[0] || "";
   const exam = q.exam || "Practice Assessment";
   const subject = q.subject || "General Subject";
@@ -159,9 +179,11 @@ export const Route = createFileRoute("/admin/review")({
 });
 
 function AdminReviewPage() {
-  const { data: queue, isLoading } = useQuery(orpc.admin.getReviewQueue.queryOptions());
-  const { mutateAsync: processReviewItem } = useMutation(orpc.admin.processReviewItem.mutationOptions());
-  
+  const { data: queue } = useQuery(orpc.admin.getReviewQueue.queryOptions());
+  const { mutateAsync: processReviewItem } = useMutation(
+    orpc.admin.processReviewItem.mutationOptions(),
+  );
+
   const [items, setItems] = React.useState<any[]>(queue || []);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -171,15 +193,15 @@ function AdminReviewPage() {
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const toggleExpand = (id: string) => {
-    setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
+    setExpandedItems((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleAction = async (id: string, action: "approve" | "discard") => {
     try {
       setIsProcessing(true);
       await processReviewItem({ id, action: action === "discard" ? "reject" : "approve" });
-      setItems(prev => prev.filter(i => i.id !== id));
-    } catch (err) {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } catch (_err) {
       alert("Error processing item in queue");
     } finally {
       setIsProcessing(false);
@@ -187,12 +209,16 @@ function AdminReviewPage() {
   };
 
   const handleBatchApprove = async () => {
-    const safeItems = items.filter(i => !i.hasCollision);
+    const safeItems = items.filter((i) => !i.hasCollision);
     if (safeItems.length === 0) {
       alert("No collision-free items available to approve.");
       return;
     }
-    if (confirm(`Approve and publish all ${safeItems.length} collision-free scraped batches to live database?`)) {
+    if (
+      confirm(
+        `Approve and publish all ${safeItems.length} collision-free scraped batches to live database?`,
+      )
+    ) {
       setIsProcessing(true);
       for (const item of safeItems) {
         await handleAction(item.id, "approve");
@@ -203,7 +229,11 @@ function AdminReviewPage() {
 
   const handleBatchDelete = async () => {
     if (items.length === 0) return;
-    if (confirm(`Are you sure you want to discard ALL ${items.length} scraped batches in the queue? This cannot be undone.`)) {
+    if (
+      confirm(
+        `Are you sure you want to discard ALL ${items.length} scraped batches in the queue? This cannot be undone.`,
+      )
+    ) {
       setIsProcessing(true);
       for (const item of [...items]) {
         await handleAction(item.id, "discard");
@@ -219,11 +249,13 @@ function AdminReviewPage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white p-6 md:p-10 space-y-8 pb-32">
-      
       {/* Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800 gap-4">
         <div className="flex items-center gap-4">
-          <Link to="/admin" className="p-2.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition-colors">
+          <Link
+            to="/admin"
+            className="p-2.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition-colors"
+          >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
@@ -236,21 +268,24 @@ function AdminReviewPage() {
               </span>
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1">
-              Verify extracted prompts, choices, correct answers & explanations before publishing to production.
+              Verify extracted prompts, choices, correct answers & explanations before publishing to
+              production.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <button 
+          <button
+            type="button"
             onClick={handleBatchDelete}
             disabled={isProcessing || items.length === 0}
             className="px-5 py-3 bg-rose-950/60 hover:bg-rose-900 border border-rose-900/80 disabled:opacity-50 text-rose-300 font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-rose-900/30 flex items-center gap-2 shrink-0"
           >
             <Trash2 className="w-4 h-4" /> Batch Discard All
           </button>
-          
-          <button 
+
+          <button
+            type="button"
             onClick={handleBatchApprove}
             disabled={isProcessing || items.length === 0}
             className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-emerald-900/30 flex items-center gap-2 shrink-0"
@@ -265,25 +300,33 @@ function AdminReviewPage() {
         {items.length === 0 ? (
           <div className="p-16 text-center text-slate-500 font-mono text-sm border border-slate-800 rounded-2xl bg-slate-950/40 space-y-3">
             <Sparkles className="w-8 h-8 text-slate-600 mx-auto" />
-            <p className="text-slate-300 font-medium text-base">Verification queue is completely clear!</p>
-            <p className="text-xs text-slate-500">Run a website scraping job from the Admin Pipeline to ingest more practice assessments.</p>
-            <Link to="/admin/scraping" className="inline-block mt-4 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-mono uppercase tracking-wider border border-slate-700 rounded-lg transition-colors">
+            <p className="text-slate-300 font-medium text-base">
+              Verification queue is completely clear!
+            </p>
+            <p className="text-xs text-slate-500">
+              Run a website scraping job from the Admin Pipeline to ingest more practice
+              assessments.
+            </p>
+            <Link
+              to="/admin/scraping"
+              className="inline-block mt-4 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-mono uppercase tracking-wider border border-slate-700 rounded-lg transition-colors"
+            >
               Open Scraper Pipeline →
             </Link>
           </div>
         ) : (
-          items.map(item => {
+          items.map((item) => {
             const parsed = item.parsedData as any;
             const elements: QuestionElement[] = parsed?.extractedElements || [];
             const isExpanded = expandedItems[item.id] !== false; // expanded by default
-            const metadata = parsed?.metadata || {};
-            
+            const _metadata = parsed?.metadata || {};
+
             return (
-              <div 
-                key={item.id} 
+              <div
+                key={item.id}
                 className={`border rounded-2xl overflow-hidden transition-all ${
-                  item.hasCollision 
-                    ? "border-amber-900/60 bg-amber-950/10" 
+                  item.hasCollision
+                    ? "border-amber-900/60 bg-amber-950/10"
                     : "border-slate-800 bg-slate-950/60"
                 }`}
               >
@@ -294,10 +337,10 @@ function AdminReviewPage() {
                       BATCH #{item.id.slice(0, 8)}
                     </span>
 
-                    <a 
-                      href={item.sourceUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
+                    <a
+                      href={item.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="text-xs font-mono text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 max-w-md truncate"
                       title={item.sourceUrl}
                     >
@@ -317,25 +360,32 @@ function AdminReviewPage() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <button 
+                    <button
+                      type="button"
                       onClick={() => toggleExpand(item.id)}
                       className="p-1.5 rounded-lg border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition-colors text-xs font-mono flex items-center gap-1"
                     >
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
                       <span>{isExpanded ? "Collapse" : "Expand"}</span>
                     </button>
 
-                    <button 
-                      disabled={isProcessing} 
-                      onClick={() => handleAction(item.id, "approve")} 
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => handleAction(item.id, "approve")}
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-mono font-bold transition-all shadow-md flex items-center gap-1.5"
                     >
                       <CheckCircle className="w-3.5 h-3.5" /> Approve & Publish
                     </button>
 
-                    <button 
-                      disabled={isProcessing} 
-                      onClick={() => handleAction(item.id, "discard")} 
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => handleAction(item.id, "discard")}
                       className="px-3 py-2 bg-rose-950/60 hover:bg-rose-900 border border-rose-900/80 disabled:opacity-50 text-rose-300 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Discard
@@ -377,20 +427,28 @@ function AdminReviewPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                               {q.options.map((optText, optIdx) => {
                                 const optKey = String.fromCharCode(65 + optIdx);
-                                const isCorrect = q.answer && (optText === q.answer || optText.includes(q.answer) || q.answer.includes(optText));
+                                const isCorrect =
+                                  q.answer &&
+                                  (optText === q.answer ||
+                                    optText.includes(q.answer) ||
+                                    q.answer.includes(optText));
 
                                 return (
-                                  <div 
-                                    key={optIdx}
+                                  <div
+                                    key={optKey}
                                     className={`p-3 rounded-xl border text-xs font-mono transition-all flex items-start gap-3 ${
-                                      isCorrect 
-                                        ? "border-emerald-500/80 bg-emerald-950/40 text-emerald-200 font-semibold shadow-sm" 
+                                      isCorrect
+                                        ? "border-emerald-500/80 bg-emerald-950/40 text-emerald-200 font-semibold shadow-sm"
                                         : "border-slate-800/80 bg-slate-900/50 text-slate-300"
                                     }`}
                                   >
-                                    <span className={`w-5 h-5 rounded-full text-[10px] flex items-center justify-center shrink-0 font-bold ${
-                                      isCorrect ? "bg-emerald-500 text-black" : "bg-slate-800 text-slate-400"
-                                    }`}>
+                                    <span
+                                      className={`w-5 h-5 rounded-full text-[10px] flex items-center justify-center shrink-0 font-bold ${
+                                        isCorrect
+                                          ? "bg-emerald-500 text-black"
+                                          : "bg-slate-800 text-slate-400"
+                                      }`}
+                                    >
                                       {optKey}
                                     </span>
                                     <span className="flex-1 leading-snug">{optText}</span>
@@ -412,7 +470,9 @@ function AdminReviewPage() {
                                   <span className="font-mono text-[10px] uppercase tracking-wider text-sky-400 font-bold block">
                                     Official Rationale / Explanation:
                                   </span>
-                                  <p className="leading-relaxed text-slate-300 whitespace-pre-line">{q.explanation}</p>
+                                  <p className="leading-relaxed text-slate-300 whitespace-pre-line">
+                                    {q.explanation}
+                                  </p>
                                 </div>
                               </div>
                             )}
@@ -426,12 +486,15 @@ function AdminReviewPage() {
                                     Additional Reading Resources:
                                   </span>
                                   <ul className="space-y-1.5 list-disc list-inside text-amber-300">
-                                    {q.additionalReadings.map((resource, linkIdx) => (
-                                      <li key={linkIdx} className="flex items-start gap-2">
+                                    {q.additionalReadings.map((resource) => (
+                                      <li
+                                        key={resource.url || resource.text}
+                                        className="flex items-start gap-2"
+                                      >
                                         {resource.url ? (
-                                          <a 
-                                            href={resource.url} 
-                                            target="_blank" 
+                                          <a
+                                            href={resource.url}
+                                            target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-blue-400 hover:text-blue-300 hover:underline transition-colors flex items-center gap-1 break-words flex-1"
                                           >
@@ -449,20 +512,17 @@ function AdminReviewPage() {
                                 </div>
                               </div>
                             )}
-
                           </div>
                         );
                       })
                     )}
                   </div>
                 )}
-
               </div>
             );
           })
         )}
       </div>
-
     </div>
   );
 }

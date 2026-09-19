@@ -1,10 +1,11 @@
 import { i18n } from "@lingui/core";
+
 export { i18n };
 
 export const locales = {
   en: "English",
   fr: "Français",
-  es: "Español"
+  es: "Español",
 };
 
 export const defaultLocale = "en";

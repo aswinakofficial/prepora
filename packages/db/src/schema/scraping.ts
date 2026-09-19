@@ -1,13 +1,9 @@
-import { pgTable, text, jsonb, index, pgEnum } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+import { index, jsonb, pgEnum, pgTable, text } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./shared.ts";
 import { users } from "./users.ts";
 
-export const scrapeStatusEnum = pgEnum("scrape_status", [
-  "pending",
-  "approved",
-  "rejected",
-]);
+export const scrapeStatusEnum = pgEnum("scrape_status", ["pending", "approved", "rejected"]);
 
 export const scrapedQuestions = pgTable(
   "scraped_questions",
@@ -23,7 +19,7 @@ export const scrapedQuestions = pgTable(
   (t) => [
     index("scraped_questions_status_idx").on(t.status),
     index("scraped_questions_url_idx").on(t.sourceUrl),
-  ]
+  ],
 );
 
 export const scrapedQuestionsRelations = relations(scrapedQuestions, ({ one }) => ({

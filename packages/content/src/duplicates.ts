@@ -68,9 +68,10 @@ export function findDuplicates(questions: Question[]): DuplicateCandidate[] {
 
   for (const q of questions) {
     const hash = contentHash(q.questionText);
-    if (hashes.has(hash)) {
+    const existingNumber = hashes.get(hash);
+    if (existingNumber !== undefined) {
       candidates.push({
-        questionA: { number: hashes.get(hash)!, text: q.questionText },
+        questionA: { number: existingNumber, text: q.questionText },
         questionB: { number: q.number, text: q.questionText },
         type: "exact",
         similarityScore: 1,

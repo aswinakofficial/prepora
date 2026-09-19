@@ -15,7 +15,8 @@ const recentUpdates = [
   {
     title: "Kerala PSC Assistant Engineer",
     link: `${BASE_URL}/exams/kerala-psc`,
-    description: "Added highly requested Kerala PSC previous year question papers for Civil Engineering.",
+    description:
+      "Added highly requested Kerala PSC previous year question papers for Civil Engineering.",
     pubDate: new Date("2026-09-01T10:00:00Z").toUTCString(),
     guid: "exam-kerala-psc-20260901",
   },
@@ -45,7 +46,7 @@ function generateRSS() {
       <description><![CDATA[${item.description}]]></description>
       <pubDate>${item.pubDate}</pubDate>
       <guid isPermaLink="false">${item.guid}</guid>
-    </item>`
+    </item>`,
     )
     .join("");
 

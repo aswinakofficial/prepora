@@ -4,7 +4,7 @@
  *
  * Generates a summary report of all content files.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parsePreporaMarkdown, validateParsedQuestionSet } from "@prepora/content";
 
@@ -22,12 +22,18 @@ function findMarkdownFiles(dir: string): string[] {
 }
 
 const files = findMarkdownFiles(CONTENT_DIR);
-let totalQuestions = 0, validQuestions = 0, needsReview = 0, invalidFiles = 0;
+let totalQuestions = 0,
+  validQuestions = 0,
+  needsReview = 0,
+  invalidFiles = 0;
 
 for (const filePath of files) {
   const content = readFileSync(filePath, "utf-8");
   const result = parsePreporaMarkdown(content, filePath);
-  if (!result.data) { invalidFiles++; continue; }
+  if (!result.data) {
+    invalidFiles++;
+    continue;
+  }
   const report = validateParsedQuestionSet(result.data, filePath);
   totalQuestions += report.totalQuestions;
   validQuestions += report.validQuestions;

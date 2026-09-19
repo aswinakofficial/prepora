@@ -14,16 +14,19 @@ const BASE_URL = process.env.APP_URL ?? "https://prepora.in";
 const OUT = resolve(import.meta.dirname, "../apps/web/public");
 
 function makeSitemap(urls: { loc: string; changefreq?: string; priority?: string }[]): string {
-  const items = urls.map(({ loc, changefreq = "weekly", priority = "0.7" }) =>
-    `  <url>\n    <loc>${loc}</loc>\n    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`
-  ).join("\n");
+  const items = urls
+    .map(
+      ({ loc, changefreq = "weekly", priority = "0.7" }) =>
+        `  <url>\n    <loc>${loc}</loc>\n    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`,
+    )
+    .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${items}\n</urlset>`;
 }
 
 function makeSitemapIndex(sitemaps: string[]): string {
-  const items = sitemaps.map((s) =>
-    `  <sitemap>\n    <loc>${BASE_URL}/${s}</loc>\n  </sitemap>`
-  ).join("\n");
+  const items = sitemaps
+    .map((s) => `  <sitemap>\n    <loc>${BASE_URL}/${s}</loc>\n  </sitemap>`)
+    .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${items}\n</sitemapindex>`;
 }
 
@@ -45,11 +48,14 @@ const examUrls = [
 
 writeFileSync(`${OUT}/sitemap-pages.xml`, makeSitemap(staticRoutes));
 writeFileSync(`${OUT}/sitemap-exams.xml`, makeSitemap(examUrls));
-writeFileSync(`${OUT}/sitemap.xml`, makeSitemapIndex([
-  "sitemap-pages.xml",
-  "sitemap-exams.xml",
-  "sitemap-question-sets.xml",
-  "sitemap-questions.xml",
-]));
+writeFileSync(
+  `${OUT}/sitemap.xml`,
+  makeSitemapIndex([
+    "sitemap-pages.xml",
+    "sitemap-exams.xml",
+    "sitemap-question-sets.xml",
+    "sitemap-questions.xml",
+  ]),
+);
 
 console.log("✅ Sitemaps generated in apps/web/public/");

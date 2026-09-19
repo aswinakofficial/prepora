@@ -1,16 +1,20 @@
-import React from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { orpc } from "../../../../../lib/orpc";
 
 export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
   head: ({ params }) => {
     const examName = params.examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    const subjectName = params.subjectSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const subjectName = params.subjectSlug
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
     return {
       meta: [
         { title: `${subjectName} — ${examName} | Prepora` },
-        { name: "description", content: `Explore verified previous-year questions and topics for ${subjectName} in ${examName}.` },
+        {
+          name: "description",
+          content: `Explore verified previous-year questions and topics for ${subjectName} in ${examName}.`,
+        },
       ],
     };
   },
@@ -20,17 +24,20 @@ export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
 function ExamSubjectPage() {
   const { examSlug, subjectSlug } = Route.useParams();
 
-  const { data: realExam } = useQuery(
-    orpc.exams.getBySlug.queryOptions({ input: { examSlug } })
-  );
+  const { data: realExam } = useQuery(orpc.exams.getBySlug.queryOptions({ input: { examSlug } }));
 
-  const examName = realExam?.name || examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const examName =
+    realExam?.name || examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const subjectName = subjectSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   const questionsList = realExam?.questions || [];
 
   const topics = [
-    { slug: "agentic-ai-foundations", name: `${subjectName} Core Principles`, count: Math.max(questionsList.length, 5) },
+    {
+      slug: "agentic-ai-foundations",
+      name: `${subjectName} Core Principles`,
+      count: Math.max(questionsList.length, 5),
+    },
     { slug: "copilot-studio-workflows", name: "Copilot Studio & Custom Agents", count: 5 },
     { slug: "multi-agent-orchestration", name: "Autonomous Multi-Agent Systems", count: 5 },
   ];
@@ -51,11 +58,19 @@ function ExamSubjectPage() {
       <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-24 border-b border-slate-900 pb-4">
-          <Link to="/" className="hover:text-white transition-colors">ROOT</Link>
+          <Link to="/" className="hover:text-white transition-colors">
+            ROOT
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
-          <Link to="/exams" className="hover:text-white transition-colors">EXAMS</Link>
+          <Link to="/exams" className="hover:text-white transition-colors">
+            EXAMS
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
-          <Link to="/exams/$examSlug" params={{ examSlug }} className="hover:text-white transition-colors">
+          <Link
+            to="/exams/$examSlug"
+            params={{ examSlug }}
+            className="hover:text-white transition-colors"
+          >
             {examSlug}
           </Link>
           <span className="mx-4 text-slate-700">/</span>
@@ -69,7 +84,8 @@ function ExamSubjectPage() {
               {subjectName.toUpperCase()}
             </h1>
             <p className="font-mono text-xs tracking-widest text-slate-500 uppercase leading-relaxed">
-              Domain module within <span className="text-slate-300">{examName}</span> covering practice questions and verified solutions.
+              Domain module within <span className="text-slate-300">{examName}</span> covering
+              practice questions and verified solutions.
             </p>
           </div>
           <div className="font-mono text-[10px] text-slate-600 tracking-widest uppercase text-right shrink-0">
@@ -82,7 +98,7 @@ function ExamSubjectPage() {
           {/* Main Content */}
           <div className="lg:col-span-3">
             <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-600 mb-8 border-b border-slate-900 pb-2">
-              // Topic Clusters & Ingested Sets
+              {/* Topic Clusters & Ingested Sets */}
             </h2>
 
             <div className="border-t-2 border-slate-900 border-b-2">

@@ -9,7 +9,7 @@
  *   pnpm content:import
  *   pnpm content:import --dry-run   (validate only, no DB writes)
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parsePreporaMarkdown, validateParsedQuestionSet } from "@prepora/content";
 
@@ -47,7 +47,9 @@ async function main() {
 
     const report = validateParsedQuestionSet(parseResult.data, filePath);
     if (!report.valid) {
-      console.error(`❌ ${filePath} — validation failed (${report.issues.filter(i => i.severity === "error").length} errors)`);
+      console.error(
+        `❌ ${filePath} — validation failed (${report.issues.filter((i) => i.severity === "error").length} errors)`,
+      );
       failed++;
       continue;
     }
@@ -57,7 +59,9 @@ async function main() {
       // Stub that shows the structure:
       // const { db } = await import("@prepora/db");
       // await importQuestionSet(db, parseResult.data);
-      console.log(`✅ ${filePath} — ${report.totalQuestions} questions (db write skipped — wire up DATABASE_URL)`);
+      console.log(
+        `✅ ${filePath} — ${report.totalQuestions} questions (db write skipped — wire up DATABASE_URL)`,
+      );
     } else {
       console.log(`✅ ${filePath} — ${report.totalQuestions} questions valid`);
     }
@@ -69,4 +73,7 @@ async function main() {
   if (failed > 0) process.exit(1);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

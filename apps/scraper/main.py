@@ -1,13 +1,13 @@
 import os
-import re
-from typing import Optional, List
+from typing import List, Optional
+
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 
 from db import get_db_connection, insert_scraped_question
+from handlers import get_handler_for_url
 from security import assert_safe_url, cors_allowed_origins, require_service_token, safe_get
 
 load_dotenv()
@@ -15,7 +15,7 @@ load_dotenv()
 # Importing settings validates required configuration (DATABASE_URL) immediately — this service
 # refuses to start at all rather than start in a state where its core job (persisting scraped
 # content) will silently fail on every request. See settings.py and roadmap item 7.
-import settings as _settings  # noqa: F401 — imported for its validation side effect
+import settings as _settings  # noqa: F401,E402 — imported after load_dotenv() for its validation side effect
 
 # Every endpoint on this service requires a valid PIPELINE_SERVICE_TOKEN
 # bearer token (see security.py). There is no unauthenticated endpoint,
@@ -46,7 +46,6 @@ class ScrapeRequest(BaseModel):
     job_id: Optional[str] = None
     headless: Optional[bool] = True
 
-from handlers import get_handler_for_url
 
 def parse_html_for_questions(html: str, target_url: str, exam: str, subject: str, parser_mode: str) -> List[dict]:
     handler = get_handler_for_url(target_url)
@@ -76,7 +75,7 @@ async def get_logs_endpoint():
         try:
             with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
-                logs = [l.strip() for l in lines[-150:] if l.strip()]
+                logs = [line.strip() for line in lines[-150:] if line.strip()]
         except Exception as e:
             logs = [f"[LOG ERROR]: Could not read log file: {e}"]
     else:

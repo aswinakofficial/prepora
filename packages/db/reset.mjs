@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 /**
  * Development-only: drop the entire schema and rebuild it from the committed Drizzle migrations
  * alone. This replaces clean.mjs, migrate.js, migrate-accounts.mjs, and src/create_scraped_table.ts
@@ -14,9 +16,7 @@
  * Usage: pnpm db:reset [--force]
  */
 import { neon } from "@neondatabase/serverless";
-import { spawnSync } from "node:child_process";
 import { config } from "dotenv";
-import { resolve } from "node:path";
 
 config({ path: resolve(import.meta.dirname, "../../.env") });
 
@@ -26,7 +26,7 @@ if (process.env.NODE_ENV === "production" && !force) {
   console.error(
     "[db:reset] Refusing to run with NODE_ENV=production. This drops every table. " +
       "Pass --force if you are certain (e.g. a scratch database that happens to be tagged " +
-      "production)."
+      "production).",
   );
   process.exit(1);
 }
@@ -56,11 +56,15 @@ async function main() {
   });
 
   if (result.status !== 0) {
-    console.error("[db:reset] drizzle-kit migrate failed — schema is currently empty. Fix the migration and re-run.");
+    console.error(
+      "[db:reset] drizzle-kit migrate failed — schema is currently empty. Fix the migration and re-run.",
+    );
     process.exit(result.status ?? 1);
   }
 
-  console.log("[db:reset] Done. Database now matches packages/db/src/schema/ via the committed migrations alone.");
+  console.log(
+    "[db:reset] Done. Database now matches packages/db/src/schema/ via the committed migrations alone.",
+  );
 }
 
 main();

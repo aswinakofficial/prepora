@@ -1,8 +1,7 @@
+import { accounts, getDb, sessions, users, verifications } from "@prepora/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { reactStartCookies } from "better-auth/react-start";
-import { getDb, users, sessions, accounts, verifications } from "@prepora/db";
-import { eq } from "drizzle-orm";
 
 const trustedOrigins = Array.from(
   new Set([
@@ -10,8 +9,10 @@ const trustedOrigins = Array.from(
     "http://localhost:5173",
     "https://prepora-9g4.pages.dev",
     "https://prepora.xpar.in",
-    ...(process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean) || []),
-  ])
+    ...(process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",")
+      .map((o) => o.trim())
+      .filter(Boolean) || []),
+  ]),
 );
 
 const getBaseUrl = () => {
@@ -27,7 +28,8 @@ let runtimeAuthInstance: ReturnType<typeof betterAuth> | null = null;
 export const createBetterAuthInstance = () => {
   const secret = process.env.BETTER_AUTH_SECRET || (globalThis as any)?.BETTER_AUTH_SECRET || "";
   const clientId = process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "";
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "";
+  const clientSecret =
+    process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "";
 
   // BETTER_AUTH_SECRET is required — it signs and encrypts sessions. A prior version logged this
   // as an error and constructed the instance anyway with secret: "", which would silently sign
@@ -37,7 +39,7 @@ export const createBetterAuthInstance = () => {
   if (!secret) {
     throw new Error(
       "BETTER_AUTH_SECRET is not set. Copy .env.example to .env and set a random secret " +
-        "(min 32 chars: `openssl rand -hex 32`), or configure it in your deployment environment."
+        "(min 32 chars: `openssl rand -hex 32`), or configure it in your deployment environment.",
     );
   }
 
@@ -49,12 +51,14 @@ export const createBetterAuthInstance = () => {
   if (hasClientId !== hasClientSecret) {
     throw new Error(
       "Only one of GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET is set — both are required together, " +
-        "or neither (to disable Google sign-in). Check .env.example."
+        "or neither (to disable Google sign-in). Check .env.example.",
     );
   }
   const googleConfigured = hasClientId && hasClientSecret;
   if (!googleConfigured) {
-    console.warn("[AUTH] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set — Google sign-in is disabled; email/password sign-in still works.");
+    console.warn(
+      "[AUTH] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set — Google sign-in is disabled; email/password sign-in still works.",
+    );
   }
 
   return betterAuth({
@@ -82,34 +86,36 @@ export const createBetterAuthInstance = () => {
     emailAndPassword: {
       enabled: true,
     },
-    socialProviders: googleConfigured
-      ? { google: { clientId, clientSecret } }
-      : {},
+    socialProviders: googleConfigured ? { google: { clientId, clientSecret } } : {},
   });
 };
 
 export const setAuth = (envBindings?: Record<string, any>) => {
   let hasNewBindings = false;
-  
+
   if (envBindings && typeof envBindings === "object") {
-    if (envBindings.GOOGLE_CLIENT_ID || envBindings.DATABASE_URL || envBindings.BETTER_AUTH_SECRET) {
+    if (
+      envBindings.GOOGLE_CLIENT_ID ||
+      envBindings.DATABASE_URL ||
+      envBindings.BETTER_AUTH_SECRET
+    ) {
       for (const key of Object.keys(envBindings)) {
         const val = envBindings[key];
         if (val !== undefined && val !== null) {
           if (process.env[key] !== val) {
-             process.env[key] = val;
-             (globalThis as any)[key] = val;
-             hasNewBindings = true;
+            process.env[key] = val;
+            (globalThis as any)[key] = val;
+            hasNewBindings = true;
           }
         }
       }
     }
   }
-  
+
   if (!runtimeAuthInstance || hasNewBindings) {
     runtimeAuthInstance = createBetterAuthInstance();
   }
-  
+
   return runtimeAuthInstance;
 };
 
@@ -159,7 +165,7 @@ export async function resolveUserFromRequestHeaders(headers: Headers) {
  * Checks if a given user object has admin privileges.
  */
 export function isAdminUser(user: { email?: string; role?: string } | null | undefined): boolean {
-  if (!user || !user.email) return false;
+  if (!user?.email) return false;
   if ((user as any).role === "admin") return true;
 
   const adminUsersEnv = process.env.ADMIN_USERS || (globalThis as any)?.ADMIN_USERS || "";
@@ -176,19 +182,19 @@ export function isAdminUser(user: { email?: string; role?: string } | null | und
 export const requireAdmin = async (event: any) => {
   const request = event.request || event;
   const headers = request.headers ? request.headers : new Headers();
-  
+
   try {
     const user = await resolveUserFromRequestHeaders(headers);
     if (!user) {
       return { authorized: false, reason: "Not logged in" };
     }
-    
+
     if (!isAdminUser(user)) {
       return { authorized: false, reason: `Unauthorized email: ${user.email}` };
     }
-    
+
     return { authorized: true, user: user };
-  } catch (e) {
+  } catch (_e) {
     return { authorized: false, reason: "Session verification failed" };
   }
 };

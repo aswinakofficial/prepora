@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Lint, typecheck, test (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  db-check:
+    name: drizzle-kit check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # No live database is required: drizzle-kit check only validates that the migration
+      # journal is internally consistent. DATABASE_URL just needs to be a well-formed
+      # connection string, since packages/db/drizzle.config.ts fails fast if it's unset
+      # (see docs/roadmap/engineering-roadmap.md item 7).
+      - run: pnpm db:check
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/dummy
+
+  python:
+    name: Lint, test (scraper)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/scraper
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/scraper/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - run: ruff check .
+      - run: pytest

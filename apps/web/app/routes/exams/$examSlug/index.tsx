@@ -1,11 +1,15 @@
-import React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/exams/$examSlug/")({
   head: ({ params }) => ({
     meta: [
-      { title: `${params.examSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())} — Question Repository | Prepora` },
-      { name: "description", content: `Explore official previous-year question sets, subject breakdowns, and topic-wise practice for ${params.examSlug}.` },
+      {
+        title: `${params.examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} — Question Repository | Prepora`,
+      },
+      {
+        name: "description",
+        content: `Explore official previous-year question sets, subject breakdowns, and topic-wise practice for ${params.examSlug}.`,
+      },
     ],
   }),
   component: ExamPage,
@@ -18,30 +22,37 @@ function ExamPage() {
   const { examSlug } = Route.useParams();
 
   const { data: realExam, isLoading } = useQuery(
-    orpc.exams.getBySlug.queryOptions({ input: { examSlug } })
+    orpc.exams.getBySlug.queryOptions({ input: { examSlug } }),
   );
 
-  const rawName = realExam?.name || examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const rawName =
+    realExam?.name || examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const examName = rawName.replace(/^Exam\s+/i, "");
-  const organization = realExam?.organization || "Microsoft Learn";
+  const _organization = realExam?.organization || "Microsoft Learn";
 
-  const sets = realExam?.sets && realExam.sets.length > 0 ? realExam.sets : [
-    {
-      id: `${examSlug}-set-1`,
-      title: `${examName} — Official Assessment Set 01`,
-      description: "",
-      questionCount: realExam?.questionCount || 5,
-      tag: "MICROSOFT LEARN OFFICIAL",
-      code: "2026/MS-LEARN-01",
-      year: 2026,
-    },
-  ];
+  const sets =
+    realExam?.sets && realExam.sets.length > 0
+      ? realExam.sets
+      : [
+          {
+            id: `${examSlug}-set-1`,
+            title: `${examName} — Official Assessment Set 01`,
+            description: "",
+            questionCount: realExam?.questionCount || 5,
+            tag: "MICROSOFT LEARN OFFICIAL",
+            code: "2026/MS-LEARN-01",
+            year: 2026,
+          },
+        ];
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Back Context */}
       <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
-        <Link to="/exams" className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors">
+        <Link
+          to="/exams"
+          className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
+        >
           ← BACK TO EXAMS
         </Link>
       </div>
@@ -49,9 +60,13 @@ function ExamPage() {
       <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-32 border-b border-slate-900 pb-4">
-          <Link to="/" className="hover:text-white transition-colors">ROOT</Link>
+          <Link to="/" className="hover:text-white transition-colors">
+            ROOT
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
-          <Link to="/exams" className="hover:text-white transition-colors">EXAMS</Link>
+          <Link to="/exams" className="hover:text-white transition-colors">
+            EXAMS
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
           <span className="text-slate-300">{examSlug}</span>
         </div>
@@ -93,12 +108,12 @@ function ExamPage() {
 
         {/* Index Main Content */}
         <div className="space-y-24">
-          
           {/* Question Sets Section */}
           <section>
             <div className="flex justify-between items-end border-b border-slate-900 pb-2 mb-8">
               <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400">
-                // Available Practice Question Sets ({isLoading ? "..." : sets.length})
+                {/* Available Practice Question Sets ( */}
+                {isLoading ? "..." : sets.length})
               </h2>
               <span className="font-mono text-[10px] text-slate-500 uppercase tracking-widest hidden sm:inline">
                 SELECT A QUESTION SET TO START SIMULATION
@@ -108,7 +123,10 @@ function ExamPage() {
             {isLoading ? (
               <div className="border-t-2 border-slate-900 border-b-2 flex flex-col divide-y divide-slate-900">
                 {[1, 2].map((n) => (
-                  <div key={n} className="p-8 bg-[#06080a] flex flex-col md:flex-row md:items-center justify-between gap-8 animate-pulse">
+                  <div
+                    key={n}
+                    className="p-8 bg-[#06080a] flex flex-col md:flex-row md:items-center justify-between gap-8 animate-pulse"
+                  >
                     <div className="space-y-4 flex-1">
                       <div className="h-3 bg-slate-900 rounded w-48" />
                       <div className="h-6 bg-slate-900/90 rounded w-3/4 max-w-xl" />
@@ -173,10 +191,8 @@ function ExamPage() {
               </div>
             )}
           </section>
-
         </div>
       </main>
     </div>
   );
 }
-

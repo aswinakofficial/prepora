@@ -1,26 +1,13 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  boolean,
-  pgEnum,
-} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { pgEnum, text, timestamp } from "drizzle-orm/pg-core";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
-export const id = () =>
-  text("id")
-    .primaryKey()
-    .default(sql`gen_random_uuid()`);
+export const id = () => text("id").primaryKey().default(sql`gen_random_uuid()`);
 
 export const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 };
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -46,12 +33,7 @@ export const questionTypeEnum = pgEnum("question_type", [
   "match_following",
 ]);
 
-export const difficultyEnum = pgEnum("difficulty", [
-  "easy",
-  "medium",
-  "hard",
-  "expert",
-]);
+export const difficultyEnum = pgEnum("difficulty", ["easy", "medium", "hard", "expert"]);
 
 export const sourceTypeEnum = pgEnum("source_type", [
   "official",
@@ -78,11 +60,7 @@ export const reportReasonEnum = pgEnum("report_reason", [
   "other",
 ]);
 
-export const adminRoleEnum = pgEnum("admin_role", [
-  "admin",
-  "editor",
-  "moderator",
-]);
+export const adminRoleEnum = pgEnum("admin_role", ["admin", "editor", "moderator"]);
 
 export const contributionStatusEnum = pgEnum("contribution_status", [
   "pending",

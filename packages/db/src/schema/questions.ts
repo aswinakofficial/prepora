@@ -1,23 +1,14 @@
-import {
-  pgTable,
-  text,
-  integer,
-  boolean,
-  index,
-  unique,
-} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+import { boolean, index, integer, pgTable, text, unique } from "drizzle-orm/pg-core";
+import { questionSets, topics } from "./catalog.ts";
 import {
+  aiSourceEnum,
+  difficultyEnum,
   id,
-  timestamps,
   publishingStatusEnum,
   questionTypeEnum,
-  difficultyEnum,
-  sourceTypeEnum,
-  aiSourceEnum,
+  timestamps,
 } from "./shared.ts";
-import { questionSets } from "./catalog.ts";
-import { topics, subjects } from "./catalog.ts";
 
 // ─── Questions (canonical) ────────────────────────────────────────────────────
 
@@ -160,12 +151,21 @@ export const questionOptionsRelations = relations(questionOptions, ({ one }) => 
 
 export const questionAnswersRelations = relations(questionAnswers, ({ one }) => ({
   question: one(questions, { fields: [questionAnswers.questionId], references: [questions.id] }),
-  correctOption: one(questionOptions, { fields: [questionAnswers.correctOptionId], references: [questionOptions.id] }),
+  correctOption: one(questionOptions, {
+    fields: [questionAnswers.correctOptionId],
+    references: [questionOptions.id],
+  }),
 }));
 
 export const questionOccurrencesRelations = relations(questionOccurrences, ({ one }) => ({
-  question: one(questions, { fields: [questionOccurrences.questionId], references: [questions.id] }),
-  questionSet: one(questionSets, { fields: [questionOccurrences.questionSetId], references: [questionSets.id] }),
+  question: one(questions, {
+    fields: [questionOccurrences.questionId],
+    references: [questions.id],
+  }),
+  questionSet: one(questionSets, {
+    fields: [questionOccurrences.questionSetId],
+    references: [questionSets.id],
+  }),
 }));
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
@@ -176,4 +176,3 @@ export const insertQuestionSchema = createInsertSchema(questions);
 export const selectQuestionSchema = createSelectSchema(questions);
 export const insertQuestionOptionSchema = createInsertSchema(questionOptions);
 export const selectQuestionOptionSchema = createSelectSchema(questionOptions);
-

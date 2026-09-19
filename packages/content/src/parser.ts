@@ -1,10 +1,5 @@
 import matter from "gray-matter";
-import type {
-  ParsedQuestionSet,
-  Question,
-  QuestionOption,
-  Answer,
-} from "./schema.ts";
+import type { Answer, ParsedQuestionSet, Question, QuestionOption } from "./schema.ts";
 import { QuestionSetFrontmatterSchema } from "./schema.ts";
 
 // ─── Markdown parser helpers ──────────────────────────────────────────────────
@@ -31,12 +26,10 @@ function parseAnswerLine(line: string): Answer | null {
       .split(/[,\s]+and\s+|,\s*/)
       .map((k) => k.trim().toUpperCase())
       .filter((k) => /^[A-Z]$/.test(k));
-    if (keys.length > 1)
-      return { type: "multiple_correct", correctKeys: keys };
+    if (keys.length > 1) return { type: "multiple_correct", correctKeys: keys };
   }
   // Single letter MCQ
-  if (/^[A-Za-z]$/.test(raw))
-    return { type: "mcq", correctKey: raw.toUpperCase() };
+  if (/^[A-Za-z]$/.test(raw)) return { type: "mcq", correctKey: raw.toUpperCase() };
   // Numerical
   if (/^[-\d.]+$/.test(raw)) return { type: "numerical", answer: raw };
   // Text fallback
@@ -46,7 +39,7 @@ function parseAnswerLine(line: string): Answer | null {
 /**
  * Extract explanation following "**Explanation:**" until next heading or HR
  */
-function extractExplanation(lines: string[], fromIndex: number): string {
+function _extractExplanation(lines: string[], fromIndex: number): string {
   const parts: string[] = [];
   for (let i = fromIndex; i < lines.length; i++) {
     const l = lines[i];
@@ -109,11 +102,13 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
 
     // Difficulty line
     if (line.match(/^\*{0,2}Difficulty[:\s*]*\*{0,2}:?\s*/i)) {
-      const d = line
+      const rawDifficulty = line
         .replace(/^\*{0,2}Difficulty[:\s*]*\*{0,2}:?\s*/i, "")
         .trim()
-        .toLowerCase() as Question["difficulty"];
-      if (["easy", "medium", "hard", "expert"].includes(d!)) difficulty = d;
+        .toLowerCase();
+      if (["easy", "medium", "hard", "expert"].includes(rawDifficulty)) {
+        difficulty = rawDifficulty as Question["difficulty"];
+      }
       continue;
     }
 
@@ -177,7 +172,7 @@ export interface ParseResult {
  * Returns errors if frontmatter validation fails; partial question data when
  * individual question blocks have issues (flagged as needsReview).
  */
-export function parsePreporaMarkdown(markdown: string, filePath = "<input>"): ParseResult {
+export function parsePreporaMarkdown(markdown: string, _filePath = "<input>"): ParseResult {
   const errors: string[] = [];
 
   // 1. Parse frontmatter
@@ -234,9 +229,7 @@ export function parsePreporaMarkdown(markdown: string, filePath = "<input>"): Pa
   }
 
   // 3. Parse each block
-  const questions = questionBlocks.map(({ number, lines }) =>
-    parseQuestionBlock(lines, number),
-  );
+  const questions = questionBlocks.map(({ number, lines }) => parseQuestionBlock(lines, number));
 
   return {
     data: {

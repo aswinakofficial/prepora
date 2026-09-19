@@ -1,5 +1,5 @@
-import React from "react";
-import { useRBAC, UserRole } from "../../hooks/useRBAC";
+import type React from "react";
+import { type UserRole, useRBAC } from "../../hooks/useRBAC";
 
 interface RoleGuardProps {
   children: React.ReactNode;

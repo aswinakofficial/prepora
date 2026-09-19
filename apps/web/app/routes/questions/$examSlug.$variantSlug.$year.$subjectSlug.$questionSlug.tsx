@@ -1,5 +1,5 @@
-import React, { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 export const Route = createFileRoute(
   "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug",
@@ -10,7 +10,10 @@ export const Route = createFileRoute(
     return {
       meta: [
         { title: `${title} | Prepora` },
-        { name: "description", content: `${title} with detailed verified answer and step-by-step explanation.` },
+        {
+          name: "description",
+          content: `${title} with detailed verified answer and step-by-step explanation.`,
+        },
       ],
     };
   },
@@ -27,7 +30,8 @@ const DEMO_QUESTION = {
   ],
   correctKey: "B",
   explanation: {
-    summary: "Modulus of elasticity is defined as the ratio of tensile stress to tensile strain within the elastic limit.",
+    summary:
+      "Modulus of elasticity is defined as the ratio of tensile stress to tensile strain within the elastic limit.",
     derivation: [
       "Stress (σ) has dimensions of Force / Area, measured in N/m² or N/mm² (Pascal).",
       "Strain (ε) is the ratio of change in length to original length (ΔL / L), making it dimensionless.",
@@ -38,12 +42,24 @@ const DEMO_QUESTION = {
   subject: "Strength of Materials",
   additionalReadingLinks: [
     { text: "Young's Modulus - Wikipedia", url: "https://en.wikipedia.org/wiki/Young%27s_modulus" },
-    { text: "Elastic Modulus - GeeksforGeeks", url: "https://www.geeksforgeeks.org/elastic-modulus/" },
-    { text: "Hooke's Law - Khan Academy", url: "https://www.khanacademy.org/science/physics/work-and-energy/hookes-law" },
+    {
+      text: "Elastic Modulus - GeeksforGeeks",
+      url: "https://www.geeksforgeeks.org/elastic-modulus/",
+    },
+    {
+      text: "Hooke's Law - Khan Academy",
+      url: "https://www.khanacademy.org/science/physics/work-and-energy/hookes-law",
+    },
   ],
   relatedQuestions: [
-    { slug: "poissons-ratio-definition", text: "What is the theoretical range of Poisson's ratio for isotropic materials?" },
-    { slug: "shear-modulus-relationship", text: "Which formula relates Young's Modulus (E) and Shear Modulus (G)?" },
+    {
+      slug: "poissons-ratio-definition",
+      text: "What is the theoretical range of Poisson's ratio for isotropic materials?",
+    },
+    {
+      slug: "shear-modulus-relationship",
+      text: "Which formula relates Young's Modulus (E) and Shear Modulus (G)?",
+    },
   ],
 };
 
@@ -62,15 +78,17 @@ function QuestionPage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-      
       {/* Back Spacer */}
-      <div className="px-6 pt-12 max-w-[800px] mx-auto mb-16">
-      </div>
+      <div className="px-6 pt-12 max-w-[800px] mx-auto mb-16"></div>
 
       <main className="max-w-[800px] mx-auto px-6">
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-widest text-slate-500 uppercase mb-24 cursor-default">
-          <Link to="/exams/$examSlug" params={{ examSlug }} className="hover:text-white transition-colors">
+          <Link
+            to="/exams/$examSlug"
+            params={{ examSlug }}
+            className="hover:text-white transition-colors"
+          >
             {examName}
           </Link>
           <span className="mx-2">/</span>
@@ -81,10 +99,8 @@ function QuestionPage() {
 
         {/* Question Reading Area */}
         <section className="mb-24">
-          <h1 className="font-mono text-lg tracking-widest text-slate-500 mb-12">
-            QUESTION 015
-          </h1>
-          
+          <h1 className="font-mono text-lg tracking-widest text-slate-500 mb-12">QUESTION 015</h1>
+
           <p className="text-3xl md:text-4xl text-white font-light leading-snug mb-16 max-w-2xl">
             {DEMO_QUESTION.text}
           </p>
@@ -92,6 +108,7 @@ function QuestionPage() {
           <div className="flex flex-col space-y-6 mb-16 text-xl">
             {DEMO_QUESTION.options.map((opt) => (
               <button
+                type="button"
                 key={opt.key}
                 onClick={() => !isRevealed && setSelectedKey(opt.key)}
                 disabled={isRevealed}
@@ -99,14 +116,22 @@ function QuestionPage() {
                   isRevealed ? "cursor-default" : "cursor-pointer"
                 }`}
               >
-                <span className={`font-mono w-12 shrink-0 ${
-                  selectedKey === opt.key ? "text-white" : "text-slate-600 group-hover:text-slate-400"
-                }`}>
+                <span
+                  className={`font-mono w-12 shrink-0 ${
+                    selectedKey === opt.key
+                      ? "text-white"
+                      : "text-slate-600 group-hover:text-slate-400"
+                  }`}
+                >
                   {opt.key}
                 </span>
-                <span className={`${
-                  selectedKey === opt.key ? "text-white" : "text-slate-400 group-hover:text-slate-300"
-                }`}>
+                <span
+                  className={`${
+                    selectedKey === opt.key
+                      ? "text-white"
+                      : "text-slate-400 group-hover:text-slate-300"
+                  }`}
+                >
                   {opt.text}
                 </span>
               </button>
@@ -115,6 +140,7 @@ function QuestionPage() {
 
           {!isRevealed ? (
             <button
+              type="button"
               onClick={handleReveal}
               disabled={!selectedKey}
               className={`font-mono text-sm tracking-widest uppercase border-b pb-1 transition-colors ${
@@ -128,16 +154,20 @@ function QuestionPage() {
           ) : (
             <div className="animate-fade-up">
               <div className="w-16 border-t border-slate-700 mb-12"></div>
-              
+
               <div className="mb-12">
-                <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">Answer</h2>
+                <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
+                  Answer
+                </h2>
                 <p className="text-xl text-white">
                   {correctOption?.key} · {correctOption?.text}
                 </p>
               </div>
 
               <div className="mb-24 border-l border-slate-800 pl-6">
-                <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">Why</h2>
+                <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
+                  Why
+                </h2>
                 <div className="text-lg text-slate-400 leading-relaxed space-y-4 max-w-2xl">
                   <p>{DEMO_QUESTION.explanation.summary}</p>
                   <ul className="space-y-4 list-decimal list-outside ml-4 mt-6 text-slate-500">
@@ -156,9 +186,11 @@ function QuestionPage() {
         {/* Continuation */}
         {isRevealed && (
           <section className="border-t border-slate-900 pt-16">
-            <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-8">Continue</h2>
-            
-              <div className="flex flex-col space-y-6">
+            <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-8">
+              Continue
+            </h2>
+
+            <div className="flex flex-col space-y-6">
               <div className="flex flex-col">
                 <span className="text-sm text-slate-600 mb-2">Related questions</span>
                 {DEMO_QUESTION.relatedQuestions.map((rq) => (
@@ -173,36 +205,41 @@ function QuestionPage() {
                 ))}
               </div>
 
-              {DEMO_QUESTION.additionalReadingLinks && DEMO_QUESTION.additionalReadingLinks.length > 0 && (
-                <div className="border-t border-slate-800 pt-8">
-                  <span className="text-sm text-slate-600 mb-4 block">Additional reading resources</span>
-                  <div className="flex flex-col space-y-2">
-                    {DEMO_QUESTION.additionalReadingLinks.map((link, idx) => (
-                      <a
-                        key={idx}
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 transition-colors py-2 flex items-center gap-4 text-sm hover:underline"
-                      >
-                        <span className="text-slate-600">📖</span> {link.text}
-                      </a>
-                    ))}
+              {DEMO_QUESTION.additionalReadingLinks &&
+                DEMO_QUESTION.additionalReadingLinks.length > 0 && (
+                  <div className="border-t border-slate-800 pt-8">
+                    <span className="text-sm text-slate-600 mb-4 block">
+                      Additional reading resources
+                    </span>
+                    <div className="flex flex-col space-y-2">
+                      {DEMO_QUESTION.additionalReadingLinks.map((link) => (
+                        <a
+                          key={link.url}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-300 transition-colors py-2 flex items-center gap-4 text-sm hover:underline"
+                        >
+                          <span className="text-slate-600">📖</span> {link.text}
+                        </a>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               <div className="pt-8">
-                <Link to="/search" search={{ q: DEMO_QUESTION.topic }} className="text-slate-300 hover:text-white transition-colors flex items-center gap-4">
+                <Link
+                  to="/search"
+                  search={{ q: DEMO_QUESTION.topic }}
+                  className="text-slate-300 hover:text-white transition-colors flex items-center gap-4"
+                >
                   <span className="text-slate-600">→</span> Practice more on {DEMO_QUESTION.topic}
                 </Link>
               </div>
             </div>
           </section>
         )}
-
       </main>
     </div>
   );
 }
-

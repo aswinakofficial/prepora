@@ -1,10 +1,11 @@
-import React, { useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { SearchCommandModal } from "../components/search/SearchCommandModal";
-import { authClient } from "../../lib/auth-client";
 import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowRight, Layers } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { authClient } from "../../lib/auth-client";
 import { orpc } from "../../lib/orpc";
-import { Search, ArrowRight, Layers, AlertCircle, Award, Sparkles } from "lucide-react";
+import { SearchCommandModal } from "../components/search/SearchCommandModal";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -17,7 +18,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "Prepora — Live Knowledge Index" },
       {
         property: "og:description",
-        content: "Discover and analyze verified exam question sets directly from the live database.",
+        content:
+          "Discover and analyze verified exam question sets directly from the live database.",
       },
     ],
   }),
@@ -31,7 +33,7 @@ function HomePage() {
 
   const { data: session } = authClient.useSession();
   const { data: dbExams, isLoading } = useQuery(
-    orpc.exams.list.queryOptions({ input: { limit: 100 } })
+    orpc.exams.list.queryOptions({ input: { limit: 100 } }),
   );
 
   const realExams = dbExams || [];
@@ -54,22 +56,27 @@ function HomePage() {
 
           <div className="col-span-1 md:col-span-10 lg:col-span-9">
             <h1 className="text-5xl md:text-7xl lg:text-8xl text-white font-normal tracking-tighter mb-16 leading-[0.9] max-w-4xl selection:bg-white selection:text-black">
-              PREPARE WITH<br />PRECISION.
+              PREPARE WITH
+              <br />
+              PRECISION.
             </h1>
 
             <form onSubmit={handleSearchSubmit} className="relative group max-w-3xl">
               <div className="flex flex-col md:flex-row md:items-end gap-4 border-b border-slate-600 focus-within:border-white transition-colors pb-4">
-                <label className="font-mono text-xs text-slate-500 tracking-[0.2em] uppercase shrink-0">
+                <label
+                  htmlFor="home-global-query"
+                  className="font-mono text-xs text-slate-500 tracking-[0.2em] uppercase shrink-0"
+                >
                   Global Query
                   <span className="hidden md:inline mx-4 text-slate-700">/</span>
                 </label>
                 <input
+                  id="home-global-query"
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search exam, code, or topic..."
                   className="w-full bg-transparent outline-none text-2xl md:text-4xl font-light text-white placeholder-slate-800 tracking-tight"
-                  autoFocus
                 />
                 <button
                   type="submit"
@@ -86,7 +93,7 @@ function HomePage() {
         <section className="mb-32">
           <div className="border-b border-slate-900 pb-4 mb-8 flex justify-between items-end">
             <h2 className="text-sm font-mono tracking-widest text-slate-400 uppercase">
-              // Exam Categories
+              {/* Exam Categories */}
             </h2>
             <span className="text-xs font-mono text-slate-600 uppercase tracking-widest">
               COLLECTIVE INDEX
@@ -218,7 +225,10 @@ function HomePage() {
           {isLoading ? (
             <div className="flex flex-col border-t border-slate-900 divide-y divide-slate-900/60">
               {[1, 2, 3].map((n) => (
-                <div key={n} className="py-6 px-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse">
+                <div
+                  key={n}
+                  className="py-6 px-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse"
+                >
                   <div className="flex items-center gap-6 flex-1">
                     <div className="h-4 w-6 bg-slate-900 rounded" />
                     <div className="space-y-2 flex-1">
@@ -256,7 +266,8 @@ function HomePage() {
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 font-mono">
-                        {exam.organization || exam.org || "Microsoft Learn"} · {exam.category || "CERTIFICATION"}
+                        {exam.organization || exam.org || "Microsoft Learn"} ·{" "}
+                        {exam.category || "CERTIFICATION"}
                       </p>
                     </div>
                   </div>
@@ -277,7 +288,8 @@ function HomePage() {
                 CATALOG ARCHIVE STANDBY
               </h3>
               <p className="text-[11px] font-mono text-slate-600 max-w-sm leading-relaxed mb-6">
-                No active exam sets indexed at this moment. Published sets will appear here automatically.
+                No active exam sets indexed at this moment. Published sets will appear here
+                automatically.
               </p>
               {session?.user && (
                 <div className="flex items-center gap-3">

@@ -5,7 +5,7 @@ export const Route = (createFileRoute("/api/llms-txt" as any) as any)({
     handlers: {
       GET: async () => {
         const baseUrl = process.env.VITE_PUBLIC_APP_URL || "https://prepora.xpar.in";
-        
+
         // NOTE: this list must only name capabilities that actually exist.
         // A previous version advertised an /mcp endpoint and exam domains
         // (AWS, CompTIA, DP-900, AI-900, SC-900, MS-900) that were never
@@ -31,12 +31,12 @@ export const Route = (createFileRoute("/api/llms-txt" as any) as any)({
 
         return new Response(body, {
           status: 200,
-          headers: { 
+          headers: {
             "Content-Type": "text/plain; charset=UTF-8",
-            "Cache-Control": "public, max-age=3600"
-          }
+            "Cache-Control": "public, max-age=3600",
+          },
         });
-      }
-    }
-  }
+      },
+    },
+  },
 });

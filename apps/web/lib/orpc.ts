@@ -1,8 +1,8 @@
-import { createTanstackQueryUtils } from "@orpc/tanstack-query";
-import type { AppRouter } from "@prepora/api";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
+import { createTanstackQueryUtils } from "@orpc/tanstack-query";
+import type { AppRouter } from "@prepora/api";
 
 const getRpcUrl = () => {
   if (typeof window === "undefined") {
@@ -17,7 +17,7 @@ export const orpcClient: RouterClient<AppRouter> = createORPCClient(
     url: getRpcUrl(),
     fetch: (request, init) => fetch(request, { ...init, credentials: "include" }),
     headers: () => ({}),
-  })
+  }),
 );
 
 export const orpc = createTanstackQueryUtils(orpcClient);

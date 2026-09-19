@@ -1,12 +1,16 @@
-import React, { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Upload, FileText, Sparkles, CheckCircle2, Eye, Code, ArrowRight, ShieldCheck, AlertCircle } from "lucide-react";
+import { Upload } from "lucide-react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/contribute")({
   head: () => ({
     meta: [
       { title: "Contribute Question Papers — Prepora" },
-      { name: "description", content: "Help thousands of students by contributing past question papers via Markdown or PDF upload. Fast, open, and verified." },
+      {
+        name: "description",
+        content:
+          "Help thousands of students by contributing past question papers via Markdown or PDF upload. Fast, open, and verified.",
+      },
     ],
   }),
   component: ContributePage,
@@ -15,7 +19,7 @@ export const Route = createFileRoute("/contribute")({
 function ContributePage() {
   const [tab, setTab] = useState<"markdown" | "pdf">("markdown");
   const [markdownText, setMarkdownText] = useState(
-    `# Kerala PSC AE Civil 2025 - Q1\n\nWhat is the SI unit of modulus of elasticity (Young's Modulus)?\n\nA) Newton (N)\nB) N/mm² (or Pascal, Pa)\nC) mm / N\nD) N · mm\n\n**Answer:** B\n**Explanation:** Modulus of elasticity E = Stress / Strain. Stress is measured in N/mm² and strain is dimensionless.`
+    `# Kerala PSC AE Civil 2025 - Q1\n\nWhat is the SI unit of modulus of elasticity (Young's Modulus)?\n\nA) Newton (N)\nB) N/mm² (or Pascal, Pa)\nC) mm / N\nD) N · mm\n\n**Answer:** B\n**Explanation:** Modulus of elasticity E = Stress / Strain. Stress is measured in N/mm² and strain is dimensionless.`,
   );
   const [submitted, setSubmitted] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -29,18 +33,22 @@ function ContributePage() {
               <span className="text-white/30 text-base">»</span> Transmission Accepted
             </h1>
             <p className="font-mono text-[11px] tracking-widest text-slate-500 uppercase leading-relaxed">
-              Your data has been successfully injected into the community queue. 
-              Verification algorithms are processing structural components.
+              Your data has been successfully injected into the community queue. Verification
+              algorithms are processing structural components.
             </p>
           </div>
           <div className="pt-12 mt-12 border-t-[0.5px] border-white/5 space-y-4">
             <button
+              type="button"
               onClick={() => setSubmitted(false)}
               className="w-full font-mono uppercase tracking-widest text-[10px] h-12 bg-transparent text-white hover:bg-white hover:text-black border-[0.5px] border-white/20 transition-all rounded-none"
             >
               Initialize New Submission
             </button>
-            <a href="/" className="flex items-center justify-center w-full font-mono uppercase tracking-widest text-[9px] text-slate-500 hover:text-white transition-colors h-12">
+            <a
+              href="/"
+              className="flex items-center justify-center w-full font-mono uppercase tracking-widest text-[9px] text-slate-500 hover:text-white transition-colors h-12"
+            >
               Return to Core
             </a>
           </div>
@@ -57,10 +65,13 @@ function ContributePage() {
           <div className="col-span-1 md:col-span-3 lg:col-span-3 border-r border-slate-900/50 pr-6 space-y-12 h-full hidden md:block">
             <div>
               <h2 className="text-white tracking-tighter text-3xl font-light mb-6">
-                GROW<br/>THE INDEX.
+                GROW
+                <br />
+                THE INDEX.
               </h2>
               <p className="font-mono text-[10px] uppercase text-slate-500 tracking-widest leading-relaxed">
-                Empower thousands of students by injecting raw verified exam papers into our structural datasets.
+                Empower thousands of students by injecting raw verified exam papers into our
+                structural datasets.
               </p>
             </div>
             <div className="pt-12 border-t border-slate-900/50">
@@ -68,12 +79,10 @@ function ContributePage() {
                 <div className="w-1.5 h-1.5 bg-emerald-500 animate-pulse" />
                 SYSTEM READY
               </div>
-              <p className="font-mono text-xs text-slate-600 uppercase">
-                Awaiting Data Vector
-              </p>
+              <p className="font-mono text-xs text-slate-600 uppercase">Awaiting Data Vector</p>
             </div>
           </div>
-          
+
           <div className="col-span-1 md:col-span-9 lg:col-span-8 md:pl-6 pb-24">
             <form
               onSubmit={(e) => {
@@ -87,13 +96,17 @@ function ContributePage() {
                 <h3 className="font-mono text-xs text-slate-500 tracking-[0.2em] uppercase border-b border-slate-900 pb-4">
                   01 / Metadata Identity
                 </h3>
-                
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-12">
                   <div className="flex flex-col gap-4">
-                    <label className="font-mono text-[10px] text-slate-500 tracking-widest uppercase">
+                    <label
+                      htmlFor="contribute-origin-authority"
+                      className="font-mono text-[10px] text-slate-500 tracking-widest uppercase"
+                    >
                       Origin Authority <span className="text-white">*</span>
                     </label>
                     <input
+                      id="contribute-origin-authority"
                       required
                       className="bg-transparent border-b border-slate-700 outline-none text-xl font-light text-white placeholder-slate-800 pb-3 transition-colors focus:border-white"
                       placeholder="e.g. Kerala PSC"
@@ -101,20 +114,28 @@ function ContributePage() {
                   </div>
 
                   <div className="flex flex-col gap-4">
-                    <label className="font-mono text-[10px] text-slate-500 tracking-widest uppercase">
+                    <label
+                      htmlFor="contribute-classification"
+                      className="font-mono text-[10px] text-slate-500 tracking-widest uppercase"
+                    >
                       Classification / Post Name
                     </label>
                     <input
+                      id="contribute-classification"
                       className="bg-transparent border-b border-slate-700 outline-none text-xl font-light text-white placeholder-slate-800 pb-3 transition-colors focus:border-white"
                       placeholder="e.g. Assistant Engineer"
                     />
                   </div>
 
                   <div className="flex flex-col gap-4">
-                    <label className="font-mono text-[10px] text-slate-500 tracking-widest uppercase">
+                    <label
+                      htmlFor="contribute-year"
+                      className="font-mono text-[10px] text-slate-500 tracking-widest uppercase"
+                    >
                       Temporal Stamp (Year)
                     </label>
                     <input
+                      id="contribute-year"
                       type="number"
                       min="1990"
                       max="2030"
@@ -124,10 +145,14 @@ function ContributePage() {
                   </div>
 
                   <div className="flex flex-col gap-4">
-                    <label className="font-mono text-[10px] text-slate-500 tracking-widest uppercase">
+                    <label
+                      htmlFor="contribute-domain-sector"
+                      className="font-mono text-[10px] text-slate-500 tracking-widest uppercase"
+                    >
                       Domain Sector
                     </label>
                     <input
+                      id="contribute-domain-sector"
                       className="bg-transparent border-b border-slate-700 outline-none text-xl font-light text-white placeholder-slate-800 pb-3 transition-colors focus:border-white"
                       placeholder="e.g. Civil Engineering"
                     />
@@ -141,7 +166,7 @@ function ContributePage() {
                   <h3 className="font-mono text-xs text-slate-500 tracking-[0.2em] uppercase">
                     02 / Content Payload
                   </h3>
-                  
+
                   <div className="font-mono text-[10px] tracking-widest flex gap-6 uppercase">
                     <button
                       type="button"
@@ -163,7 +188,9 @@ function ContributePage() {
                 {tab === "markdown" ? (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="flex flex-col relative group">
-                      <div className="absolute top-4 right-4 font-mono text-[9px] text-slate-600 uppercase">Input Node</div>
+                      <div className="absolute top-4 right-4 font-mono text-[9px] text-slate-600 uppercase">
+                        Input Node
+                      </div>
                       <textarea
                         value={markdownText}
                         onChange={(e) => setMarkdownText(e.target.value)}
@@ -172,9 +199,11 @@ function ContributePage() {
                         placeholder="Insert Prepora markdown blocks..."
                       />
                     </div>
-                    
+
                     <div className="flex flex-col relative">
-                      <div className="absolute top-4 right-4 font-mono text-[9px] text-emerald-500/50 uppercase">Render Output</div>
+                      <div className="absolute top-4 right-4 font-mono text-[9px] text-emerald-500/50 uppercase">
+                        Render Output
+                      </div>
                       <div className="w-full bg-[#0a0c10] border border-slate-800/50 p-6 min-h-[300px]">
                         <div className="whitespace-pre-wrap text-sm text-slate-300 font-sans leading-relaxed">
                           {markdownText}
@@ -183,20 +212,36 @@ function ContributePage() {
                     </div>
                   </div>
                 ) : (
+                  // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop has no keyboard equivalent; the accessible upload path is the label+input pair rendered inside it.
                   <div
-                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOver(true);
+                    }}
                     onDragLeave={() => setDragOver(false)}
                     className={`border border-dashed transition-all p-20 flex flex-col items-center justify-center cursor-pointer ${
-                      dragOver ? "border-white bg-white/5" : "border-slate-800 bg-[#030406] hover:border-slate-600"
+                      dragOver
+                        ? "border-white bg-white/5"
+                        : "border-slate-800 bg-[#030406] hover:border-slate-600"
                     }`}
                   >
                     <Upload className="w-8 h-8 text-slate-700 mb-6" />
-                    <span className="font-mono text-xs text-white uppercase tracking-widest mb-4">DRAG & DROP SECURE PDF</span>
+                    <span className="font-mono text-xs text-white uppercase tracking-widest mb-4">
+                      DRAG & DROP SECURE PDF
+                    </span>
                     <span className="font-mono text-[10px] text-slate-500 uppercase tracking-widest max-w-[200px] text-center">
                       Auto-parsing engine engaged. Max chunk limit 20MB.
                     </span>
-                    <input type="file" accept="application/pdf" className="sr-only" id="pdf-upload" />
-                    <label htmlFor="pdf-upload" className="mt-10 border border-slate-700 px-6 py-2 font-mono text-[10px] text-slate-400 hover:text-white uppercase tracking-widest hover:border-white transition-colors cursor-pointer">
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="sr-only"
+                      id="pdf-upload"
+                    />
+                    <label
+                      htmlFor="pdf-upload"
+                      className="mt-10 border border-slate-700 px-6 py-2 font-mono text-[10px] text-slate-400 hover:text-white uppercase tracking-widest hover:border-white transition-colors cursor-pointer"
+                    >
                       Select Object
                     </label>
                   </div>
@@ -206,7 +251,8 @@ function ContributePage() {
               {/* Execution */}
               <div className="pt-16 border-t border-slate-900 flex flex-col md:flex-row items-center justify-between gap-8">
                 <span className="font-mono text-[9px] text-slate-600 uppercase tracking-widest flex items-center gap-3">
-                  <span className="w-1 h-3 bg-slate-600 block" /> Subject To Manual Validation By Core Operators
+                  <span className="w-1 h-3 bg-slate-600 block" /> Subject To Manual Validation By
+                  Core Operators
                 </span>
                 <button
                   type="submit"
@@ -215,7 +261,6 @@ function ContributePage() {
                   Execute Upload
                 </button>
               </div>
-
             </form>
           </div>
         </section>

@@ -1,6 +1,15 @@
-import React, { useState, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Search, ChevronRight, BookOpen, Sparkles, Filter, ArrowUpRight, Zap, Target, BarChart2, CheckCircle2, Award } from "lucide-react";
+import {
+  ArrowUpRight,
+  Award,
+  BarChart2,
+  BookOpen,
+  CheckCircle2,
+  Search,
+  Sparkles,
+  Zap,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/topics/$topicSlug")({
   head: ({ params }) => {
@@ -8,7 +17,10 @@ export const Route = createFileRoute("/topics/$topicSlug")({
     return {
       meta: [
         { title: `${name} — Topic Knowledge Index | Prepora` },
-        { name: "description", content: `Master ${name} with previous-year exam questions, verified step-by-step explanations, key formulas, and topic analytics.` },
+        {
+          name: "description",
+          content: `Master ${name} with previous-year exam questions, verified step-by-step explanations, key formulas, and topic analytics.`,
+        },
         { property: "og:title", content: `${name} — Exam Questions & Formula Index | Prepora` },
       ],
     };
@@ -142,9 +154,21 @@ const SOM_QUESTIONS: QuestionItem[] = [
 const TOPIC_FORMULAS = [
   { name: "Hooke's Law", formula: "σ = E · ε", note: "Valid up to Proportional Limit" },
   { name: "Flexure Formula", formula: "M / I = σ / y = E / R", note: "Pure bending condition" },
-  { name: "Torsion Equation", formula: "T / J = τ / r = G · θ / L", note: "Circular cross sections" },
-  { name: "Elongation of Tapered Bar", formula: "δ = (4 · P · L) / (π · E · d₁ · d₂)", note: "Axial force P" },
-  { name: "Mohr's Circle Radius", formula: "R = √[((σ_x - σ_y)/2)² + τ_xy²]", note: "Max shear stress τ_max" },
+  {
+    name: "Torsion Equation",
+    formula: "T / J = τ / r = G · θ / L",
+    note: "Circular cross sections",
+  },
+  {
+    name: "Elongation of Tapered Bar",
+    formula: "δ = (4 · P · L) / (π · E · d₁ · d₂)",
+    note: "Axial force P",
+  },
+  {
+    name: "Mohr's Circle Radius",
+    formula: "R = √[((σ_x - σ_y)/2)² + τ_xy²]",
+    note: "Max shear stress τ_max",
+  },
 ];
 
 const EXAM_DISTRIBUTION = [
@@ -156,7 +180,7 @@ const EXAM_DISTRIBUTION = [
 function TopicPage() {
   const { topicSlug } = Route.useParams();
   const name = topicSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  
+
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("ALL");
   const [selectedExam, setSelectedExam] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -164,10 +188,13 @@ function TopicPage() {
   // Filter questions based on controls
   const filteredQuestions = useMemo(() => {
     return SOM_QUESTIONS.filter((q) => {
-      const matchDiff = selectedDifficulty === "ALL" || q.difficulty.toUpperCase() === selectedDifficulty;
-      const matchExam = selectedExam === "ALL" || q.exam.toUpperCase().includes(selectedExam.toUpperCase());
-      const matchSearch = searchQuery.trim() === "" || 
-        q.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      const matchDiff =
+        selectedDifficulty === "ALL" || q.difficulty.toUpperCase() === selectedDifficulty;
+      const matchExam =
+        selectedExam === "ALL" || q.exam.toUpperCase().includes(selectedExam.toUpperCase());
+      const matchSearch =
+        searchQuery.trim() === "" ||
+        q.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
         q.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
         q.exam.toLowerCase().includes(searchQuery.toLowerCase());
       return matchDiff && matchExam && matchSearch;
@@ -176,10 +203,12 @@ function TopicPage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-      
       {/* Navigation & Context Action Header */}
       <div className="px-6 pt-10 flex justify-between items-center max-w-[1300px] mx-auto mb-12">
-        <Link to="/subjects" className="font-mono text-xs tracking-widest text-slate-500 hover:text-white transition-colors flex items-center gap-2">
+        <Link
+          to="/subjects"
+          className="font-mono text-xs tracking-widest text-slate-500 hover:text-white transition-colors flex items-center gap-2"
+        >
           ← BACK TO SUBJECTS MATRIX
         </Link>
         <Link
@@ -192,14 +221,23 @@ function TopicPage() {
       </div>
 
       <main className="max-w-[1300px] mx-auto px-6">
-        
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-16 border-b border-slate-900 pb-4 flex items-center flex-wrap gap-y-2">
-          <Link to="/" className="hover:text-white transition-colors">ROOT</Link>
+          <Link to="/" className="hover:text-white transition-colors">
+            ROOT
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
-          <Link to="/subjects" className="hover:text-white transition-colors">SUBJECTS</Link>
+          <Link to="/subjects" className="hover:text-white transition-colors">
+            SUBJECTS
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
-          <Link to="/subjects/$subjectSlug" params={{ subjectSlug: "civil-engineering" }} className="hover:text-white transition-colors">CIVIL ENGINEERING</Link>
+          <Link
+            to="/subjects/$subjectSlug"
+            params={{ subjectSlug: "civil-engineering" }}
+            className="hover:text-white transition-colors"
+          >
+            CIVIL ENGINEERING
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
           <span className="text-white">{name.toUpperCase()}</span>
         </div>
@@ -216,12 +254,15 @@ function TopicPage() {
                 {name}
               </h1>
               <p className="font-mono text-xs tracking-widest text-slate-400 uppercase leading-relaxed max-w-2xl">
-                Structural stress-strain relations, elastic constants, flexural and torsional mechanics, and principal stress analysis.
+                Structural stress-strain relations, elastic constants, flexural and torsional
+                mechanics, and principal stress analysis.
               </p>
             </div>
-            
+
             <div className="font-mono text-xs text-slate-500 tracking-widest uppercase text-left lg:text-right shrink-0 border-l lg:border-l-0 lg:border-r border-slate-900 pl-4 lg:pl-0 lg:pr-6 py-2">
-              <div className="text-white text-lg font-light mb-1">{SOM_QUESTIONS.length} VERIFIED QUESTIONS</div>
+              <div className="text-white text-lg font-light mb-1">
+                {SOM_QUESTIONS.length} VERIFIED QUESTIONS
+              </div>
               <div className="text-slate-500">28 FORMULA CARDS · 8 EXAM SOURCES</div>
             </div>
           </div>
@@ -234,8 +275,12 @@ function TopicPage() {
               <span>TOTAL VOLUME</span>
               <BookOpen className="w-3.5 h-3.5 text-slate-600" />
             </div>
-            <div className="text-2xl text-white font-light tracking-tight">{SOM_QUESTIONS.length} Qs</div>
-            <div className="font-mono text-[10px] text-emerald-400 mt-2 tracking-wider">+12 Added this paper</div>
+            <div className="text-2xl text-white font-light tracking-tight">
+              {SOM_QUESTIONS.length} Qs
+            </div>
+            <div className="font-mono text-[10px] text-emerald-400 mt-2 tracking-wider">
+              +12 Added this paper
+            </div>
           </div>
 
           <div className="p-5 border border-slate-900 bg-slate-950/40 rounded-none">
@@ -244,7 +289,9 @@ function TopicPage() {
               <Award className="w-3.5 h-3.5 text-slate-600" />
             </div>
             <div className="text-2xl text-amber-400 font-light tracking-tight">HIGH (18%)</div>
-            <div className="font-mono text-[10px] text-slate-500 mt-2 tracking-wider">Top yield in Civil Papers</div>
+            <div className="font-mono text-[10px] text-slate-500 mt-2 tracking-wider">
+              Top yield in Civil Papers
+            </div>
           </div>
 
           <div className="p-5 border border-slate-900 bg-slate-950/40 rounded-none">
@@ -252,8 +299,12 @@ function TopicPage() {
               <span>FORMULA CARDS</span>
               <Sparkles className="w-3.5 h-3.5 text-slate-600" />
             </div>
-            <div className="text-2xl text-white font-light tracking-tight">{TOPIC_FORMULAS.length} Key</div>
-            <div className="font-mono text-[10px] text-blue-400 mt-2 tracking-wider">Annotated equations</div>
+            <div className="text-2xl text-white font-light tracking-tight">
+              {TOPIC_FORMULAS.length} Key
+            </div>
+            <div className="font-mono text-[10px] text-blue-400 mt-2 tracking-wider">
+              Annotated equations
+            </div>
           </div>
 
           <div className="p-5 border border-slate-900 bg-slate-950/40 rounded-none">
@@ -262,19 +313,18 @@ function TopicPage() {
               <CheckCircle2 className="w-3.5 h-3.5 text-slate-600" />
             </div>
             <div className="text-2xl text-emerald-400 font-light tracking-tight">100%</div>
-            <div className="font-mono text-[10px] text-slate-500 mt-2 tracking-wider">Peer-reviewed solutions</div>
+            <div className="font-mono text-[10px] text-slate-500 mt-2 tracking-wider">
+              Peer-reviewed solutions
+            </div>
           </div>
         </section>
 
         {/* Main Content Layout (Left Question Stream, Right Analytical Sidebar) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-          
           {/* Left Column (Main Questions Stream) */}
           <div className="lg:col-span-8">
-            
             {/* Filter & Controls Matrix */}
             <div className="mb-10 space-y-6 border-b border-slate-900 pb-8">
-              
               {/* Search Bar */}
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
@@ -288,12 +338,14 @@ function TopicPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                
                 {/* Difficulty Filters */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mr-2">DIFFICULTY:</span>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mr-2">
+                    DIFFICULTY:
+                  </span>
                   {["ALL", "EASY", "MEDIUM", "HARD"].map((diff) => (
                     <button
+                      type="button"
                       key={diff}
                       onClick={() => setSelectedDifficulty(diff)}
                       className={`font-mono text-[11px] uppercase tracking-wider px-3 py-1 border transition-colors ${
@@ -309,7 +361,9 @@ function TopicPage() {
 
                 {/* Exam Filter */}
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">EXAM:</span>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
+                    EXAM:
+                  </span>
                   <select
                     value={selectedExam}
                     onChange={(e) => setSelectedExam(e.target.value)}
@@ -328,7 +382,8 @@ function TopicPage() {
             {/* Questions Header */}
             <div className="flex justify-between items-center mb-6">
               <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-500">
-                // Question Archive ({filteredQuestions.length})
+                {/* Question Archive ( */}
+                {filteredQuestions.length})
               </h2>
               <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
                 Showing {filteredQuestions.length} of {SOM_QUESTIONS.length} entries
@@ -339,8 +394,11 @@ function TopicPage() {
             <div className="border-t-2 border-slate-900 border-b-2 divide-y divide-slate-900/60">
               {filteredQuestions.length === 0 ? (
                 <div className="py-16 text-center">
-                  <p className="font-mono text-sm text-slate-500 mb-2">No matching questions found.</p>
+                  <p className="font-mono text-sm text-slate-500 mb-2">
+                    No matching questions found.
+                  </p>
                   <button
+                    type="button"
                     onClick={() => {
                       setSelectedDifficulty("ALL");
                       setSelectedExam("ALL");
@@ -352,7 +410,7 @@ function TopicPage() {
                   </button>
                 </div>
               ) : (
-                filteredQuestions.map((q, idx) => (
+                filteredQuestions.map((q, _idx) => (
                   <Link
                     key={q.id}
                     to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
@@ -383,8 +441,8 @@ function TopicPage() {
                           q.difficulty === "Easy"
                             ? "border-emerald-900/60 text-emerald-400 bg-emerald-950/20"
                             : q.difficulty === "Medium"
-                            ? "border-blue-900/60 text-blue-400 bg-blue-950/20"
-                            : "border-amber-900/60 text-amber-400 bg-amber-950/20"
+                              ? "border-blue-900/60 text-blue-400 bg-blue-950/20"
+                              : "border-amber-900/60 text-amber-400 bg-amber-950/20"
                         }`}
                       >
                         {q.difficulty}
@@ -406,7 +464,7 @@ function TopicPage() {
                       ) : (
                         <div></div>
                       )}
-                      
+
                       <div className="flex items-center gap-1 text-slate-500 group-hover:text-white transition-colors tracking-widest uppercase text-[11px] ml-auto">
                         <span>ACCESS QUESTION</span>
                         <ArrowUpRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
@@ -420,19 +478,19 @@ function TopicPage() {
 
           {/* Right Column (Analytical Sidebar) */}
           <aside className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-slate-900 pt-12 lg:pt-0 lg:pl-12 space-y-12">
-            
             {/* PRACTICE CTA CARD */}
             <div className="p-6 border border-slate-800 bg-slate-950/90 relative overflow-hidden">
               <div className="absolute -right-8 -top-8 w-24 h-24 bg-blue-500/10 rounded-full blur-xl pointer-events-none"></div>
-              
+
               <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-blue-400 mb-3 flex items-center gap-2">
                 <Zap className="w-3.5 h-3.5" />
                 <span>INTERACTIVE ENGINE</span>
               </div>
-              
+
               <h3 className="text-xl text-white font-normal mb-3">Initiate Practice Mode</h3>
               <p className="text-xs text-slate-400 leading-relaxed font-mono mb-6">
-                Attempt all {SOM_QUESTIONS.length} strength of materials questions with real-time feedback and step-by-step verified solutions.
+                Attempt all {SOM_QUESTIONS.length} strength of materials questions with real-time
+                feedback and step-by-step verified solutions.
               </p>
 
               <Link
@@ -446,16 +504,19 @@ function TopicPage() {
             {/* TOPIC KEY FORMULAS */}
             <div>
               <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-500 mb-6 pb-2 border-b border-slate-900 flex items-center justify-between">
-                <span>// Key Formula Index</span>
+                <span>{/* Key Formula Index */}</span>
                 <Sparkles className="w-3.5 h-3.5 text-slate-600" />
               </h3>
 
               <div className="space-y-4">
                 {TOPIC_FORMULAS.map((item, i) => (
-                  <div key={i} className="p-4 border border-slate-900 bg-slate-950/40 hover:border-slate-800 transition-colors">
+                  <div
+                    key={item.name}
+                    className="p-4 border border-slate-900 bg-slate-950/40 hover:border-slate-800 transition-colors"
+                  >
                     <div className="font-mono text-[11px] text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                       <span>{item.name}</span>
-                      <span className="text-[10px] text-slate-600">0{i+1}</span>
+                      <span className="text-[10px] text-slate-600">0{i + 1}</span>
                     </div>
                     <div className="font-mono text-sm text-blue-400 mb-2 font-medium bg-slate-900/50 p-2 border border-slate-900">
                       {item.formula}
@@ -471,13 +532,13 @@ function TopicPage() {
             {/* EXAM DISTRIBUTION */}
             <div>
               <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-500 mb-6 pb-2 border-b border-slate-900 flex items-center justify-between">
-                <span>// Exam Distribution</span>
+                <span>{/* Exam Distribution */}</span>
                 <BarChart2 className="w-3.5 h-3.5 text-slate-600" />
               </h3>
 
               <div className="space-y-4 font-mono text-xs">
-                {EXAM_DISTRIBUTION.map((exam, i) => (
-                  <div key={i} className="space-y-1.5">
+                {EXAM_DISTRIBUTION.map((exam) => (
+                  <div key={exam.name} className="space-y-1.5">
                     <div className="flex justify-between text-[11px] text-slate-400">
                       <span>{exam.name}</span>
                       <span className="text-slate-500">{exam.percentage}%</span>
@@ -513,13 +574,9 @@ function TopicPage() {
                 </div>
               </dl>
             </div>
-
           </aside>
-
         </div>
-
       </main>
-
     </div>
   );
 }

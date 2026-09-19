@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { authClient } from "../../../lib/auth-client";
 
 export const Route = createFileRoute("/auth/signin")({
@@ -32,17 +32,16 @@ function SignInPage() {
         const detail = (result.error as any)?.details || (result.error as any)?.message;
         setErrorMsg(detail || "Failed to initiate Google Authentication. Please try again.");
       }
-
     } catch (err: any) {
       console.error("❌ [CLIENT SIGNIN EXCEPTION]:", err);
       setErrorMsg(
-        err?.message || "Authentication request failed. Please check server environment configuration."
+        err?.message ||
+          "Authentication request failed. Please check server environment configuration.",
       );
     } finally {
       setIsLoading(false);
     }
   };
-
 
   return (
     <div className="flex min-h-[80vh] items-center justify-center p-4">
@@ -65,6 +64,7 @@ function SignInPage() {
 
         <div className="space-y-4 pt-4">
           <button
+            type="button"
             disabled={isLoading}
             className="w-full font-mono uppercase tracking-widest text-[10px] h-12 bg-transparent text-white hover:bg-white hover:text-black border-[0.5px] border-white/20 transition-all rounded-none disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={handleGoogleSignIn}
@@ -82,4 +82,3 @@ function SignInPage() {
     </div>
   );
 }
-

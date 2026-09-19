@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { authClient } from "../../lib/auth-client";
-import { createServerFn } from "@tanstack/react-start";
 import { isAdminUser } from "@prepora/auth";
+import { createServerFn } from "@tanstack/react-start";
+import { useEffect, useState } from "react";
+import { authClient } from "../../lib/auth-client";
 
 export type UserRole = "admin" | "user" | "guest";
 

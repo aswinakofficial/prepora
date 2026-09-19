@@ -1,6 +1,6 @@
 import re
-from typing import List, Dict, Optional
-from bs4 import BeautifulSoup
+from typing import Dict, List
+
 
 class BaseScraperHandler:
     name: str = "BaseHandler"

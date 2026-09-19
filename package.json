@@ -8,7 +8,7 @@
     "dev": "concurrently -c \"blue,green\" -n \"WEB,PYTHON\" \"pnpm --filter @prepora/web dev\" \"cd apps/scraper && ./venv/bin/uvicorn main:app --reload --port 8000\"",
     "build": "pnpm --filter @prepora/web build",
     "start": "pnpm --filter @prepora/web start",
-    "lint": "pnpm -r lint",
+    "lint": "biome check .",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -25,6 +25,7 @@
     "content:report": "tsx scripts/content-report.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@cloudflare/workers-types": "^5.20260901.1",
     "@playwright/test": "^1.49.0",
     "concurrently": "^10.0.5",

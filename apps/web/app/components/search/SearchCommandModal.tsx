@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { X } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import type React from "react";
+import { useEffect, useState } from "react";
 
 interface SearchCommandModalProps {
   isOpen: boolean;
@@ -66,11 +66,10 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
 
       <div className="relative w-full max-w-4xl bg-[#06080a] border border-slate-800 shadow-2xl flex flex-col md:h-auto h-full max-h-[85vh]">
-        
         {/* Top Control Bar */}
         <div className="flex justify-between items-center border-b border-slate-800/80 p-4 font-mono text-[10px] uppercase tracking-widest text-slate-500">
           <span>Global Scan Engine</span>
-          <button onClick={onClose} className="hover:text-white transition-colors">
+          <button type="button" onClick={onClose} className="hover:text-white transition-colors">
             [ CLOSE ]
           </button>
         </div>
@@ -85,7 +84,6 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Query indices..."
               className="w-full bg-transparent text-slate-100 placeholder-slate-700 text-3xl font-light outline-none border-none focus:ring-0"
-              autoFocus
             />
             {query && (
               <button
@@ -100,7 +98,6 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
 
         {/* Structural Results Grid */}
         <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-3 divide-y-2 md:divide-y-0 md:divide-x-2 divide-slate-900 text-sm">
-          
           {/* Exams Column */}
           <div className="p-8">
             <h3 className="font-mono text-xs uppercase tracking-[0.2em] text-slate-600 mb-8 pb-2 border-b border-slate-900">
@@ -109,6 +106,7 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
             <div className="flex flex-col gap-6">
               {SAMPLE_SUGGESTIONS.exams.map((exam) => (
                 <button
+                  type="button"
                   key={exam.slug}
                   onClick={() => handleSelectExam(exam.slug)}
                   className="group text-left"
@@ -130,9 +128,10 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
               Topic Clusters
             </h3>
             <div className="flex flex-col gap-6">
-              {SAMPLE_SUGGESTIONS.topics.map((topic, i) => (
+              {SAMPLE_SUGGESTIONS.topics.map((topic) => (
                 <button
-                  key={i}
+                  type="button"
+                  key={topic.name}
                   onClick={() => {
                     navigate({ to: "/search", search: { q: topic.name } as any });
                     onClose();
@@ -156,9 +155,10 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
               Direct Queries
             </h3>
             <div className="flex flex-col gap-6">
-              {SAMPLE_SUGGESTIONS.questions.map((q, i) => (
+              {SAMPLE_SUGGESTIONS.questions.map((q) => (
                 <button
-                  key={i}
+                  type="button"
+                  key={q.text}
                   onClick={() => {
                     navigate({ to: "/search", search: { q: q.text } as any });
                     onClose();
@@ -175,7 +175,6 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
               ))}
             </div>
           </div>
-
         </div>
 
         {/* Footer info bar */}

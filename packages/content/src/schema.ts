@@ -32,16 +32,12 @@ export type QuestionOption = z.infer<typeof QuestionOptionSchema>;
 
 export const MCQAnswerSchema = z.object({
   type: z.literal("mcq"),
-  correctKey: z
-    .string()
-    .regex(/^[A-Za-z]$/, "Correct key must be a single letter"),
+  correctKey: z.string().regex(/^[A-Za-z]$/, "Correct key must be a single letter"),
 });
 
 export const MultipleCorrectAnswerSchema = z.object({
   type: z.literal("multiple_correct"),
-  correctKeys: z
-    .array(z.string().regex(/^[A-Za-z]$/))
-    .min(1, "At least one correct key required"),
+  correctKeys: z.array(z.string().regex(/^[A-Za-z]$/)).min(1, "At least one correct key required"),
 });
 
 export const TextAnswerSchema = z.object({

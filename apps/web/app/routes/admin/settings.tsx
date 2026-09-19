@@ -1,17 +1,10 @@
-import React, { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { 
-  ArrowLeft, 
-  Trash2,
-  AlertTriangle,
-  CheckCircle,
-  Database,
-  ShieldAlert
-} from "lucide-react";
-import { verifyAdminFn } from "../admin";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { orpc } from "../../../lib/orpc";
 import { WIPE_DATABASE_CONFIRMATION_PHRASE } from "@prepora/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { AlertTriangle, CheckCircle, Database, ShieldAlert } from "lucide-react";
+import React, { useState } from "react";
+import { orpc } from "../../../lib/orpc";
+import { verifyAdminFn } from "../admin";
 
 export const Route = createFileRoute("/admin/settings")({
   beforeLoad: async () => {
@@ -23,14 +16,14 @@ export const Route = createFileRoute("/admin/settings")({
 
 function AdminSettingsPage() {
   const queryClient = useQueryClient();
-  const { data: stats, isLoading } = useQuery(orpc.admin.getDatabaseStats.queryOptions());
+  const { data: stats } = useQuery(orpc.admin.getDatabaseStats.queryOptions());
   const { mutateAsync: wipeDatabase } = useMutation(orpc.admin.wipeDatabase.mutationOptions());
   const [isWiping, setIsWiping] = useState(false);
   const [wipeStatus, setWipeStatus] = useState<"idle" | "success" | "error">("idle");
   const [wipeErrorMsg, setWipeErrorMsg] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState("");
-  
+
   // Local state for UI responsiveness
   const [localStats, setLocalStats] = useState({
     scrapedBatches: 0,
@@ -70,16 +63,17 @@ function AdminSettingsPage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-      
       {/* Top Navigation */}
       <div className="px-6 pt-10 flex justify-between items-center max-w-[1400px] mx-auto mb-12">
-        <Link to="/admin" className="font-mono text-xs tracking-widest text-slate-500 hover:text-white transition-colors flex items-center gap-2">
+        <Link
+          to="/admin"
+          className="font-mono text-xs tracking-widest text-slate-500 hover:text-white transition-colors flex items-center gap-2"
+        >
           ← BACK TO ADMIN OVERVIEW
         </Link>
       </div>
 
       <main className="max-w-[1400px] mx-auto px-6">
-        
         {/* Page Header */}
         <div className="mb-12 border-b border-slate-800 pb-8">
           <div className="flex items-center gap-3 mb-4">
@@ -90,28 +84,33 @@ function AdminSettingsPage() {
               <span className="font-mono text-[10px] uppercase tracking-widest text-blue-500 font-semibold mb-1">
                 SYSTEM CONFIGURATION
               </span>
-              <h1 className="text-4xl text-white font-medium tracking-tight">
-                Database Settings
-              </h1>
+              <h1 className="text-4xl text-white font-medium tracking-tight">Database Settings</h1>
             </div>
           </div>
           <p className="font-mono text-xs text-slate-500 max-w-2xl mt-4">
-            Manage your Prepora foundational data. Changes made here bypass the review queues and directly mutate production tables. Proceed with caution.
+            Manage your Prepora foundational data. Changes made here bypass the review queues and
+            directly mutate production tables. Proceed with caution.
           </p>
         </div>
 
         {/* Database Status Panel */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
           <div className="p-6 bg-slate-900/40 border border-slate-800/80">
-            <p className="font-mono text-[10px] uppercase text-slate-500 mb-2">Total Live Questions</p>
+            <p className="font-mono text-[10px] uppercase text-slate-500 mb-2">
+              Total Live Questions
+            </p>
             <p className="text-3xl text-white font-mono">{localStats.liveQuestions}</p>
           </div>
           <div className="p-6 bg-slate-900/40 border border-slate-800/80">
-            <p className="font-mono text-[10px] uppercase text-slate-500 mb-2">Total Extracted Options</p>
+            <p className="font-mono text-[10px] uppercase text-slate-500 mb-2">
+              Total Extracted Options
+            </p>
             <p className="text-3xl text-slate-300 font-mono">{localStats.options}</p>
           </div>
           <div className="p-6 bg-slate-900/40 border border-slate-800/80">
-            <p className="font-mono text-[10px] uppercase text-slate-500 mb-2">Crawled Batches (Pending)</p>
+            <p className="font-mono text-[10px] uppercase text-slate-500 mb-2">
+              Crawled Batches (Pending)
+            </p>
             <p className="text-3xl text-blue-400 font-mono">{localStats.scrapedBatches}</p>
           </div>
         </div>
@@ -120,22 +119,25 @@ function AdminSettingsPage() {
         <section className="border border-rose-950 bg-rose-950/10 max-w-4xl pt-2">
           <div className="flex items-center gap-2 px-6 py-4 border-b border-rose-950/50">
             <ShieldAlert className="w-4 h-4 text-rose-500" />
-            <h2 className="font-mono text-xs text-rose-500 uppercase tracking-widest font-semibold">Danger Zone</h2>
+            <h2 className="font-mono text-xs text-rose-500 uppercase tracking-widest font-semibold">
+              Danger Zone
+            </h2>
           </div>
-          
+
           <div className="p-8 md:p-10 flex flex-col md:flex-row md:items-start justify-between gap-10">
             <div className="max-w-md">
-              <h3 className="text-xl text-white font-medium mb-3">
-                Wipe entire database
-              </h3>
+              <h3 className="text-xl text-white font-medium mb-3">Wipe entire database</h3>
               <p className="text-sm text-slate-400 leading-relaxed mb-6 font-mono">
-                This will permanently delete all crawled batches in the queue, all published questions, all options, and all answers. 
-                <br /><br />
-                Your application state will be completely reset. You will need to scrape and re-publish data to populate the platform again.
+                This will permanently delete all crawled batches in the queue, all published
+                questions, all options, and all answers.
+                <br />
+                <br />
+                Your application state will be completely reset. You will need to scrape and
+                re-publish data to populate the platform again.
                 <strong className="block mt-4 text-rose-400">This action cannot be undone.</strong>
               </p>
             </div>
-            
+
             <div className="flex-shrink-0 flex flex-col items-end">
               {!showConfirm ? (
                 <button
@@ -154,7 +156,11 @@ function AdminSettingsPage() {
 
                   <div className="space-y-2">
                     <p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">
-                      Type <span className="text-rose-400 font-semibold">{WIPE_DATABASE_CONFIRMATION_PHRASE}</span> to confirm
+                      Type{" "}
+                      <span className="text-rose-400 font-semibold">
+                        {WIPE_DATABASE_CONFIRMATION_PHRASE}
+                      </span>{" "}
+                      to confirm
                     </p>
                     <input
                       type="text"
@@ -169,7 +175,10 @@ function AdminSettingsPage() {
                   <div className="grid grid-cols-2 gap-2 mt-4">
                     <button
                       type="button"
-                      onClick={() => { setShowConfirm(false); setConfirmText(""); }}
+                      onClick={() => {
+                        setShowConfirm(false);
+                        setConfirmText("");
+                      }}
                       className="px-3 py-2 border border-slate-700 bg-slate-800 text-slate-300 font-mono text-[10px] uppercase tracking-wider hover:bg-slate-700 transition"
                     >
                       Cancel
@@ -201,7 +210,6 @@ function AdminSettingsPage() {
             </div>
           </div>
         </section>
-        
       </main>
     </div>
   );

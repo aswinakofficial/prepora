@@ -6,7 +6,7 @@ import { auth } from "../../lib/auth";
 export const getSession = createServerFn({ method: "GET" }).handler(async () => {
   const request = getWebRequest();
   if (!request) return null;
-  
+
   return auth.api.getSession({
     headers: request.headers,
   });
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/settings")({
 
 function SettingsPage() {
   const { session } = Route.useRouteContext();
-  
+
   return (
     <div className="flex min-h-[80vh] flex-col p-8">
       <div className="space-y-4">

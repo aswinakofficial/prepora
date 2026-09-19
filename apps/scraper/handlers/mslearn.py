@@ -1,8 +1,11 @@
 import re
-from typing import List, Dict
-from bs4 import BeautifulSoup
+from typing import Dict, List
 from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
+
 from .base import BaseScraperHandler
+
 
 class MsLearnHandler(BaseScraperHandler):
     name = "Microsoft Learn"
@@ -97,7 +100,9 @@ class MsLearnHandler(BaseScraperHandler):
                                     href = urljoin(target_url, href)
                                 
                                 # Avoid duplicates
-                                if not any(l["url"] == href for l in additional_reading_links):
+                                if not any(
+                                    link["url"] == href for link in additional_reading_links
+                                ):
                                     additional_reading_links.append({
                                         "text": link_text,
                                         "url": href

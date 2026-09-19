@@ -1,12 +1,12 @@
 import asyncio
 import os
 import re
-from dotenv import load_dotenv
+import sys
+
 import requests
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from playwright.async_api import async_playwright
-
-import sys
 
 from db import insert_scraped_question
 
@@ -119,7 +119,7 @@ async def launch_interactive_auth_session():
     Waits for full OAuth redirect completion back to learn.microsoft.com and persists session state.
     """
     os.makedirs(USER_DATA_DIR, exist_ok=True)
-    print(f"[MS LEARN AUTH]: Launching Playwright browser for Microsoft Account authentication...")
+    print("[MS LEARN AUTH]: Launching Playwright browser for Microsoft Account authentication...")
     print(f"[MS LEARN AUTH]: Profile directory: {USER_DATA_DIR}")
 
     msal_auth_url = (
@@ -143,7 +143,7 @@ async def launch_interactive_auth_session():
         )
         page = context.pages[0] if context.pages else await context.new_page()
         
-        print(f"[MS LEARN AUTH]: Opening Microsoft OAuth login page...")
+        print("[MS LEARN AUTH]: Opening Microsoft OAuth login page...")
         await page.goto(msal_auth_url)
         await page.wait_for_timeout(3000)
 
@@ -451,7 +451,9 @@ async def crawl_ms_learn_assessment(
                                         href = f"https://learn.microsoft.com/{href}"
                                     
                                     # Avoid duplicates
-                                    if not any(l["url"] == href for l in additional_reading_links):
+                                    if not any(
+                                        link["url"] == href for link in additional_reading_links
+                                    ):
                                         additional_reading_links.append({
                                             "text": link_text,
                                             "url": href
@@ -460,7 +462,7 @@ async def crawl_ms_learn_assessment(
                             if additional_reading_links:
                                 log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Found additional reading section with {len(additional_reading_links)} links")
                                 break
-                    except:
+                    except Exception:
                         pass
                 
                 # If still no links found, do a broader search for resource-like links
@@ -480,12 +482,14 @@ async def crawl_ms_learn_assessment(
                                             href = f"https://learn.microsoft.com{href}"
                                         
                                         # Avoid duplicates
-                                        if not any(l["url"] == href for l in additional_reading_links):
+                                        if not any(
+                                            link["url"] == href for link in additional_reading_links
+                                        ):
                                             additional_reading_links.append({
                                                 "text": link_text,
                                                 "url": href
                                             })
-                            except:
+                            except Exception:
                                 pass
                         
                         if additional_reading_links:

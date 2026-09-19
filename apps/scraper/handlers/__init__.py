@@ -1,10 +1,11 @@
 from typing import List
+
 from .base import BaseScraperHandler
 from .examtopics import ExamTopicsHandler
-from .sanfoundry import SanfoundryHandler
+from .generic import GenericHandler
 from .indiabix import IndiaBixHandler
 from .mslearn import MsLearnHandler
-from .generic import GenericHandler
+from .sanfoundry import SanfoundryHandler
 
 # Registry of registered site handlers in priority order
 HANDLERS: List[BaseScraperHandler] = [

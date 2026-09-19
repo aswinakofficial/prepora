@@ -1,6 +1,6 @@
-import { pgTable, text, integer, boolean, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { id, timestamps, publishingStatusEnum } from "./shared.ts";
+import { index, integer, pgTable, text } from "drizzle-orm/pg-core";
+import { id, publishingStatusEnum, timestamps } from "./shared.ts";
 
 // ─── Exams ────────────────────────────────────────────────────────────────────
 
@@ -94,9 +94,7 @@ export const questionSets = pgTable(
     sourceType: text("source_type"),
     sourceDocument: text("source_document"),
     sourceUrl: text("source_url"),
-    publicationStatus: publishingStatusEnum("publication_status")
-      .notNull()
-      .default("draft"),
+    publicationStatus: publishingStatusEnum("publication_status").notNull().default("draft"),
     publishedAt: text("published_at"),
     ...timestamps,
   },
@@ -125,12 +123,19 @@ export const subjectsRelations = relations(subjects, ({ many }) => ({
 }));
 
 export const topicsRelations = relations(topics, ({ one, many }) => ({
-  parent: one(topics, { fields: [topics.parentId], references: [topics.id], relationName: "parentChild" }),
+  parent: one(topics, {
+    fields: [topics.parentId],
+    references: [topics.id],
+    relationName: "parentChild",
+  }),
   children: many(topics, { relationName: "parentChild" }),
   subject: one(subjects, { fields: [topics.subjectId], references: [subjects.id] }),
 }));
 
-export const questionSetsRelations = relations(questionSets, ({ one, many }) => ({
-  examVariant: one(examVariants, { fields: [questionSets.examVariantId], references: [examVariants.id] }),
+export const questionSetsRelations = relations(questionSets, ({ one }) => ({
+  examVariant: one(examVariants, {
+    fields: [questionSets.examVariantId],
+    references: [examVariants.id],
+  }),
   subject: one(subjects, { fields: [questionSets.subjectId], references: [subjects.id] }),
 }));

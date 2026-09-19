@@ -1,6 +1,5 @@
-import React, { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CheckCircle2, XCircle, FileText, ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/admin/contributions")({
   head: () => ({ meta: [{ title: "Contribution Queue — Admin — Prepora" }] }),
@@ -67,9 +66,7 @@ function AdminContributionsPage() {
   const selectedSubmission = submissions.find((s) => s.id === selectedId) || submissions[0];
 
   const handleAction = (id: string, newStatus: "approved" | "rejected") => {
-    setSubmissions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s))
-    );
+    setSubmissions((prev) => prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)));
   };
 
   const filteredSubmissions = submissions.filter((s) => {
@@ -105,11 +102,12 @@ function AdminContributionsPage() {
         <div className="flex items-center gap-2">
           {(["pending", "approved", "all"] as const).map((f) => (
             <button
+              type="button"
               key={f}
               onClick={() => setFilter(f)}
               className={`px-4 py-1.5 text-[10px] font-mono uppercase tracking-widest transition-all ${
-                filter === f 
-                  ? "bg-slate-200 text-black border border-slate-200" 
+                filter === f
+                  ? "bg-slate-200 text-black border border-slate-200"
                   : "bg-transparent border border-slate-800 text-slate-500 hover:text-white hover:border-slate-600"
               }`}
             >
@@ -124,52 +122,53 @@ function AdminContributionsPage() {
         {/* Submissions List Sidebar */}
         <div className="lg:col-span-4 border-r border-slate-900 flex flex-col h-[calc(100vh-109px)]">
           <div className="p-8 border-b border-slate-900">
-             <div className="text-[10px] font-mono uppercase text-slate-600 tracking-[0.3em]">
-               // Transaction Log
-             </div>
+            <div className="text-[10px] font-mono uppercase text-slate-600 tracking-[0.3em]">
+              {/* Transaction Log */}
+            </div>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto scrollbar-hide divide-y divide-slate-900">
             {filteredSubmissions.map((sub) => {
-               const isSelected = selectedId === sub.id;
-               return (
-                  <button
-                    key={sub.id}
-                    onClick={() => setSelectedId(sub.id)}
-                    className={`w-full text-left p-8 transition-colors group ${
-                      isSelected ? "bg-slate-900/40" : "hover:bg-slate-900/20"
-                    }`}
-                  >
-                    <div className="flex flex-col gap-6">
-                       <div className="flex items-center justify-between">
-                         <span className="text-[10px] font-mono tracking-widest text-[#00ff9d] uppercase">
-                           Node_ID: {sub.id}
-                         </span>
-                         <span
-                           className={`text-[10px] font-mono uppercase tracking-widest ${
-                             sub.status === "pending"
-                               ? "text-amber-500"
-                               : sub.status === "approved"
-                               ? "text-emerald-500"
-                               : "text-red-500"
-                           }`}
-                         >
-                           [{sub.status}]
-                         </span>
-                       </div>
-                       
-                       <div>
-                         <h3 className="text-lg text-white font-light uppercase tracking-wide group-hover:text-white transition-colors mb-2">
-                           {sub.exam} — {sub.variant}
-                         </h3>
-                         <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 tracking-widest uppercase">
-                           <span>{sub.subject}</span>
-                           <span>{sub.year}</span>
-                         </div>
-                       </div>
+              const isSelected = selectedId === sub.id;
+              return (
+                <button
+                  type="button"
+                  key={sub.id}
+                  onClick={() => setSelectedId(sub.id)}
+                  className={`w-full text-left p-8 transition-colors group ${
+                    isSelected ? "bg-slate-900/40" : "hover:bg-slate-900/20"
+                  }`}
+                >
+                  <div className="flex flex-col gap-6">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono tracking-widest text-[#00ff9d] uppercase">
+                        Node_ID: {sub.id}
+                      </span>
+                      <span
+                        className={`text-[10px] font-mono uppercase tracking-widest ${
+                          sub.status === "pending"
+                            ? "text-amber-500"
+                            : sub.status === "approved"
+                              ? "text-emerald-500"
+                              : "text-red-500"
+                        }`}
+                      >
+                        [{sub.status}]
+                      </span>
                     </div>
-                  </button>
-               );
+
+                    <div>
+                      <h3 className="text-lg text-white font-light uppercase tracking-wide group-hover:text-white transition-colors mb-2">
+                        {sub.exam} — {sub.variant}
+                      </h3>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 tracking-widest uppercase">
+                        <span>{sub.subject}</span>
+                        <span>{sub.year}</span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
             })}
           </div>
         </div>
@@ -179,55 +178,61 @@ function AdminContributionsPage() {
           {/* Metadata Matrix */}
           <div className="p-8 md:p-12 border-b border-slate-900">
             <div className="flex flex-col md:flex-row md:items-start justify-between gap-12">
-               <div>
-                  <div className="text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-6">
-                    // Inspector Metadata
-                  </div>
-                  <h2 className="text-3xl md:text-5xl font-light text-white uppercase tracking-tighter leading-none mb-6">
-                    {selectedSubmission.exam} <br/> {selectedSubmission.variant}
-                  </h2>
-                  <div className="flex flex-col gap-4">
-                     <span className="text-[10px] font-mono tracking-widest uppercase border-b border-slate-900/50 pb-2">
-                        <span className="text-slate-600">SRC: </span><span className="text-slate-300">{selectedSubmission.submittedBy}</span>
-                     </span>
-                     <span className="text-[10px] font-mono tracking-widest uppercase">
-                        <span className="text-slate-600">TIMESTAMP: </span><span className="text-slate-300">{selectedSubmission.submittedAt}</span> 
-                     </span>
-                  </div>
-               </div>
+              <div>
+                <div className="text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-6">
+                  {/* Inspector Metadata */}
+                </div>
+                <h2 className="text-3xl md:text-5xl font-light text-white uppercase tracking-tighter leading-none mb-6">
+                  {selectedSubmission.exam} <br /> {selectedSubmission.variant}
+                </h2>
+                <div className="flex flex-col gap-4">
+                  <span className="text-[10px] font-mono tracking-widest uppercase border-b border-slate-900/50 pb-2">
+                    <span className="text-slate-600">SRC: </span>
+                    <span className="text-slate-300">{selectedSubmission.submittedBy}</span>
+                  </span>
+                  <span className="text-[10px] font-mono tracking-widest uppercase">
+                    <span className="text-slate-600">TIMESTAMP: </span>
+                    <span className="text-slate-300">{selectedSubmission.submittedAt}</span>
+                  </span>
+                </div>
+              </div>
 
-               {/* Protocol Actions */}
-               <div className="shrink-0 flex flex-col gap-4 min-w-[240px]">
-                  {selectedSubmission.status === "pending" ? (
-                    <>
-                      <button
-                        onClick={() => handleAction(selectedSubmission.id, "approved")}
-                        className="w-full px-6 py-4 border border-emerald-500 hover:bg-emerald-500 text-emerald-500 hover:text-black font-mono text-xs tracking-widest uppercase transition-colors text-center"
-                      >
-                        APPROVE_COMMIT
-                      </button>
-                      <button
-                        onClick={() => handleAction(selectedSubmission.id, "rejected")}
-                        className="w-full px-6 py-4 border border-red-900 hover:border-red-500 hover:bg-red-950/20 text-red-500 font-mono text-xs tracking-widest uppercase transition-colors text-center"
-                      >
-                        REJECT_DISCARD
-                      </button>
-                    </>
-                  ) : (
-                    <div className="px-6 py-4 border border-slate-800 bg-slate-900/30 text-slate-500 font-mono text-xs tracking-widest uppercase text-center cursor-not-allowed">
-                       OPERATION EXECUTED
-                    </div>
-                  )}
-               </div>
+              {/* Protocol Actions */}
+              <div className="shrink-0 flex flex-col gap-4 min-w-[240px]">
+                {selectedSubmission.status === "pending" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAction(selectedSubmission.id, "approved")}
+                      className="w-full px-6 py-4 border border-emerald-500 hover:bg-emerald-500 text-emerald-500 hover:text-black font-mono text-xs tracking-widest uppercase transition-colors text-center"
+                    >
+                      APPROVE_COMMIT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAction(selectedSubmission.id, "rejected")}
+                      className="w-full px-6 py-4 border border-red-900 hover:border-red-500 hover:bg-red-950/20 text-red-500 font-mono text-xs tracking-widest uppercase transition-colors text-center"
+                    >
+                      REJECT_DISCARD
+                    </button>
+                  </>
+                ) : (
+                  <div className="px-6 py-4 border border-slate-800 bg-slate-900/30 text-slate-500 font-mono text-xs tracking-widest uppercase text-center cursor-not-allowed">
+                    OPERATION EXECUTED
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="p-8 md:p-12 flex flex-col lg:flex-row gap-12">
-            
             {/* Raw Buffer Output */}
             <div className="flex-1">
               <div className="flex items-center justify-between text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-8 border-b border-slate-900 pb-4">
-                <span>// Buffer: {selectedSubmission.type.toUpperCase()}</span>
+                <span>
+                  {/* Buffer: */}
+                  {selectedSubmission.type.toUpperCase()}
+                </span>
                 <span className="text-[#00ff9d]">SYNTAX_OK</span>
               </div>
 
@@ -238,26 +243,31 @@ function AdminContributionsPage() {
 
             {/* Diagnostic Sidebar */}
             <aside className="lg:w-80 shrink-0">
-               <div className="text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-8 border-b border-slate-900 pb-4">
-                 // System Diagnostics
-               </div>
-               
-               <ul className="space-y-6 font-mono text-[10px] tracking-widest uppercase">
-                 <li className="flex gap-4">
-                    <span className="text-[#00ff9d] shrink-0 mt-1">[OK]</span>
-                    <span className="text-slate-400 leading-snug">Structural integrity verified. One root node extracted.</span>
-                 </li>
-                 <li className="flex gap-4">
-                    <span className="text-[#00ff9d] shrink-0 mt-1">[OK]</span>
-                    <span className="text-slate-400 leading-snug">Resolution key located {'->'} Mapped to Option_B.</span>
-                 </li>
-                 <li className="flex gap-4">
-                    <span className="text-slate-600 shrink-0 mt-1">[--]</span>
-                    <span className="text-slate-600 leading-snug">Collision detection passed. 0 historical matches.</span>
-                 </li>
-               </ul>
+              <div className="text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-8 border-b border-slate-900 pb-4">
+                {/* System Diagnostics */}
+              </div>
+
+              <ul className="space-y-6 font-mono text-[10px] tracking-widest uppercase">
+                <li className="flex gap-4">
+                  <span className="text-[#00ff9d] shrink-0 mt-1">[OK]</span>
+                  <span className="text-slate-400 leading-snug">
+                    Structural integrity verified. One root node extracted.
+                  </span>
+                </li>
+                <li className="flex gap-4">
+                  <span className="text-[#00ff9d] shrink-0 mt-1">[OK]</span>
+                  <span className="text-slate-400 leading-snug">
+                    Resolution key located {"->"} Mapped to Option_B.
+                  </span>
+                </li>
+                <li className="flex gap-4">
+                  <span className="text-slate-600 shrink-0 mt-1">[--]</span>
+                  <span className="text-slate-600 leading-snug">
+                    Collision detection passed. 0 historical matches.
+                  </span>
+                </li>
+              </ul>
             </aside>
-            
           </div>
         </div>
       </div>

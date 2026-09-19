@@ -1,8 +1,10 @@
 import re
-from typing import List, Dict
+from typing import Dict, List
+
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+
 from .base import BaseScraperHandler
+
 
 class SanfoundryHandler(BaseScraperHandler):
     name = "Sanfoundry"

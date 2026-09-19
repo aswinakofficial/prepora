@@ -1,11 +1,14 @@
-import React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/subjects/")({
   head: () => ({
     meta: [
       { title: "Subjects — Prepora" },
-      { name: "description", content: "Browse exam questions by subject: Civil Engineering, Electronics, Computer Science, General Knowledge and more." },
+      {
+        name: "description",
+        content:
+          "Browse exam questions by subject: Civil Engineering, Electronics, Computer Science, General Knowledge and more.",
+      },
     ],
   }),
   component: SubjectsPage,
@@ -25,7 +28,10 @@ function SubjectsPage() {
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Back Context */}
       <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
-        <Link to="/" className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors">
+        <Link
+          to="/"
+          className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
+        >
           ← BACK TO INDEX
         </Link>
       </div>
@@ -33,7 +39,9 @@ function SubjectsPage() {
       <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-32 border-b border-slate-900 pb-4">
-          <Link to="/" className="hover:text-white transition-colors">ROOT</Link>
+          <Link to="/" className="hover:text-white transition-colors">
+            ROOT
+          </Link>
           <span className="mx-4 text-slate-700">/</span>
           <span className="text-slate-300">SUBJECT MATRIX</span>
         </div>
@@ -45,7 +53,8 @@ function SubjectsPage() {
               SUBJECT MATRIX
             </h1>
             <p className="font-mono text-xs tracking-widest text-slate-500 uppercase leading-relaxed">
-              Global taxonomy of disciplines. Select a root node to traverse corresponding sub-topics and raw exam vectors.
+              Global taxonomy of disciplines. Select a root node to traverse corresponding
+              sub-topics and raw exam vectors.
             </p>
           </div>
         </div>
@@ -67,7 +76,7 @@ function SubjectsPage() {
                   NODE {String(idx + 1).padStart(2, "0")}
                 </span>
               </div>
-              
+
               <div className="mt-auto">
                 <h2 className="text-2xl text-slate-300 group-hover:text-white font-light tracking-tight mb-4 transition-colors">
                   {s.name}
@@ -75,7 +84,9 @@ function SubjectsPage() {
                 <div className="font-mono text-[10px] uppercase tracking-widest text-slate-500 flex items-center gap-4">
                   <span>{s.count.toLocaleString()} VOL</span>
                   <span className="text-slate-800">/</span>
-                  <span className="text-slate-600 group-hover:text-slate-400 transition-colors">ENTER →</span>
+                  <span className="text-slate-600 group-hover:text-slate-400 transition-colors">
+                    ENTER →
+                  </span>
                 </div>
               </div>
             </Link>

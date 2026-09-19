@@ -1,21 +1,14 @@
-import {
-  pgTable,
-  text,
-  boolean,
-  integer,
-  index,
-  timestamp,
-} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import {
-  id,
-  timestamps,
-  adminRoleEnum,
-  contributionStatusEnum,
-  commentStatusEnum,
-  reportReasonEnum,
-} from "./shared.ts";
+import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { questions } from "./questions.ts";
+import {
+  adminRoleEnum,
+  commentStatusEnum,
+  contributionStatusEnum,
+  id,
+  reportReasonEnum,
+  timestamps,
+} from "./shared.ts";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 

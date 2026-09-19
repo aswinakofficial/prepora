@@ -1,15 +1,11 @@
-import {
-  createStartHandler,
-  defaultStreamHandler,
-} from "@tanstack/react-start/server";
-import { getRouterManifest } from "@tanstack/react-start/router-manifest";
-import { createRouter } from "./router.ts";
-import { getAuth, setAuth } from "../lib/auth";
-import { defineEventHandler, toWebRequest } from "vinxi/http";
-
 import { RPCHandler } from "@orpc/server/fetch";
 import { appRouter } from "@prepora/api";
 import { getDb, sql } from "@prepora/db";
+import { getRouterManifest } from "@tanstack/react-start/router-manifest";
+import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
+import { defineEventHandler, toWebRequest } from "vinxi/http";
+import { getAuth, setAuth } from "../lib/auth";
+import { createRouter } from "./router.ts";
 
 // createRouter must be called fresh per request — see the note on the
 // createRouter factory itself in router.ts for why.
@@ -71,7 +67,7 @@ export default defineEventHandler(async (event) => {
         prefix: "/api/orpc",
         context: {
           reqHeaders: request.headers,
-        }
+        },
       });
       return response || new Response("Not Found", { status: 404 });
     } catch (err: any) {
@@ -101,7 +97,7 @@ export default defineEventHandler(async (event) => {
         timestamp: new Date().toISOString(),
         database,
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }
 
@@ -116,16 +112,23 @@ export default defineEventHandler(async (event) => {
         // no environment/secret diagnostics are attached to it (a prior
         // version did this for any URL containing "health" or "debug",
         // see finding #19).
-        const details = await response.clone().text().catch(() => "");
-        console.error(`[AUTH] ${response.status} on ${pathname}${details ? `: ${details.slice(0, 500)}` : ""}`);
+        const details = await response
+          .clone()
+          .text()
+          .catch(() => "");
+        console.error(
+          `[AUTH] ${response.status} on ${pathname}${details ? `: ${details.slice(0, 500)}` : ""}`,
+        );
       }
 
       return response;
     } catch (err: any) {
       console.error(`[AUTH] Unhandled exception on ${pathname}:`, err);
       return new Response(
-        JSON.stringify({ error: { message: "Authentication service error.", code: "AUTH_SERVER_EXCEPTION" } }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: { message: "Authentication service error.", code: "AUTH_SERVER_EXCEPTION" },
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
   }

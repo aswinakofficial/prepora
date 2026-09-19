@@ -5,9 +5,9 @@
  * Validates all Markdown files in content/ against the Prepora schema.
  * Exits with code 1 if any file has errors.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { parsePreporaMarkdown, validateParsedQuestionSet, formatReport } from "@prepora/content";
+import { formatReport, parsePreporaMarkdown, validateParsedQuestionSet } from "@prepora/content";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const CONTENT_DIR = join(ROOT, "content");
