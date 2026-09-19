@@ -56,7 +56,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/dummy
 
-  python:
+  scraper:
     name: Lint, test (scraper)
     runs-on: ubuntu-latest
     defaults:
@@ -75,3 +75,56 @@ jobs:
 
       - run: ruff check .
       - run: pytest
+
+  pipeline:
+    name: Lint, test, schema-conformance (pipeline)
+    runs-on: ubuntu-latest
+    # A real, migrated Postgres is what makes the schema-conformance test in
+    # apps/pipeline/test_conformance.py meaningful (docs/roadmap/engineering-roadmap.md item 11,
+    # the R1 mitigation in docs/architecture/prepora-next-level-plan.md §20) — this is a fresh,
+    # credential-free service container scoped to this one job, not a live database secret.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prepora
+          POSTGRES_PASSWORD: prepora
+          POSTGRES_DB: prepora_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://prepora:prepora@localhost:5432/prepora_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm db:migrate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/pipeline/requirements.txt
+
+      - run: pip install -r requirements.txt
+        working-directory: apps/pipeline
+
+      - run: ruff check .
+        working-directory: apps/pipeline
+      - run: pytest
+        working-directory: apps/pipeline
