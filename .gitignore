@@ -4,3 +4,15 @@ node_modules/
 dist/
 .vinxi/
 .output/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Vendored reference clones — never commit third-party source into this repo
+reactive-resume-repo/
+
+# Stray build artifacts occasionally left by vinxi/vite in apps/web
+apps/web/app.config.timestamp_*.js
