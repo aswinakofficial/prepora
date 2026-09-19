@@ -28,14 +28,22 @@ Questions are separated by either:
 
 ## Frontmatter (YAML)
 
-All fields are required unless marked optional.
+All fields are required unless marked optional. See
+`docs/architecture/exam-domain-model.md` §13 for why `organization` and `exam` are now separate
+fields — `exam` names the exam itself (e.g. "Assistant Engineer"), never the body that conducts it.
 
 ```yaml
 ---
-id: KPSC-AE-2025-CIVIL          # Stable set ID (REQUIRED)
-exam: kerala-psc                  # Exam slug (REQUIRED)
-exam_variant: assistant-engineer  # Variant slug (REQUIRED)
-year: 2025                        # Publication year (REQUIRED where known)
+id: KPSC-AE-2025-CIVIL            # Stable set ID (REQUIRED)
+organization: kerala-psc          # Organization slug (optional) — the body that conducts the exam
+exam: assistant-engineer          # Exam slug (REQUIRED) — the exam itself, not the organization
+exam_variant: civil               # Variant slug (REQUIRED)
+year: 2025                        # Publication year (optional — resolves into the exam session)
+session_label:                    # Optional — for sessions `year` alone can't disambiguate (a
+                                   # certification version, a university semester string)
+shift:                            # Optional — GATE-style shift disambiguation, e.g. "Forenoon Shift 1"
+course:                           # Optional — university/school only; resolves a course by
+                                   # (exam_variant, subject)
 subject: civil-engineering        # Subject slug (REQUIRED)
 title: Kerala PSC AE 2025 Civil Engineering
 source_type: official             # official|user_submitted|editorial|generated|unknown
@@ -43,6 +51,9 @@ source_url: https://...           # Optional
 source_document: kpsc-ae-2025.pdf # Optional
 ---
 ```
+
+`exam_type` is deliberately not a frontmatter field — it belongs to the `exams` row (registered once
+per exam), not something a content author sets per file.
 
 ### Slug Format
 

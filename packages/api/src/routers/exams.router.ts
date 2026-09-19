@@ -1,107 +1,86 @@
 import { getDb } from "@prepora/db";
-import { questionSets, scrapedQuestions, subjects } from "@prepora/db/schema";
+import {
+  exams,
+  examTypes,
+  organizations,
+  questionSets,
+  scrapedQuestions,
+  subjects,
+} from "@prepora/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { publicProcedure } from "../context.js";
 
-function resolveExamMeta(sourceUrlOrSlug: string, scrapedMeta?: any) {
-  const s = (sourceUrlOrSlug || "").toLowerCase();
-  const scrapedLogo = scrapedMeta?.logoUrl || scrapedMeta?.badgeUrl;
+// ─── Scraped-content attribution ───────────────────────────────────────────
+// Replaces the deleted resolveExamMeta()/getExamDescription() — see
+// docs/architecture/exam-domain-model.md and docs/roadmap/engineering-roadmap.md item 10. Neither
+// function here knows about any specific exam; the actual matching data (organization, exam type,
+// title, logo, description, urlMatchPattern) lives in the exams/organizations/exam_types tables,
+// populated by packages/db/seed-exams.ts. A new exam is a row insert, not a code change.
 
-  if (s.includes("ab-100") || s.includes("agentic-ai")) {
-    return {
-      title: "AB-100: Agentic AI Business Solutions Architect",
-      slug: "ab-100-agentic-ai",
-      code: "MS-AB100",
-      examCode: "AB-100",
-      logoUrl:
-        scrapedLogo ||
-        "https://learn.microsoft.com/en-us/media/learn/certification/badges/agentic-ai-business-solutions-architect.svg",
-    };
-  }
-  if (
-    s.includes("ab-731") ||
-    s.includes("transformation-leader") ||
-    s.includes("ai-transformation-leader")
-  ) {
-    return {
-      title: "AB-731: Microsoft AI Transformation Leader",
-      slug: "ab-731-ai-transformation-leader",
-      code: "MS-AB731",
-      examCode: "AB-731",
-      logoUrl:
-        scrapedLogo ||
-        "https://learn.microsoft.com/en-us/media/learn/certification/badges/ai-transformation-leader.svg",
-    };
-  }
-  if (s.includes("ab-730") || s.includes("business-professional")) {
-    return {
-      title: "AB-730: Microsoft AI Business Professional",
-      slug: "ab-730-ai-business-professional",
-      code: "MS-AB730",
-      examCode: "AB-730",
-      logoUrl:
-        scrapedLogo ||
-        "https://learn.microsoft.com/en-us/media/learn/certification/badges/ai-business-professional.svg",
-    };
-  }
-  if (s.includes("az-900")) {
-    return {
-      title: "AZ-900: Microsoft Azure Fundamentals",
-      slug: "az-900-azure-fundamentals",
-      code: "MS-AZ900",
-      examCode: "AZ-900",
-      logoUrl:
-        scrapedLogo ||
-        "https://learn.microsoft.com/en-us/media/learn/certification/badges/microsoft-certified-fundamentals-badge.svg",
-    };
-  }
-  if (s.includes("ai-102")) {
-    return {
-      title: "AI-102: Designing and Implementing a Microsoft Azure AI Solution",
-      slug: "ai-102-azure-ai-solution",
-      code: "MS-AI102",
-      examCode: "AI-102",
-      logoUrl:
-        scrapedLogo ||
-        "https://learn.microsoft.com/en-us/media/learn/certification/badges/microsoft-certified-associate-badge.svg",
-    };
-  }
-  return {
-    title: scrapedMeta?.name || scrapedMeta?.officialTitle || "Microsoft Practice Assessment",
-    slug: "ms-learn-assessment",
-    code: "MS-CERT",
-    examCode: "MS-CERT",
-    logoUrl: scrapedLogo || null,
-  };
+type ExamWithRelations = Awaited<ReturnType<typeof loadExamsWithRelations>>[number];
+
+async function loadExamsWithRelations(db: ReturnType<typeof getDb>) {
+  return db
+    .select({
+      id: exams.id,
+      name: exams.name,
+      slug: exams.slug,
+      description: exams.description,
+      officialUrl: exams.officialUrl,
+      logoUrl: exams.logoUrl,
+      urlMatchPattern: exams.urlMatchPattern,
+      status: exams.status,
+      organizationName: organizations.name,
+      examTypeSlug: examTypes.slug,
+      examTypeLabel: examTypes.label,
+    })
+    .from(exams)
+    .innerJoin(organizations, eq(exams.organizationId, organizations.id))
+    .innerJoin(examTypes, eq(exams.examTypeId, examTypes.id));
 }
 
-function getExamDescription(
-  slug: string,
-  title: string,
-  metaDesc?: string,
-  subject?: string,
-): string {
-  if (metaDesc && metaDesc.length > 20) return metaDesc;
-  if (slug.includes("ab-100")) {
-    return "As an AI-first solution architect, you lead the transformation of enterprise operations by envisioning and implementing AI-powered architecture, multi-agent orchestration with Copilot Studio, Azure AI Foundry, and Model Context Protocol (MCP).";
+// Matches a scraped question's source URL (or its declared `exam` metadata field, as a fallback)
+// against every registered exam's urlMatchPattern — a comma-separated list of substrings, the same
+// OR-of-substrings the deleted resolveExamMeta() used, now stored as data instead of code.
+function matchExamByUrl(
+  sourceUrlOrHint: string,
+  examsList: ExamWithRelations[],
+): ExamWithRelations | null {
+  const haystack = (sourceUrlOrHint || "").toLowerCase();
+  for (const exam of examsList) {
+    if (!exam.urlMatchPattern) continue;
+    const patterns = exam.urlMatchPattern.split(",").map((p) => p.trim());
+    if (patterns.some((p) => p && haystack.includes(p))) return exam;
   }
-  if (slug.includes("ab-731")) {
-    return "Demonstrate technical leadership in driving organizational AI adoption, establishing responsible AI governance frameworks, aligning generative AI capabilities with business strategies, and measuring ROI across enterprise Microsoft Copilot implementations.";
-  }
-  if (slug.includes("ab-730")) {
-    return "Validate foundational business expertise in leveraging Microsoft AI tools, Copilot capabilities, prompt engineering principles, and ethical AI practices to enhance productivity and business decision-making.";
-  }
-  if (slug.includes("az-900")) {
-    return "Demonstrate foundational knowledge of cloud concepts, Azure services, workloads, security, privacy, pricing, and support for cloud architecture.";
-  }
-  if (slug.includes("ai-102")) {
-    return "Design, build, and deploy Azure AI solutions leveraging Azure Cognitive Services, Azure OpenAI, computer vision, natural language processing, and conversational AI.";
-  }
-  return `Official Microsoft Learn Practice Assessment and comprehensive question repository covering ${subject || title}.`;
+  return null;
+}
+
+function describeExam(exam: ExamWithRelations, scrapedMetaDescription?: string): string {
+  if (scrapedMetaDescription && scrapedMetaDescription.length > 20) return scrapedMetaDescription;
+  return (
+    exam.description || `Official practice assessment and question repository for ${exam.name}.`
+  );
 }
 
 export const examsRouter = {
+  // Sources apps/web/app/routes/exams/index.tsx's category filter tabs from real data instead of
+  // a hand-maintained, independently-drifting frontend constant (exam-domain-model.md §2,
+  // Limitation 2).
+  listTypes: publicProcedure
+    .route({
+      method: "GET",
+      path: "/exams/types",
+      summary: "List exam types (categories)",
+    })
+    .handler(async () => {
+      const db = getDb();
+      return db
+        .select({ slug: examTypes.slug, label: examTypes.label })
+        .from(examTypes)
+        .orderBy(examTypes.label);
+    }),
+
   list: publicProcedure
     .route({
       method: "GET",
@@ -118,79 +97,93 @@ export const examsRouter = {
     )
     .handler(async ({ input }) => {
       const db = getDb();
+      const registeredExams = await loadExamsWithRelations(db);
+
       const approvedScraped = await db
         .select()
         .from(scrapedQuestions)
         .where(eq(scrapedQuestions.status, "approved"))
         .catch(() => []);
 
-      const dbQuestionSets = await db
-        .select()
-        .from(questionSets)
-        .limit(input?.limit || 100)
-        .catch(() => []);
-
-      // Group approved Microsoft Learn sets by unique Exam container
-      const examMap = new Map<string, any>();
+      // Group approved scraped content by the real exam it's attributed to.
+      const examMap = new Map<string, ReturnType<typeof buildScrapedExamSummary>>();
 
       approvedScraped.forEach((s) => {
         const pd = (s.parsedData as any) || {};
         const meta = pd.metadata || {};
         const items = pd.extractedElements || [];
 
-        const metaInfo = resolveExamMeta(s.sourceUrl || meta.exam || "", meta);
-        const title = metaInfo.title;
-        const slug = metaInfo.slug;
-        const code = metaInfo.code;
-        const subjectName = meta.subject || items[0]?.subject || "Microsoft Certification";
-        const description = getExamDescription(
-          slug,
-          title,
-          meta.description || meta.examDescription,
-          subjectName,
-        );
+        const matched = matchExamByUrl(s.sourceUrl || meta.exam || "", registeredExams);
+        if (!matched) return; // unattributable scraped content is not shown as a listable exam
 
-        if (!examMap.has(slug)) {
-          examMap.set(slug, {
-            id: s.id,
-            name: title,
-            title: title,
-            slug: slug,
-            organization: "Microsoft Learn",
-            org: "Microsoft Learn",
-            category: "CERTIFICATION",
-            domain: "CERTIFICATION",
-            code: code,
-            logoUrl: metaInfo.logoUrl,
-            stableContentId: code,
-            count: items.length || 5,
-            officialUrl: s.sourceUrl,
-            subject: subjectName,
-            description: description,
-          });
+        if (!examMap.has(matched.slug)) {
+          examMap.set(matched.slug, buildScrapedExamSummary(matched, s, meta, items));
         }
       });
 
-      const msLearnExams = Array.from(examMap.values());
+      function buildScrapedExamSummary(
+        exam: ExamWithRelations,
+        s: (typeof approvedScraped)[number],
+        meta: any,
+        items: any[],
+      ) {
+        return {
+          id: s.id,
+          name: exam.name,
+          title: exam.name,
+          slug: exam.slug,
+          organization: exam.organizationName,
+          org: exam.organizationName,
+          category: exam.examTypeLabel.toUpperCase(),
+          categorySlug: exam.examTypeSlug,
+          domain: exam.examTypeLabel.toUpperCase(),
+          code: exam.slug.toUpperCase(),
+          logoUrl: exam.logoUrl,
+          stableContentId: exam.slug.toUpperCase(),
+          count: items.length || 5,
+          officialUrl: exam.officialUrl || s.sourceUrl,
+          subject: meta.subject || items[0]?.subject || undefined,
+          description: describeExam(exam, meta.description || meta.examDescription),
+        };
+      }
 
-      const formattedDbSets = dbQuestionSets.map((qs) => ({
-        id: qs.id,
-        name: qs.title,
-        title: qs.title,
-        slug: qs.slug,
-        organization: "Kerala PSC / State Board",
-        org: "State Board",
-        category: "STATE PSC",
-        domain: "STATE PSC",
-        code: qs.slug.toUpperCase(),
-        stableContentId: qs.slug.toUpperCase(),
-        count: 100,
-        officialUrl: qs.sourceUrl || "",
-        description: qs.description || "",
-      }));
+      const scrapedExams = Array.from(examMap.values());
 
-      const combined = [...msLearnExams, ...formattedDbSets];
-      return combined;
+      // Real catalog join via the relational query API — replaces the old hardcoded
+      // "Kerala PSC / State Board" label (exam-domain-model.md §2, Limitation 3) with the actual
+      // organization and exam type each question set's exam belongs to.
+      const dbQuestionSetsWithCatalog = await db.query.questionSets.findMany({
+        limit: input?.limit || 100,
+        with: {
+          examVariant: {
+            with: {
+              exam: { with: { organization: true, examType: true } },
+            },
+          },
+        },
+      });
+
+      const formattedDbSets = dbQuestionSetsWithCatalog.map((qs) => {
+        const exam = qs.examVariant.exam;
+        return {
+          id: qs.id,
+          name: qs.title,
+          title: qs.title,
+          slug: qs.slug,
+          organization: exam.organization.name,
+          org: exam.organization.name,
+          category: exam.examType.label.toUpperCase(),
+          categorySlug: exam.examType.slug,
+          domain: exam.examType.label.toUpperCase(),
+          code: qs.slug.toUpperCase(),
+          stableContentId: qs.slug.toUpperCase(),
+          count: 100,
+          officialUrl: qs.sourceUrl || exam.officialUrl || "",
+          description: qs.description || "",
+        };
+      });
+
+      return [...scrapedExams, ...formattedDbSets];
     }),
 
   getBySlug: publicProcedure
@@ -206,31 +199,29 @@ export const examsRouter = {
     )
     .handler(async ({ input }) => {
       const db = getDb();
-      const approvedScraped = await db
-        .select()
-        .from(scrapedQuestions)
-        .where(eq(scrapedQuestions.status, "approved"))
-        .catch(() => []);
+      const registeredExams = await loadExamsWithRelations(db);
+      const targetExam = registeredExams.find((e) => e.slug === input.examSlug);
 
-      const targetMeta = resolveExamMeta(input.examSlug);
+      if (targetExam) {
+        const approvedScraped = await db
+          .select()
+          .from(scrapedQuestions)
+          .where(eq(scrapedQuestions.status, "approved"))
+          .catch(() => []);
 
-      // Find matching scraped question sets for this exam
-      const matchingScraped = approvedScraped.filter((s) => {
-        const itemMeta = resolveExamMeta(s.sourceUrl);
-        return itemMeta.slug === targetMeta.slug;
-      });
+        const matchingScraped = approvedScraped.filter(
+          (s) => matchExamByUrl(s.sourceUrl || "", registeredExams)?.slug === targetExam.slug,
+        );
 
-      if (matchingScraped.length > 0) {
         const matchedScraped = matchingScraped[0];
-        const pd = (matchedScraped.parsedData as any) || {};
+        const pd = ((matchedScraped?.parsedData as any) || {}) as any;
         const meta = pd.metadata || {};
         const questionsList = pd.extractedElements || [];
-        const title = targetMeta.title;
+        const title = targetExam.name;
 
-        // Only keep questions that carry real extracted options — a question
-        // with no options is not renderable, and inventing plausible-looking
-        // options for it would be fabricating content (see
-        // docs/architecture/prepora-next-level-plan.md finding #3).
+        // Only keep questions that carry real extracted options — a question with no options is
+        // not renderable, and inventing plausible-looking options for it would be fabricating
+        // content (see docs/architecture/prepora-next-level-plan.md finding #3).
         const normalizedQuestions = (questionsList || [])
           .map((q: any, i: number) => {
             let opts: { key: string; text: string }[] = [];
@@ -261,22 +252,17 @@ export const examsRouter = {
                 ? q.additionalReadingLinks
                 : [],
               additionalReading: q.additionalReading || q.additionalReadings || undefined,
-              topic: q.topic || meta.subject || "Agentic AI Architectures",
+              topic: q.topic || meta.subject || targetExam.name,
             };
           })
           .filter((q: any) => q.text && q.options.length >= 2 && q.correctKey);
 
-        // If real extraction yielded nothing usable, the exam page shows an
-        // honest empty state rather than fabricated sample questions.
+        // If real extraction yielded nothing usable, the exam page shows an honest empty state
+        // rather than fabricated sample questions.
         const finalQuestions = normalizedQuestions;
-        const examDescription = getExamDescription(
-          targetMeta.slug,
-          title,
-          meta.description || meta.examDescription,
-          meta.subject,
-        );
+        const examDescription = describeExam(targetExam, meta.description || meta.examDescription);
 
-        const questionSets = matchingScraped.map((s, sIdx) => {
+        const setsList = matchingScraped.map((s, sIdx) => {
           const sPd = (s.parsedData as any) || {};
           const sQuestions = sPd.extractedElements || [];
           const setNumStr = String(sIdx + 1).padStart(2, "0");
@@ -286,45 +272,40 @@ export const examsRouter = {
               : `${title} — Question Set 01`;
 
           return {
-            id: s.id || `${targetMeta.slug}-set-${sIdx + 1}`,
+            id: s.id || `${targetExam.slug}-set-${sIdx + 1}`,
             title: setTitle,
             description: sPd.metadata?.description || "",
             questionCount: sQuestions.length || finalQuestions.length,
-            tag: "MICROSOFT LEARN OFFICIAL",
-            code: `2026/MS-LEARN-${setNumStr}`,
-            year: 2026,
+            tag: `${targetExam.organizationName.toUpperCase()} OFFICIAL`,
+            code: `${targetExam.slug.toUpperCase()}-${setNumStr}`,
             status: "PUBLISHED",
           };
         });
 
         return {
-          id: matchedScraped.id,
+          id: matchedScraped?.id || targetExam.id,
           name: title,
-          slug: targetMeta.slug,
-          organization: "Microsoft Learn",
-          category: "CERTIFICATION",
-          officialUrl: matchedScraped.sourceUrl,
-          logoUrl: targetMeta.logoUrl || meta.logoUrl || meta.badgeUrl || null,
+          slug: targetExam.slug,
+          organization: targetExam.organizationName,
+          category: targetExam.examTypeLabel.toUpperCase(),
+          categorySlug: targetExam.examTypeSlug,
+          officialUrl: matchedScraped?.sourceUrl || targetExam.officialUrl,
+          logoUrl: targetExam.logoUrl || meta.logoUrl || meta.badgeUrl || null,
           description: examDescription,
           questions: finalQuestions,
           questionCount: finalQuestions.length,
-          sets: questionSets,
-          subjects: [
-            {
-              slug: "agentic-ai-architecture",
-              name: meta.subject || "Microsoft Agentic AI Architectures",
-              questionCount: finalQuestions.length,
-              subtopics: 4,
-            },
-          ],
-          papers: [
-            {
-              year: 2026,
-              title: `${title} - Official Practice Assessment`,
-              questions: finalQuestions.length,
-              code: "2026/MS-LEARN",
-            },
-          ],
+          sets: setsList,
+          subjects: finalQuestions.length
+            ? [
+                {
+                  slug: (meta.subject || title).toLowerCase().replace(/\s+/g, "-"),
+                  name: meta.subject || title,
+                  questionCount: finalQuestions.length,
+                  subtopics: 4,
+                },
+              ]
+            : [],
+          papers: [],
         };
       }
 

@@ -17,6 +17,7 @@
     "db:check": "pnpm --filter @prepora/db db:check",
     "db:reset": "pnpm --filter @prepora/db db:reset",
     "db:studio": "pnpm --filter @prepora/db db:studio",
+    "db:seed-exams": "pnpm --filter @prepora/db db:seed-exams",
     "content:validate": "tsx scripts/validate-content.ts",
     "content:import": "tsx scripts/import-content.ts",
     "content:duplicates": "tsx scripts/check-duplicates.ts",

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { orpc } from "../../../lib/orpc";
 
@@ -29,22 +29,31 @@ export const Route = createFileRoute("/exams/")({
   component: ExamsPage,
 });
 
-const CATEGORIES = [
-  { id: "ALL", label: "ALL EXAMS" },
-  { id: "CERTIFICATION", label: "CERTIFICATION EXAMS" },
-  { id: "GOVERNMENT", label: "GOVERNMENT EXAMS" },
-  { id: "COMPETITIVE", label: "COMPETITIVE EXAMS" },
-  { id: "UNIVERSITY", label: "UNIVERSITY EXAMS" },
-];
-
 function ExamsPage() {
   const { category: queryCategory } = Route.useSearch();
   const navigate = useNavigate();
 
+  // Category tabs are sourced from the exam_types table (via orpc.exams.listTypes), not a
+  // hand-maintained frontend constant — see docs/architecture/exam-domain-model.md §2, Limitation
+  // 2, and docs/roadmap/engineering-roadmap.md item 10. A new exam type shows up here as soon as
+  // it's inserted, with no frontend code change.
+  const { data: examTypesData } = useQuery(orpc.exams.listTypes.queryOptions());
+
+  const CATEGORIES = useMemo(
+    () => [
+      { id: "ALL", label: "ALL EXAMS" },
+      ...(examTypesData || []).map((t) => ({
+        id: t.slug.toUpperCase(),
+        label: `${t.label.toUpperCase()} EXAMS`,
+      })),
+    ],
+    [examTypesData],
+  );
+
   const getInitialCategory = () => {
     if (!queryCategory) return "ALL";
     const normalized = queryCategory.toUpperCase();
-    const match = CATEGORIES.find((c) => c.id === normalized || c.id.includes(normalized));
+    const match = CATEGORIES.find((c) => c.id === normalized);
     return match ? match.id : "ALL";
   };
 
@@ -54,12 +63,12 @@ function ExamsPage() {
   useEffect(() => {
     if (queryCategory) {
       const normalized = queryCategory.toUpperCase();
-      const match = CATEGORIES.find((c) => c.id === normalized || c.id.includes(normalized));
+      const match = CATEGORIES.find((c) => c.id === normalized);
       if (match) {
         setSelectedCategory(match.id);
       }
     }
-  }, [queryCategory]);
+  }, [queryCategory, CATEGORIES]);
 
   const handleCategorySelect = (catId: string) => {
     setSelectedCategory(catId);
@@ -79,43 +88,17 @@ function ExamsPage() {
     name: dbExam.name || dbExam.title || "Subject",
     org: dbExam.org || dbExam.organization || "Microsoft Learn",
     category: (dbExam.category || dbExam.domain || "CERTIFICATION").toUpperCase(),
+    // The real exam_types.slug, joined server-side — this is what makes category filtering an
+    // exact match instead of the previous fragile substring guessing (e.g. "GATE"/"SSC" implying
+    // "COMPETITIVE"). Falls back to the display category for any legacy shape that lacks it.
+    categorySlug: (dbExam.categorySlug || dbExam.category || dbExam.domain || "").toUpperCase(),
     code: dbExam.code || dbExam.stableContentId || "EXT-000",
     count: dbExam.count !== undefined ? dbExam.count : 5,
     logoUrl: dbExam.logoUrl,
   }));
 
   const filteredExams = examsToRender.filter((exam) => {
-    const examCat = exam.category.toUpperCase();
-    let matchesCategory = false;
-
-    if (selectedCategory === "ALL") {
-      matchesCategory = true;
-    } else if (selectedCategory === "CERTIFICATION") {
-      matchesCategory =
-        examCat.includes("CERTIFICATION") ||
-        examCat.includes("MICROSOFT") ||
-        examCat.includes("AZURE");
-    } else if (selectedCategory === "GOVERNMENT") {
-      matchesCategory =
-        examCat.includes("GOVERNMENT") ||
-        examCat.includes("GOVT") ||
-        examCat.includes("PSC") ||
-        examCat.includes("STATE") ||
-        examCat.includes("CENTRAL");
-    } else if (selectedCategory === "COMPETITIVE") {
-      matchesCategory =
-        examCat.includes("COMPETITIVE") ||
-        examCat.includes("ENGINEERING") ||
-        examCat.includes("GATE") ||
-        examCat.includes("SSC");
-    } else if (selectedCategory === "UNIVERSITY") {
-      matchesCategory =
-        examCat.includes("UNIVERSITY") ||
-        examCat.includes("ACADEMIC") ||
-        examCat.includes("SEMESTER");
-    } else {
-      matchesCategory = examCat === selectedCategory;
-    }
+    const matchesCategory = selectedCategory === "ALL" || exam.categorySlug === selectedCategory;
 
     const matchesQuery =
       exam.name.toLowerCase().includes(filterQuery.toLowerCase()) ||
