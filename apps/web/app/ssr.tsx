@@ -3,7 +3,7 @@ import {
   defaultStreamHandler,
 } from "@tanstack/react-start/server";
 import { getRouterManifest } from "@tanstack/react-start/router-manifest";
-import { router } from "./router.ts";
+import { createRouter } from "./router.ts";
 import { getAuth, setAuth } from "../lib/auth";
 import { defineEventHandler, toWebRequest } from "vinxi/http";
 
@@ -11,8 +11,10 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { appRouter } from "@prepora/api";
 import { getDb, sql } from "@prepora/db";
 
+// createRouter must be called fresh per request — see the note on the
+// createRouter factory itself in router.ts for why.
 const startHandler = createStartHandler({
-  createRouter: () => router,
+  createRouter,
   getRouterManifest,
 })(defaultStreamHandler);
 
