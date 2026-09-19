@@ -12,6 +12,11 @@ from security import assert_safe_url, cors_allowed_origins, require_service_toke
 
 load_dotenv()
 
+# Importing settings validates required configuration (DATABASE_URL) immediately — this service
+# refuses to start at all rather than start in a state where its core job (persisting scraped
+# content) will silently fail on every request. See settings.py and roadmap item 7.
+import settings as _settings  # noqa: F401 — imported for its validation side effect
+
 # Every endpoint on this service requires a valid PIPELINE_SERVICE_TOKEN
 # bearer token (see security.py). There is no unauthenticated endpoint,
 # including /health — this service has no legitimate public caller.

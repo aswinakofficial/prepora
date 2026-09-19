@@ -29,8 +29,33 @@ export const createBetterAuthInstance = () => {
   const clientId = process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || (globalThis as any)?.GOOGLE_CLIENT_SECRET || "";
 
-  if (!secret) console.error("❌ [BETTER AUTH INIT ERROR] BETTER_AUTH_SECRET is explicitly empty!");
-  if (!clientId || !clientSecret) console.error("❌ [BETTER AUTH INIT ERROR] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is explicitly empty!");
+  // BETTER_AUTH_SECRET is required — it signs and encrypts sessions. A prior version logged this
+  // as an error and constructed the instance anyway with secret: "", which would silently sign
+  // every session with an empty string. See docs/architecture/prepora-next-level-plan.md finding
+  // #22 (the same "log and continue" permissiveness as the old db client fallback). getDb() below
+  // fails the same way if DATABASE_URL is missing, so that case is covered without repeating it here.
+  if (!secret) {
+    throw new Error(
+      "BETTER_AUTH_SECRET is not set. Copy .env.example to .env and set a random secret " +
+        "(min 32 chars: `openssl rand -hex 32`), or configure it in your deployment environment."
+    );
+  }
+
+  // Google sign-in is optional — email/password (enabled below) works without it. But *one*
+  // credential set without the other is a real misconfiguration, not an intentional choice, so
+  // that specific case still fails loudly rather than producing a Google provider that's half wired.
+  const hasClientId = Boolean(clientId);
+  const hasClientSecret = Boolean(clientSecret);
+  if (hasClientId !== hasClientSecret) {
+    throw new Error(
+      "Only one of GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET is set — both are required together, " +
+        "or neither (to disable Google sign-in). Check .env.example."
+    );
+  }
+  const googleConfigured = hasClientId && hasClientSecret;
+  if (!googleConfigured) {
+    console.warn("[AUTH] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set — Google sign-in is disabled; email/password sign-in still works.");
+  }
 
   return betterAuth({
     secret,
@@ -57,12 +82,9 @@ export const createBetterAuthInstance = () => {
     emailAndPassword: {
       enabled: true,
     },
-    socialProviders: {
-      google: {
-        clientId,
-        clientSecret,
-      },
-    },
+    socialProviders: googleConfigured
+      ? { google: { clientId, clientSecret } }
+      : {},
   });
 };
 
