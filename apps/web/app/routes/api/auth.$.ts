@@ -1,8 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createAPIFileRoute } from "@tanstack/react-start/api";
 import { setAuth, getAuth } from "../../../lib/auth";
 
-const handleAuth = async (event: any) => {
-  const request: Request = event?.request || event;
+const handleAuth = async (request: Request, event?: any) => {
   const url = new URL(request.url);
 
   // Synchronize Cloudflare environment variables across all context sources
@@ -36,9 +35,6 @@ const handleAuth = async (event: any) => {
     dbUrlLength: (process.env.DATABASE_URL || (globalThis as any)?.DATABASE_URL || "").length,
   };
 
-  console.log(`🔍 [AUTH API REQUEST] ${request.method} ${url.pathname}${url.search}`);
-  console.log(`🔍 [AUTH API ENV AUDIT]`, envAudit);
-
   // Return diagnostic audit for any URL containing "health" or "debug"
   if (url.pathname.includes("health") || url.pathname.includes("debug")) {
     return new Response(
@@ -63,13 +59,12 @@ const handleAuth = async (event: any) => {
   try {
     const auth = getAuth();
     const response = await auth.handler(request);
-    console.log(`🔍 [AUTH API RESPONSE STATUS] ${response.status} ${response.statusText}`);
-
+    
     if (!response.ok) {
       const cloned = response.clone();
       const errText = await cloned.text();
       console.error(`❌ [AUTH API FAILURE ${response.status}] Path: ${url.pathname} | Details:`, errText);
-
+      
       return new Response(
         JSON.stringify({
           error: {
@@ -107,11 +102,7 @@ const handleAuth = async (event: any) => {
   }
 };
 
-export const Route = (createFileRoute("/api/auth/$" as any) as any)({
-  server: {
-    handlers: {
-      GET: async (event: any) => handleAuth(event),
-      POST: async (event: any) => handleAuth(event),
-    },
-  },
+export const APIRoute = createAPIFileRoute("/api/auth/$")({
+  GET: ({ request }) => handleAuth(request),
+  POST: ({ request }) => handleAuth(request),
 });
