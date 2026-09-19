@@ -14,6 +14,11 @@ const startHandler = createStartHandler({
 
 import { setAuth } from "../lib/auth";
 
+import { RPCHandler } from "@orpc/server/fetch"
+import { appRouter } from "@prepora/api"
+
+const rpcHandler = new RPCHandler(appRouter);
+
 export default defineEventHandler(async (event) => {
   const request = toWebRequest(event);
   
@@ -29,6 +34,24 @@ export default defineEventHandler(async (event) => {
   for (const src of envSources) {
     if (src && typeof src === "object") {
       setAuth(src);
+    }
+  }
+  
+  if (request.url.includes("/api/orpc")) {
+    console.log("[SSR] Intercepted ORPC request:", request.url);
+    try {
+      console.log("[SSR] Calling rpcHandler.handle...");
+      const { response } = await rpcHandler.handle(request, {
+        prefix: "/api/orpc",
+        context: {
+          reqHeaders: request.headers,
+        }
+      });
+      console.log("[SSR] rpcHandler.handle resolved");
+      return response || new Response("Not Found", { status: 404 });
+    } catch (err: any) {
+      console.error("[SSR] rpcHandler error:", err);
+      return new Response("Internal Server Error", { status: 500 });
     }
   }
 

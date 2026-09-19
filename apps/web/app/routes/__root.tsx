@@ -1,6 +1,7 @@
 import React from "react";
 import { createRootRoute, Outlet, Link, HeadContent, Scripts } from "@tanstack/react-router";
 import globalsCss from "../styles/globals.css?url";
+import { SiteHeader } from "../components/layout/SiteHeader";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -23,6 +24,14 @@ export const Route = createRootRoute({
   notFoundComponent: NotFound,
 });
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { orpc, orpcClient } from "../../lib/orpc";
+import { I18nProvider } from "@lingui/react";
+import { i18n } from "../../lib/i18n";
+
+// Ideally queryClient is instantiated per request in SSR, but simplified here for SPA/Client Hydration
+const queryClient = new QueryClient();
+
 function RootLayout() {
   return (
     <html lang="en">
@@ -30,9 +39,14 @@ function RootLayout() {
         <HeadContent />
       </head>
       <body className="bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white">
-        <main id="main-content">
-          <Outlet />
-        </main>
+        <I18nProvider i18n={i18n}>
+          <QueryClientProvider client={queryClient}>
+            <SiteHeader />
+            <main id="main-content">
+              <Outlet />
+            </main>
+          </QueryClientProvider>
+        </I18nProvider>
         <Scripts />
       </body>
     </html>

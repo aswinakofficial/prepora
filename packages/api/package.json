@@ -1,0 +1,19 @@
+{
+  "name": "@prepora/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@orpc/server": "^1.15.0",
+    "@orpc/zod": "^1.15.0",
+    "@prepora/auth": "workspace:*",
+    "@prepora/db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.2"
+  }
+}
