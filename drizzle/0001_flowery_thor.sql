@@ -10,9 +10,9 @@ CREATE TABLE "scraped_questions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "accounts" ALTER COLUMN "expires_at" SET DATA TYPE timestamp;--> statement-breakpoint
-ALTER TABLE "sessions" ALTER COLUMN "expires_at" SET DATA TYPE timestamp;--> statement-breakpoint
-ALTER TABLE "verifications" ALTER COLUMN "expires_at" SET DATA TYPE timestamp;--> statement-breakpoint
+ALTER TABLE "accounts" ALTER COLUMN "expires_at" SET DATA TYPE timestamp USING "expires_at"::timestamp;--> statement-breakpoint
+ALTER TABLE "sessions" ALTER COLUMN "expires_at" SET DATA TYPE timestamp USING "expires_at"::timestamp;--> statement-breakpoint
+ALTER TABLE "verifications" ALTER COLUMN "expires_at" SET DATA TYPE timestamp USING "expires_at"::timestamp;--> statement-breakpoint
 ALTER TABLE "accounts" ADD COLUMN "id_token" text;--> statement-breakpoint
 ALTER TABLE "accounts" ADD COLUMN "access_token_expires_at" timestamp;--> statement-breakpoint
 ALTER TABLE "accounts" ADD COLUMN "refresh_token_expires_at" timestamp;--> statement-breakpoint

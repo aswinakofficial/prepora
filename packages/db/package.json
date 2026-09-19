@@ -10,6 +10,8 @@
   "scripts": {
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:check": "drizzle-kit check",
+    "db:reset": "node reset.mjs",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "typecheck": "tsc --noEmit"
