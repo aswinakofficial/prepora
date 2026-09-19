@@ -36,6 +36,13 @@
       "when": 1789837783688,
       "tag": "0004_moaning_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789840929392,
+      "tag": "0005_wise_wiccan",
+      "breakpoints": true
     }
   ]
 }

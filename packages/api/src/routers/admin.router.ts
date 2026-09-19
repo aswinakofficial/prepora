@@ -475,28 +475,49 @@ export const adminRouter = {
       return body;
     }),
 
+  // Reads pipeline_jobs/pipeline_job_stages directly instead of proxying to the scraper
+  // service's now-removed /scrape/logs endpoint, which tailed a local /tmp file that only
+  // existed on whichever host happened to run the scraper process — see
+  // docs/roadmap/engineering-roadmap.md item 13. Job history is now independent of whether the
+  // scraper service itself is currently reachable, which is what makes this console usable
+  // against a deployed instance.
   getScraperLogs: adminProcedure
     .route({
       method: "GET",
       path: "/admin/scrape/logs",
-      summary: "Get live scraper logs and execution status",
+      summary: "Get recent pipeline job history",
     })
     .handler(async () => {
-      try {
-        const res = await fetchScraper("/scrape/logs");
-        if (res.ok) {
-          return await res.json();
-        }
-        return { status: "offline", logs: [`[SYSTEM]: Scraper returned HTTP ${res.status}.`] };
-      } catch (err: any) {
-        if (err instanceof ORPCError) {
-          return { status: "misconfigured", logs: [`[SYSTEM]: ${err.message}`] };
-        }
+      const db = getDb();
+      const jobs = await db.query.pipelineJobs.findMany({
+        orderBy: (t, { desc: descOrder }) => [descOrder(t.createdAt)],
+        limit: 20,
+        with: { stages: { orderBy: (t, { asc }) => [asc(t.createdAt)] } },
+      });
+
+      if (jobs.length === 0) {
         return {
-          status: "offline",
-          logs: [`[SYSTEM]: Scraper service at ${getScraperBaseUrl()} is currently offline.`],
+          status: "success",
+          logs: ["[SYSTEM]: No scrape jobs yet. Trigger one to generate history."],
         };
       }
+
+      const logs: string[] = [];
+      for (const job of jobs) {
+        logs.push(
+          `[JOB ${job.id.slice(0, 8)}] source=${job.sourceId} status=${job.status.toUpperCase()}` +
+            (job.errorSummary ? ` error: ${job.errorSummary}` : ""),
+        );
+        for (const stage of job.stages) {
+          const counts = `processed=${stage.processedCount} failed=${stage.failedCount} duplicate=${stage.duplicateCount} skipped=${stage.skippedCount}`;
+          logs.push(
+            `  -> ${stage.stage}: ${stage.status} (${counts})${stage.durationMs != null ? ` in ${stage.durationMs}ms` : ""}` +
+              (stage.errorDetail ? ` error: ${stage.errorDetail}` : ""),
+          );
+        }
+      }
+
+      return { status: "success", logs };
     }),
 
   triggerScrapeJob: adminProcedure

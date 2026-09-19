@@ -2,6 +2,7 @@
 
 export * from "./analytics.ts";
 export * from "./catalog.ts";
+export * from "./pipeline_jobs.ts";
 export * from "./questions.ts";
 export * from "./raw_artifacts.ts";
 export * from "./scraping.ts";

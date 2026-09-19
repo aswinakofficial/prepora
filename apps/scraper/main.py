@@ -1,4 +1,5 @@
-import os
+import sys
+from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -16,6 +17,20 @@ load_dotenv()
 # refuses to start at all rather than start in a state where its core job (persisting scraped
 # content) will silently fail on every request. See settings.py and roadmap item 7.
 import settings as _settings  # noqa: F401,E402 — imported after load_dotenv() for its validation side effect
+
+# apps/pipeline is the eventual home for this service (docs/architecture/prepora-next-level-plan.md
+# §17 — "apps/pipeline absorbs apps/scraper"), and its durable job model
+# (docs/roadmap/engineering-roadmap.md item 13) is what this service's job tracking needs today, not
+# a second, drifting copy of the same ~250 lines. Importing it by path rather than duplicating it is
+# a deliberate, temporary bridge until that merge happens.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+from prepora_pipeline.core import (  # noqa: E402
+    create_job,
+    finalize_job,
+    get_job,
+    stage_run,
+    start_job,
+)
 
 # Every endpoint on this service requires a valid PIPELINE_SERVICE_TOKEN
 # bearer token (see security.py). There is no unauthenticated endpoint,
@@ -64,30 +79,6 @@ async def health_check():
         "capabilities": ["target_url_scrape", "modular_site_adapters", "ms_learn_catalog_discovery", "playwright_persistent_auth", "headless_mode_toggle", "live_logs_telemetry"]
     }
 
-@app.get("/scrape/logs")
-async def get_logs_endpoint():
-    """
-    Returns the latest scraper execution logs for admin progress telemetry.
-    """
-    log_path = "/tmp/ms_learn_scraper.log"
-    logs = []
-    if os.path.exists(log_path):
-        try:
-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
-                logs = [line.strip() for line in lines[-150:] if line.strip()]
-        except Exception as e:
-            logs = [f"[LOG ERROR]: Could not read log file: {e}"]
-    else:
-        logs = ["[SYSTEM]: No execution logs initialized yet. Trigger a scrape job to generate progress telemetry."]
-    
-    return {
-        "status": "success",
-        "log_file": log_path,
-        "lines_count": len(logs),
-        "logs": logs
-    }
-
 @app.get("/scrape/ms-learn/catalog")
 async def ms_learn_catalog_endpoint():
     """
@@ -114,16 +105,8 @@ async def ms_learn_auth_endpoint():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to launch Microsoft Auth session: {str(e)}")
 
-seen_jobs = set()
-
 @app.post("/scrape")
 async def scrape_endpoint(req: ScrapeRequest):
-    if req.job_id:
-        if req.job_id in seen_jobs:
-            print(f"[IDEMPOTENCY] Ignoring duplicate scrape job {req.job_id}")
-            return {"status": "success", "extracted_count": 0, "db_saved": True, "message": "Duplicate ignored", "extractedElements": []}
-        seen_jobs.add(req.job_id)
-
     if not req.url:
         raise HTTPException(status_code=400, detail="Target URL is required for scraping.")
 
@@ -134,19 +117,56 @@ async def scrape_endpoint(req: ScrapeRequest):
     # rather than requests, so it can't route through safe_get().
     assert_safe_url(req.url)
 
+    is_ms_learn = "learn.microsoft.com" in req.url or "microsoft.com" in req.url
+
+    # A database-backed job record replaces the old in-memory `seen_jobs` set (docs/roadmap/
+    # engineering-roadmap.md item 13) — create_job() is itself idempotent on req.job_id, so a
+    # resubmission with the same job_id returns the same job row rather than creating a second
+    # one. Whether it's a genuine resubmission (vs. a fresh job) is decided by the job's status:
+    # a freshly-created job is always "queued"; anything else means a prior request already
+    # claimed and progressed this job_id.
+    job_id = create_job(
+        source_id="ms-learn" if is_ms_learn else "generic",
+        job_type="scrape",
+        trigger_type="manual",
+        configuration={
+            "url": req.url,
+            "parser_mode": req.parser_mode,
+            "target_exam": req.target_exam,
+            "target_subject": req.target_subject,
+            "max_questions": req.max_questions,
+        },
+        idempotency_key=req.job_id,
+    )
+    if get_job(job_id).status != "queued":
+        print(f"[IDEMPOTENCY] Ignoring duplicate scrape job {req.job_id!r} (pipeline job {job_id})")
+        return {
+            "status": "success",
+            "extracted_count": 0,
+            "db_saved": True,
+            "message": "Duplicate ignored",
+            "extractedElements": [],
+            "job_id": job_id,
+        }
+
+    start_job(job_id)
+
     # SPECIALIZED PLAYWRIGHT BRANCH: Microsoft Learn Assessment Crawler
-    if "learn.microsoft.com" in req.url or "microsoft.com" in req.url:
+    if is_ms_learn:
         is_headless = req.headless if req.headless is not None else True
         print(f"[MS LEARN PLAYWRIGHT SCRAPE] Target URL: {req.url} | Headless: {is_headless}")
         try:
-            from ms_learn_catalog_crawler import crawl_ms_learn_assessment
-            unique_questions = await crawl_ms_learn_assessment(
-                assessment_url=req.url,
-                exam=req.target_exam or "MS Learn AB-100",
-                subject=req.target_subject or "Agentic AI Business Solutions Architect",
-                max_questions=req.max_questions or 50,
-                headless=is_headless
-            )
+            with stage_run(job_id, "scrape") as counts:
+                from ms_learn_catalog_crawler import crawl_ms_learn_assessment
+                unique_questions = await crawl_ms_learn_assessment(
+                    assessment_url=req.url,
+                    exam=req.target_exam or "MS Learn AB-100",
+                    subject=req.target_subject or "Agentic AI Business Solutions Architect",
+                    max_questions=req.max_questions or 50,
+                    headless=is_headless
+                )
+                counts.processed = len(unique_questions)
+            finalize_job(job_id)
             return {
                 "status": "success",
                 "mode": "playwright_ms_learn",
@@ -158,9 +178,13 @@ async def scrape_endpoint(req: ScrapeRequest):
                     "targetExam": req.target_exam,
                     "targetSubject": req.target_subject,
                     "engine": "Playwright Dynamic Web Crawler"
-                }
+                },
+                "job_id": job_id,
             }
         except Exception as ms_err:
+            # stage_run already recorded the "scrape" stage as failed with this error — the job
+            # itself stays open (not finalized) since we're falling through to the generic
+            # handler under the same job, not abandoning it.
             print(f"[MS LEARN PLAYWRIGHT FALLBACK]: {ms_err}. Falling back to HTTP handler...")
 
     headers = {
@@ -171,29 +195,43 @@ async def scrape_endpoint(req: ScrapeRequest):
     # MODE 1: Specific Target URL Ingestion
     print(f"[TARGET SCRAPE] URL: {req.url} | Mode: {req.parser_mode}")
     try:
-        response = safe_get(req.url, headers=headers, timeout=12)
-        response.raise_for_status()
+        with stage_run(job_id, "fetch_and_parse") as counts:
+            try:
+                response = safe_get(req.url, headers=headers, timeout=12)
+                response.raise_for_status()
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to fetch target URL: {str(e)}") from e
+
+            unique_questions = parse_html_for_questions(response.text, req.url, req.target_exam, req.target_subject, req.parser_mode)
+            counts.processed = len(unique_questions)
     except HTTPException:
+        finalize_job(job_id)
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch target URL: {str(e)}")
+        finalize_job(job_id)
+        raise HTTPException(status_code=400, detail=f"Scrape failed: {str(e)}") from e
 
-    unique_questions = parse_html_for_questions(response.text, req.url, req.target_exam, req.target_subject, req.parser_mode)
+    with stage_run(job_id, "publish") as counts:
+        inserted_id = insert_scraped_question(
+            source_url=req.url,
+            raw_data=response.text[:2000],
+            parsed_data={
+                "extractedElements": unique_questions,
+                "metadata": {
+                    "exam": req.target_exam,
+                    "subject": req.target_subject,
+                    "parserMode": req.parser_mode,
+                    "count": len(unique_questions)
+                }
+            },
+        )
+        db_saved = inserted_id is not None
+        counts.processed = 1 if db_saved else 0
+        counts.failed = 0 if db_saved else 1
 
-    inserted_id = insert_scraped_question(
-        source_url=req.url,
-        raw_data=response.text[:2000],
-        parsed_data={
-            "extractedElements": unique_questions,
-            "metadata": {
-                "exam": req.target_exam,
-                "subject": req.target_subject,
-                "parserMode": req.parser_mode,
-                "count": len(unique_questions)
-            }
-        },
-    )
-    db_saved = inserted_id is not None
+    finalize_job(job_id)
 
     return {
         "status": "success",
@@ -206,5 +244,6 @@ async def scrape_endpoint(req: ScrapeRequest):
             "targetExam": req.target_exam,
             "targetSubject": req.target_subject,
             "parserMode": req.parser_mode,
-        }
+        },
+        "job_id": job_id,
     }

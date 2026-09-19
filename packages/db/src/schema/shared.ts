@@ -73,3 +73,15 @@ export const contributionStatusEnum = pgEnum("contribution_status", [
 export const redirectStatusEnum = pgEnum("redirect_status", ["301", "302"]);
 
 export const aiSourceEnum = pgEnum("ai_source", ["verified", "ai_generated", "community"]);
+
+// Shared by pipeline_jobs and pipeline_job_stages — see docs/roadmap/engineering-roadmap.md item
+// 13. A stage's status uses the same vocabulary as its job's for consistency, even though a stage
+// itself is never literally "cancelled" today (jobs are).
+export const pipelineJobStatusEnum = pgEnum("pipeline_job_status", [
+  "queued",
+  "running",
+  "completed",
+  "partial",
+  "failed",
+  "cancelled",
+]);
