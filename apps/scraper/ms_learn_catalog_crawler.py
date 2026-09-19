@@ -1,16 +1,14 @@
 import asyncio
 import os
 import re
-import json
-import subprocess
-import psycopg2
-from psycopg2.extras import Json
 from dotenv import load_dotenv
 import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 import sys
+
+from db import insert_scraped_question
 
 load_dotenv("../../.env")
 load_dotenv()
@@ -28,17 +26,6 @@ def log(msg: str):
             f.write(timestamped_msg + "\n")
     except Exception:
         pass
-
-def get_db_connection():
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        return None
-    try:
-        clean_url = re.sub(r'[\?&]channel_binding=[^&]+', '', db_url)
-        return psycopg2.connect(clean_url)
-    except Exception as e:
-        log(f"[DB CONNECTION WARNING]: {e}")
-        return None
 
 def fetch_ms_learn_catalog() -> list:
     """
@@ -683,68 +670,25 @@ async def crawl_ms_learn_assessment(
         log(f"[MS LEARN CRAWLER]: Extracted {len(extracted_questions)} questions from {assessment_url}")
 
         if extracted_questions:
-            db_url = os.getenv("DATABASE_URL")
-            if db_url:
-                try:
-                    clean_url = re.sub(r'[\?&]channel_binding=[^&]+', '', db_url)
-                    http_url = "https://ep-bold-morning-b3ghyghm-pooler.c-4.ap-southeast-1.aws.neon.tech/sql"
-                    payload = {
-                        "query": "INSERT INTO scraped_questions (source_url, raw_data, parsed_data, status) VALUES ($1, $2, $3, $4) RETURNING id",
-                        "params": [
-                            assessment_url,
-                            f"MS Learn Playwright Assessment Crawl ({len(extracted_questions)} questions)",
-                            json.dumps({
-                                "extractedElements": extracted_questions,
-                                "metadata": {
-                                    "exam": exam,
-                                    "subject": subject,
-                                    "description": exam_desc,
-                                    "logoUrl": logo_url,
-                                    "source": "Microsoft Learn Practice Assessment",
-                                    "count": len(extracted_questions)
-                                }
-                            }),
-                            "pending"
-                        ]
+            inserted_id = insert_scraped_question(
+                source_url=assessment_url,
+                raw_data=f"MS Learn Playwright Assessment Crawl ({len(extracted_questions)} questions)",
+                parsed_data={
+                    "extractedElements": extracted_questions,
+                    "metadata": {
+                        "exam": exam,
+                        "subject": subject,
+                        "description": exam_desc,
+                        "logoUrl": logo_url,
+                        "source": "Microsoft Learn Practice Assessment",
+                        "count": len(extracted_questions)
                     }
-                    cmd = [
-                        "curl", "-4", "-s", "-X", "POST", http_url,
-                        "-H", f"Neon-Connection-String: {clean_url}",
-                        "-H", "Content-Type: application/json",
-                        "-d", json.dumps(payload)
-                    ]
-                    res = subprocess.run(cmd, capture_output=True, text=True)
-                    if res.returncode == 0 and "rows" in res.stdout:
-                        log(f"[MS LEARN CRAWLER]: Successfully saved {len(extracted_questions)} questions to Neon DB via HTTP API!")
-                    else:
-                        conn = get_db_connection()
-                        if conn:
-                            cur = conn.cursor()
-                            cur.execute(
-                                "INSERT INTO scraped_questions (source_url, raw_data, parsed_data, status) VALUES (%s, %s, %s, %s)",
-                                (
-                                    assessment_url,
-                                    f"MS Learn Playwright Assessment Crawl ({len(extracted_questions)} questions)",
-                                    Json({
-                                        "extractedElements": extracted_questions,
-                                        "metadata": {
-                                            "exam": exam,
-                                            "subject": subject,
-                                            "description": exam_desc,
-                                            "logoUrl": logo_url,
-                                            "source": "Microsoft Learn Practice Assessment",
-                                            "count": len(extracted_questions)
-                                        }
-                                    }),
-                                    "pending"
-                                )
-                            )
-                            conn.commit()
-                            cur.close()
-                            conn.close()
-                            log("[MS LEARN CRAWLER]: Successfully saved questions via psycopg2!")
-                except Exception as db_err:
-                    log(f"[MS LEARN CRAWLER DB ERROR]: {db_err}")
+                },
+            )
+            if inserted_id:
+                log(f"[MS LEARN CRAWLER]: Successfully saved {len(extracted_questions)} questions to the database (id={inserted_id}).")
+            else:
+                log("[MS LEARN CRAWLER]: Extraction succeeded but the database write failed — see [DB INSERT ERROR] above.")
 
         await context.close()
         return extracted_questions

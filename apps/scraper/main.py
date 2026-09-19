@@ -5,10 +5,9 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
-import psycopg2
-from psycopg2.extras import Json
 from dotenv import load_dotenv
 
+from db import get_db_connection, insert_scraped_question
 from security import assert_safe_url, cors_allowed_origins, require_service_token, safe_get
 
 load_dotenv()
@@ -41,16 +40,6 @@ class ScrapeRequest(BaseModel):
     max_questions: Optional[int] = 50
     job_id: Optional[str] = None
     headless: Optional[bool] = True
-
-def get_db_connection():
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        return None
-    try:
-        return psycopg2.connect(db_url)
-    except Exception as e:
-        print(f"Warning: DB connection error: {e}")
-        return None
 
 from handlers import get_handler_for_url
 
@@ -187,39 +176,20 @@ async def scrape_endpoint(req: ScrapeRequest):
 
     unique_questions = parse_html_for_questions(response.text, req.url, req.target_exam, req.target_subject, req.parser_mode)
 
-    conn = get_db_connection()
-    db_saved = False
-    if conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """
-                INSERT INTO scraped_questions (source_url, raw_data, parsed_data, status)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (
-                    req.url,
-                    response.text[:2000],
-                    Json({
-                        "extractedElements": unique_questions,
-                        "metadata": {
-                            "exam": req.target_exam,
-                            "subject": req.target_subject,
-                            "parserMode": req.parser_mode,
-                            "count": len(unique_questions)
-                        }
-                    }),
-                    "pending"
-                )
-            )
-            conn.commit()
-            db_saved = True
-        except Exception as e:
-            print(f"[DB INSERT ERROR]: {e}")
-            conn.rollback()
-        finally:
-            cursor.close()
-            conn.close()
+    inserted_id = insert_scraped_question(
+        source_url=req.url,
+        raw_data=response.text[:2000],
+        parsed_data={
+            "extractedElements": unique_questions,
+            "metadata": {
+                "exam": req.target_exam,
+                "subject": req.target_subject,
+                "parserMode": req.parser_mode,
+                "count": len(unique_questions)
+            }
+        },
+    )
+    db_saved = inserted_id is not None
 
     return {
         "status": "success",
