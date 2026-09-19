@@ -4,6 +4,8 @@ import { examsRouter } from "./routers/exams.router.js";
 import { questionsRouter } from "./routers/questions.router.js";
 import { adminRouter } from "./routers/admin.router.js";
 
+export { WIPE_DATABASE_CONFIRMATION_PHRASE } from "./routers/admin.router.js";
+
 export const appRouter = {
   health: publicProcedure
     .route({

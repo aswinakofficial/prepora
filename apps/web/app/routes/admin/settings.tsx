@@ -11,6 +11,7 @@ import {
 import { verifyAdminFn } from "../admin";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { orpc } from "../../../lib/orpc";
+import { WIPE_DATABASE_CONFIRMATION_PHRASE } from "@prepora/api";
 
 export const Route = createFileRoute("/admin/settings")({
   beforeLoad: async () => {
@@ -26,7 +27,9 @@ function AdminSettingsPage() {
   const { mutateAsync: wipeDatabase } = useMutation(orpc.admin.wipeDatabase.mutationOptions());
   const [isWiping, setIsWiping] = useState(false);
   const [wipeStatus, setWipeStatus] = useState<"idle" | "success" | "error">("idle");
+  const [wipeErrorMsg, setWipeErrorMsg] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
   
   // Local state for UI responsiveness
   const [localStats, setLocalStats] = useState({
@@ -45,18 +48,21 @@ function AdminSettingsPage() {
     try {
       setIsWiping(true);
       setWipeStatus("idle");
-      
-      const result = await wipeDatabase();
-      
+      setWipeErrorMsg(null);
+
+      const result = await wipeDatabase({ confirmation: confirmText });
+
       if (result.success) {
         setWipeStatus("success");
         setLocalStats({ scrapedBatches: 0, liveQuestions: 0, options: 0 });
         setShowConfirm(false);
+        setConfirmText("");
         queryClient.invalidateQueries();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       setWipeStatus("error");
+      setWipeErrorMsg(err?.message || "Check server logs for details.");
     } finally {
       setIsWiping(false);
     }
@@ -145,11 +151,25 @@ function AdminSettingsPage() {
                     <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
                     <p>Are you absolutely sure you want to permanently erase all data?</p>
                   </div>
-                  
+
+                  <div className="space-y-2">
+                    <p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">
+                      Type <span className="text-rose-400 font-semibold">{WIPE_DATABASE_CONFIRMATION_PHRASE}</span> to confirm
+                    </p>
+                    <input
+                      type="text"
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                      placeholder={WIPE_DATABASE_CONFIRMATION_PHRASE}
+                      autoComplete="off"
+                      className="w-full bg-slate-900 border border-rose-900/50 focus:border-rose-500 font-mono text-xs text-slate-200 px-3 py-2 outline-none transition-colors"
+                    />
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2 mt-4">
                     <button
                       type="button"
-                      onClick={() => setShowConfirm(false)}
+                      onClick={() => { setShowConfirm(false); setConfirmText(""); }}
                       className="px-3 py-2 border border-slate-700 bg-slate-800 text-slate-300 font-mono text-[10px] uppercase tracking-wider hover:bg-slate-700 transition"
                     >
                       Cancel
@@ -157,15 +177,15 @@ function AdminSettingsPage() {
                     <button
                       type="button"
                       onClick={handleWipeDatabase}
-                      disabled={isWiping}
-                      className="px-3 py-2 bg-rose-600 text-white font-mono text-[10px] uppercase tracking-wider hover:bg-rose-500 transition disabled:opacity-50"
+                      disabled={isWiping || confirmText !== WIPE_DATABASE_CONFIRMATION_PHRASE}
+                      className="px-3 py-2 bg-rose-600 text-white font-mono text-[10px] uppercase tracking-wider hover:bg-rose-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isWiping ? "Erasing..." : "Yes, Wipe It"}
                     </button>
                   </div>
                 </div>
               )}
-              
+
               {wipeStatus === "success" && (
                 <div className="mt-4 flex items-center gap-2 text-emerald-400 font-mono text-xs animate-in fade-in slide-in-from-bottom-2">
                   <CheckCircle className="w-4 h-4" />
@@ -173,9 +193,9 @@ function AdminSettingsPage() {
                 </div>
               )}
               {wipeStatus === "error" && (
-                <div className="mt-4 flex items-center gap-2 text-rose-400 font-mono text-xs">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>Error wiping database. Check logs.</span>
+                <div className="mt-4 flex items-start gap-2 text-rose-400 font-mono text-xs max-w-xs">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{wipeErrorMsg || "Error wiping database. Check logs."}</span>
                 </div>
               )}
             </div>

@@ -2,9 +2,38 @@ import { os, ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { protectedProcedure } from "../context.js";
 import { getDb } from "@prepora/db";
-import { questions, scrapedQuestions, questionSets, users, questionOptions, questionAnswers, questionOccurrences, questionTags, media } from "@prepora/db/schema";
+import { questions, scrapedQuestions, questionSets, users, questionOptions, questionAnswers, questionOccurrences, questionTags, media, auditLogs } from "@prepora/db/schema";
 import { count, eq, desc, ilike, sql } from "drizzle-orm";
 import { isAdminUser } from "@prepora/auth";
+
+// Typed confirmation required before wipeDatabase executes — see docs/roadmap/engineering-roadmap.md
+// item 6. Exported so the frontend prompts for exactly this string rather than hardcoding a second
+// copy that could drift from what the server actually checks.
+export const WIPE_DATABASE_CONFIRMATION_PHRASE = "WIPE DATABASE";
+
+// The one write path into auditLogs — see docs/architecture/prepora-next-level-plan.md finding #17.
+// Every privileged, content-affecting or destructive admin action should go through this rather than
+// executing silently.
+async function writeAuditLog(
+  db: ReturnType<typeof getDb>,
+  entry: {
+    actorId: string;
+    action: string;
+    entityType: string;
+    entityId: string;
+    oldValue?: unknown;
+    newValue?: unknown;
+  }
+) {
+  await db.insert(auditLogs).values({
+    actorId: entry.actorId,
+    action: entry.action,
+    entityType: entry.entityType,
+    entityId: entry.entityId,
+    oldValue: entry.oldValue !== undefined ? JSON.stringify(entry.oldValue) : null,
+    newValue: entry.newValue !== undefined ? JSON.stringify(entry.newValue) : null,
+  });
+}
 
 // 1. Create an admin procedure
 export const adminProcedure = protectedProcedure.use(async ({ context, next }) => {
@@ -97,8 +126,62 @@ export const adminRouter = {
       path: "/admin/database/wipe",
       summary: "Wipe all database content",
     })
-    .handler(async () => {
+    .input(z.object({ confirmation: z.string() }))
+    .handler(async ({ input, context }) => {
+      if (input.confirmation !== WIPE_DATABASE_CONFIRMATION_PHRASE) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `Confirmation did not match. Type "${WIPE_DATABASE_CONFIRMATION_PHRASE}" exactly to proceed.`,
+        });
+      }
+
+      // Refuse in production unless someone has deliberately opted in — a wipe should never be one
+      // accidental click away from destroying real user data.
+      const allowInProduction = process.env.ALLOW_DESTRUCTIVE_ADMIN_OPS === "true";
+      if (process.env.NODE_ENV === "production" && !allowInProduction) {
+        throw new ORPCError("FORBIDDEN", {
+          message: "Wiping the database is disabled in production. Set ALLOW_DESTRUCTIVE_ADMIN_OPS=true to override.",
+        });
+      }
+
       const db = getDb();
+
+      // Count what's about to be destroyed *before* destroying it — after a TRUNCATE every one of
+      // these reads back as zero, so this is the only chance to record what was actually wiped.
+      const [
+        [qCount], [qsCount], [scrapedCount], [optCount], [ansCount], [occCount], [tagCount], [mediaCount],
+      ] = await Promise.all([
+        db.select({ val: count(questions.id) }).from(questions),
+        db.select({ val: count(questionSets.id) }).from(questionSets),
+        db.select({ val: count(scrapedQuestions.id) }).from(scrapedQuestions),
+        db.select({ val: count(questionOptions.id) }).from(questionOptions),
+        db.select({ val: count(questionAnswers.id) }).from(questionAnswers),
+        db.select({ val: count(questionOccurrences.id) }).from(questionOccurrences),
+        db.select({ val: count(questionTags.questionId) }).from(questionTags),
+        db.select({ val: count(media.id) }).from(media),
+      ]);
+
+      const affectedCounts = {
+        questions: qCount?.val ?? 0,
+        questionSets: qsCount?.val ?? 0,
+        scrapedQuestions: scrapedCount?.val ?? 0,
+        questionOptions: optCount?.val ?? 0,
+        questionAnswers: ansCount?.val ?? 0,
+        questionOccurrences: occCount?.val ?? 0,
+        questionTags: tagCount?.val ?? 0,
+        media: mediaCount?.val ?? 0,
+      };
+
+      // Write the audit row *before* executing, per docs/roadmap/engineering-roadmap.md item 6 —
+      // if the wipe itself fails partway, there is still a durable record that it was attempted,
+      // by whom, and what it was about to destroy.
+      await writeAuditLog(db, {
+        actorId: context.user.id,
+        action: "wipe_database",
+        entityType: "database",
+        entityId: "all",
+        oldValue: affectedCounts,
+      });
+
       try {
         // Try Postgres TRUNCATE CASCADE first for instant atomic wipe
         await db.execute(
@@ -115,8 +198,8 @@ export const adminRouter = {
           await db.delete(questionSets).catch(() => {});
         });
 
-        console.log("[WIPE DATABASE] Database successfully wiped.");
-        return { success: true };
+        console.log(`[WIPE DATABASE] Wiped by ${context.user.email}:`, affectedCounts);
+        return { success: true, wiped: affectedCounts };
       } catch (err: any) {
         console.error("[WIPE DATABASE ERROR]", err);
         throw new ORPCError("INTERNAL_SERVER_ERROR", {
@@ -192,11 +275,19 @@ export const adminRouter = {
       id: z.string(),
       action: z.enum(["approve", "reject"]),
     }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const db = getDb();
-      
+
       if (input.action === "reject") {
         await db.update(scrapedQuestions).set({ status: "rejected" }).where(eq(scrapedQuestions.id, input.id));
+        await writeAuditLog(db, {
+          actorId: context.user.id,
+          action: "reject_scraped_question",
+          entityType: "scraped_question",
+          entityId: input.id,
+          oldValue: { status: "pending" },
+          newValue: { status: "rejected" },
+        });
         return { success: true, message: `Rejected batch ${input.id.substring(0, 8)}...` };
       }
 
@@ -247,6 +338,15 @@ export const adminRouter = {
       }
 
       await db.update(scrapedQuestions).set({ status: "approved" }).where(eq(scrapedQuestions.id, input.id));
+
+      await writeAuditLog(db, {
+        actorId: context.user.id,
+        action: "approve_scraped_question",
+        entityType: "scraped_question",
+        entityId: input.id,
+        oldValue: { status: "pending" },
+        newValue: { status: "approved", publishCount },
+      });
 
       return { success: true, message: `Approved and published ${publishCount} questions.` };
     }),
