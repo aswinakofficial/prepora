@@ -1,7 +1,15 @@
-import React, { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import React, { useState, useEffect } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
+import { orpc } from "../../../lib/orpc";
+
+const examsSearchSchema = z.object({
+  category: z.string().optional(),
+});
 
 export const Route = createFileRoute("/exams/")({
+  validateSearch: (search) => examsSearchSchema.parse(search),
   head: () => ({
     meta: [
       { title: "Exam Directory — Prepora" },
@@ -13,38 +21,93 @@ export const Route = createFileRoute("/exams/")({
   component: ExamsPage,
 });
 
-const ALL_EXAMS = [
-  { slug: "kerala-psc", name: "Kerala PSC Assistant Engineer", org: "Kerala Public Service Commission", category: "State PSC", code: "AE Civil", count: 2400 },
-  { slug: "azure-az-104", name: "Microsoft Azure Administrator", org: "Microsoft Certification", category: "Certification", code: "AZ-104", count: 1240 },
-  { slug: "istqb-ctfl", name: "ISTQB Certified Tester Foundation", org: "ISTQB Board", category: "Certification", code: "CTFL 4.0", count: 890 },
-  { slug: "gate", name: "GATE Civil & Computer Science", org: "IITs / IISc", category: "Engineering", code: "GATE 2025", count: 8000 },
-  { slug: "ssc-je", name: "SSC Junior Engineer", org: "Staff Selection Commission", category: "Central Govt", code: "SSC JE", count: 3200 },
-  { slug: "ktu-btech", name: "KTU B.Tech Semester Papers", org: "APJ Abdul Kalam Tech University", category: "University", code: "KTU BTech", count: 4100 },
+const CATEGORIES = [
+  { id: "ALL", label: "ALL EXAMS" },
+  { id: "CERTIFICATION", label: "CERTIFICATION EXAMS" },
+  { id: "GOVERNMENT", label: "GOVERNMENT EXAMS" },
+  { id: "COMPETITIVE", label: "COMPETITIVE EXAMS" },
+  { id: "UNIVERSITY", label: "UNIVERSITY EXAMS" },
 ];
 
-const CATEGORIES = ["ALL", "CERTIFICATION", "STATE PSC", "ENGINEERING", "CENTRAL GOVT", "UNIVERSITY"];
-
 function ExamsPage() {
-  const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const { category: queryCategory } = Route.useSearch();
+  const navigate = useNavigate();
+
+  const getInitialCategory = () => {
+    if (!queryCategory) return "ALL";
+    const normalized = queryCategory.toUpperCase();
+    const match = CATEGORIES.find((c) => c.id === normalized || c.id.includes(normalized));
+    return match ? match.id : "ALL";
+  };
+
+  const [selectedCategory, setSelectedCategory] = useState(getInitialCategory);
   const [filterQuery, setFilterQuery] = useState("");
 
-  const filteredExams = ALL_EXAMS.filter((exam) => {
-    const matchesCategory = selectedCategory === "ALL" || exam.category.toUpperCase() === selectedCategory;
+  useEffect(() => {
+    if (queryCategory) {
+      const normalized = queryCategory.toUpperCase();
+      const match = CATEGORIES.find((c) => c.id === normalized || c.id.includes(normalized));
+      if (match) {
+        setSelectedCategory(match.id);
+      }
+    }
+  }, [queryCategory]);
+
+  const handleCategorySelect = (catId: string) => {
+    setSelectedCategory(catId);
+    navigate({
+      to: "/exams",
+      search: { category: catId === "ALL" ? undefined : catId.toLowerCase() } as any,
+      replace: true,
+    });
+  };
+
+  const { data: realExams, isLoading } = useQuery(orpc.exams.list.queryOptions({ input: { limit: 100 } }));
+
+  const examsToRender = (realExams || []).map((dbExam: any) => ({
+    slug: dbExam.slug || "unknown",
+    name: dbExam.name || dbExam.title || "Subject",
+    org: dbExam.org || dbExam.organization || "Microsoft Learn",
+    category: (dbExam.category || dbExam.domain || "CERTIFICATION").toUpperCase(),
+    code: dbExam.code || dbExam.stableContentId || "EXT-000",
+    count: dbExam.count !== undefined ? dbExam.count : 5,
+    logoUrl: dbExam.logoUrl,
+  }));
+
+  const filteredExams = examsToRender.filter((exam) => {
+    const examCat = exam.category.toUpperCase();
+    let matchesCategory = false;
+
+    if (selectedCategory === "ALL") {
+      matchesCategory = true;
+    } else if (selectedCategory === "CERTIFICATION") {
+      matchesCategory = examCat.includes("CERTIFICATION") || examCat.includes("MICROSOFT") || examCat.includes("AZURE");
+    } else if (selectedCategory === "GOVERNMENT") {
+      matchesCategory = examCat.includes("GOVERNMENT") || examCat.includes("GOVT") || examCat.includes("PSC") || examCat.includes("STATE") || examCat.includes("CENTRAL");
+    } else if (selectedCategory === "COMPETITIVE") {
+      matchesCategory = examCat.includes("COMPETITIVE") || examCat.includes("ENGINEERING") || examCat.includes("GATE") || examCat.includes("SSC");
+    } else if (selectedCategory === "UNIVERSITY") {
+      matchesCategory = examCat.includes("UNIVERSITY") || examCat.includes("ACADEMIC") || examCat.includes("SEMESTER");
+    } else {
+      matchesCategory = examCat === selectedCategory;
+    }
+
     const matchesQuery =
       exam.name.toLowerCase().includes(filterQuery.toLowerCase()) ||
       exam.code.toLowerCase().includes(filterQuery.toLowerCase()) ||
       exam.org.toLowerCase().includes(filterQuery.toLowerCase());
+
     return matchesCategory && matchesQuery;
   });
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-      {/* Header */}
-      <header className="px-6 py-8 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
+      {/* Breadcrumb section */}
+      <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
         <Link to="/" className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors">
           ← BACK TO INDEX
         </Link>
-      </header>
+      </div>
 
       <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
@@ -79,16 +142,16 @@ function ExamsPage() {
 
         {/* Structural Filter Bar */}
         <div className="mb-12 border-b border-slate-900 pb-4 overflow-x-auto">
-          <div className="flex items-center gap-8 font-mono text-xs tracking-widest text-slate-500 min-w-max">
+          <div className="flex items-center gap-6 font-mono text-xs tracking-widest text-slate-500 min-w-max">
             {CATEGORIES.map((cat) => (
               <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`hover:text-white transition-colors ${
-                  selectedCategory === cat ? "text-white border-b-2 border-slate-500 pb-1" : ""
+                key={cat.id}
+                onClick={() => handleCategorySelect(cat.id)}
+                className={`hover:text-white transition-colors py-1 ${
+                  selectedCategory === cat.id ? "text-sky-400 font-bold border-b-2 border-sky-400" : ""
                 }`}
               >
-                [{cat}]
+                [{cat.label}]
               </button>
             ))}
           </div>
@@ -102,10 +165,14 @@ function ExamsPage() {
             <div className="col-span-4">EXAMINATION NAME</div>
             <div className="col-span-3">AUTHORITY</div>
             <div className="col-span-2">CATEGORY</div>
-            <div className="col-span-1 text-right">VOL</div>
+            <div className="col-span-1 text-right">ACTION</div>
           </div>
 
-          {filteredExams.length > 0 ? (
+          {isLoading ? (
+            <div className="font-mono text-xs text-slate-500 uppercase tracking-widest py-16 text-center animate-pulse">
+              FETCHING CATALOGUE FROM oRPC ENGINE...
+            </div>
+          ) : filteredExams.length > 0 ? (
             filteredExams.map((exam) => (
               <Link
                 key={exam.slug}
@@ -117,8 +184,11 @@ function ExamsPage() {
                   {exam.code.toUpperCase()}
                 </div>
                 
-                <div className="col-span-4 text-slate-300 group-hover:text-white transition-colors text-lg font-light truncate">
-                  {exam.name}
+                <div className="col-span-4 text-slate-300 group-hover:text-white transition-colors text-lg font-light truncate flex items-center gap-3">
+                  {exam.logoUrl && (
+                    <img src={exam.logoUrl} alt="" className="w-6 h-6 shrink-0 object-contain" />
+                  )}
+                  <span>{exam.name}</span>
                 </div>
 
                 <div className="col-span-3 font-mono text-[10px] text-slate-500 uppercase truncate">
@@ -131,8 +201,8 @@ function ExamsPage() {
                   </span>
                 </div>
 
-                <div className="col-span-1 md:text-right font-mono text-xs text-slate-500 mt-2 md:mt-0">
-                  {exam.count}
+                <div className="col-span-1 md:text-right font-mono text-xs text-slate-500 group-hover:text-sky-400 transition-colors mt-2 md:mt-0">
+                  →
                 </div>
               </Link>
             ))

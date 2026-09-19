@@ -51,27 +51,7 @@ function ContributePage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 selection:bg-slate-700 selection:text-white font-sans flex flex-col">
-      {/* Editorial Header (Consistent with Root) */}
-      <header className="border-b border-slate-900/80 mb-24 shrink-0">
-        <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-12 text-xs font-mono tracking-widest uppercase">
-          <div className="col-span-1 md:col-span-3 border-b md:border-b-0 md:border-r border-slate-900/50 p-6 flex flex-col justify-center">
-            <a href="/" className="text-white font-bold tracking-[0.3em] hover:text-slate-400 transition-colors">
-              PREPORA
-            </a>
-          </div>
-          <div className="col-span-1 md:col-span-6 p-6 flex items-center gap-8 md:gap-12 overflow-x-auto border-b md:border-b-0 md:border-r border-slate-900/50">
-            <span className="text-white/30">/</span>
-            <span className="text-white">Contribute</span>
-          </div>
-          <div className="col-span-1 md:col-span-3 p-6 flex items-center justify-between md:justify-end gap-6">
-            <span className="text-slate-600 flex items-center gap-2">
-              <ShieldCheck className="w-3.5 h-3.5" /> SECURE TUNNEL
-            </span>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-[1400px] w-full mx-auto px-6 pb-32 flex-1">
+      <main className="max-w-[1400px] w-full mx-auto px-6 pb-32 flex-1 pt-16">
         <section className="grid grid-cols-1 md:grid-cols-12 gap-12">
           {/* Asymmetric Spacer / Context Col */}
           <div className="col-span-1 md:col-span-3 lg:col-span-3 border-r border-slate-900/50 pr-6 space-y-12 h-full hidden md:block">

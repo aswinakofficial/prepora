@@ -48,12 +48,12 @@ function SearchPage() {
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       
-      {/* Header / Nav */}
-      <header className="px-6 py-8 flex justify-between items-center max-w-[1000px] mx-auto">
+      {/* Breadcrumb */}
+      <div className="px-6 pt-12 flex justify-between items-center max-w-[1000px] mx-auto">
         <Link to="/" className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors cursor-pointer">
           ← BACK
         </Link>
-      </header>
+      </div>
 
       <main className="max-w-[1000px] mx-auto px-6 pt-12">
         {/* Search Input - Command Surface */}

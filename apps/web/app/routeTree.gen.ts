@@ -24,8 +24,12 @@ import { Route as TopicsTopicSlugImport } from './routes/topics/$topicSlug'
 import { Route as SubjectsSubjectSlugImport } from './routes/subjects/$subjectSlug'
 import { Route as QuestionSetsSlugImport } from './routes/question-sets/$slug'
 import { Route as AuthSigninImport } from './routes/auth/signin'
+import { Route as AdminSettingsImport } from './routes/admin/settings'
+import { Route as AdminScrapingImport } from './routes/admin/scraping'
+import { Route as AdminReviewImport } from './routes/admin/review'
 import { Route as AdminContributionsImport } from './routes/admin/contributions'
 import { Route as ExamsExamSlugIndexImport } from './routes/exams/$examSlug/index'
+import { Route as ExamsExamSlugSubjectsSubjectSlugImport } from './routes/exams/$examSlug/subjects/$subjectSlug'
 import { Route as QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugImport } from './routes/questions/$examSlug.$variantSlug.$year.$subjectSlug.$questionSlug'
 
 // Create/Update Routes
@@ -108,6 +112,24 @@ const AuthSigninRoute = AuthSigninImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AdminSettingsRoute = AdminSettingsImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+
+const AdminScrapingRoute = AdminScrapingImport.update({
+  id: '/scraping',
+  path: '/scraping',
+  getParentRoute: () => AdminRoute,
+} as any)
+
+const AdminReviewRoute = AdminReviewImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AdminRoute,
+} as any)
+
 const AdminContributionsRoute = AdminContributionsImport.update({
   id: '/contributions',
   path: '/contributions',
@@ -119,6 +141,13 @@ const ExamsExamSlugIndexRoute = ExamsExamSlugIndexImport.update({
   path: '/exams/$examSlug/',
   getParentRoute: () => rootRoute,
 } as any)
+
+const ExamsExamSlugSubjectsSubjectSlugRoute =
+  ExamsExamSlugSubjectsSubjectSlugImport.update({
+    id: '/exams/$examSlug/subjects/$subjectSlug',
+    path: '/exams/$examSlug/subjects/$subjectSlug',
+    getParentRoute: () => rootRoute,
+  } as any)
 
 const QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute =
   QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugImport.update({
@@ -180,6 +209,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminContributionsImport
       parentRoute: typeof AdminImport
     }
+    '/admin/review': {
+      id: '/admin/review'
+      path: '/review'
+      fullPath: '/admin/review'
+      preLoaderRoute: typeof AdminReviewImport
+      parentRoute: typeof AdminImport
+    }
+    '/admin/scraping': {
+      id: '/admin/scraping'
+      path: '/scraping'
+      fullPath: '/admin/scraping'
+      preLoaderRoute: typeof AdminScrapingImport
+      parentRoute: typeof AdminImport
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsImport
+      parentRoute: typeof AdminImport
+    }
     '/auth/signin': {
       id: '/auth/signin'
       path: '/auth/signin'
@@ -236,6 +286,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExamsExamSlugIndexImport
       parentRoute: typeof rootRoute
     }
+    '/exams/$examSlug/subjects/$subjectSlug': {
+      id: '/exams/$examSlug/subjects/$subjectSlug'
+      path: '/exams/$examSlug/subjects/$subjectSlug'
+      fullPath: '/exams/$examSlug/subjects/$subjectSlug'
+      preLoaderRoute: typeof ExamsExamSlugSubjectsSubjectSlugImport
+      parentRoute: typeof rootRoute
+    }
     '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug': {
       id: '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug'
       path: '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug'
@@ -250,11 +307,17 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminContributionsRoute: typeof AdminContributionsRoute
+  AdminReviewRoute: typeof AdminReviewRoute
+  AdminScrapingRoute: typeof AdminScrapingRoute
+  AdminSettingsRoute: typeof AdminSettingsRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminContributionsRoute: AdminContributionsRoute,
+  AdminReviewRoute: AdminReviewRoute,
+  AdminScrapingRoute: AdminScrapingRoute,
+  AdminSettingsRoute: AdminSettingsRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -268,6 +331,9 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/admin/review': typeof AdminReviewRoute
+  '/admin/scraping': typeof AdminScrapingRoute
+  '/admin/settings': typeof AdminSettingsRoute
   '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
@@ -276,6 +342,7 @@ export interface FileRoutesByFullPath {
   '/exams': typeof ExamsIndexRoute
   '/subjects': typeof SubjectsIndexRoute
   '/exams/$examSlug': typeof ExamsExamSlugIndexRoute
+  '/exams/$examSlug/subjects/$subjectSlug': typeof ExamsExamSlugSubjectsSubjectSlugRoute
   '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug': typeof QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute
 }
 
@@ -286,6 +353,9 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/admin/review': typeof AdminReviewRoute
+  '/admin/scraping': typeof AdminScrapingRoute
+  '/admin/settings': typeof AdminSettingsRoute
   '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
@@ -294,6 +364,7 @@ export interface FileRoutesByTo {
   '/exams': typeof ExamsIndexRoute
   '/subjects': typeof SubjectsIndexRoute
   '/exams/$examSlug': typeof ExamsExamSlugIndexRoute
+  '/exams/$examSlug/subjects/$subjectSlug': typeof ExamsExamSlugSubjectsSubjectSlugRoute
   '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug': typeof QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute
 }
 
@@ -306,6 +377,9 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/admin/review': typeof AdminReviewRoute
+  '/admin/scraping': typeof AdminScrapingRoute
+  '/admin/settings': typeof AdminSettingsRoute
   '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
@@ -314,6 +388,7 @@ export interface FileRoutesById {
   '/exams/': typeof ExamsIndexRoute
   '/subjects/': typeof SubjectsIndexRoute
   '/exams/$examSlug/': typeof ExamsExamSlugIndexRoute
+  '/exams/$examSlug/subjects/$subjectSlug': typeof ExamsExamSlugSubjectsSubjectSlugRoute
   '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug': typeof QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute
 }
 
@@ -327,6 +402,9 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/admin/contributions'
+    | '/admin/review'
+    | '/admin/scraping'
+    | '/admin/settings'
     | '/auth/signin'
     | '/question-sets/$slug'
     | '/subjects/$subjectSlug'
@@ -335,6 +413,7 @@ export interface FileRouteTypes {
     | '/exams'
     | '/subjects'
     | '/exams/$examSlug'
+    | '/exams/$examSlug/subjects/$subjectSlug'
     | '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -344,6 +423,9 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/admin/contributions'
+    | '/admin/review'
+    | '/admin/scraping'
+    | '/admin/settings'
     | '/auth/signin'
     | '/question-sets/$slug'
     | '/subjects/$subjectSlug'
@@ -352,6 +434,7 @@ export interface FileRouteTypes {
     | '/exams'
     | '/subjects'
     | '/exams/$examSlug'
+    | '/exams/$examSlug/subjects/$subjectSlug'
     | '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug'
   id:
     | '__root__'
@@ -362,6 +445,9 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/admin/contributions'
+    | '/admin/review'
+    | '/admin/scraping'
+    | '/admin/settings'
     | '/auth/signin'
     | '/question-sets/$slug'
     | '/subjects/$subjectSlug'
@@ -370,6 +456,7 @@ export interface FileRouteTypes {
     | '/exams/'
     | '/subjects/'
     | '/exams/$examSlug/'
+    | '/exams/$examSlug/subjects/$subjectSlug'
     | '/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug'
   fileRoutesById: FileRoutesById
 }
@@ -388,6 +475,7 @@ export interface RootRouteChildren {
   ExamsIndexRoute: typeof ExamsIndexRoute
   SubjectsIndexRoute: typeof SubjectsIndexRoute
   ExamsExamSlugIndexRoute: typeof ExamsExamSlugIndexRoute
+  ExamsExamSlugSubjectsSubjectSlugRoute: typeof ExamsExamSlugSubjectsSubjectSlugRoute
   QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute: typeof QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute
 }
 
@@ -405,6 +493,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExamsIndexRoute: ExamsIndexRoute,
   SubjectsIndexRoute: SubjectsIndexRoute,
   ExamsExamSlugIndexRoute: ExamsExamSlugIndexRoute,
+  ExamsExamSlugSubjectsSubjectSlugRoute: ExamsExamSlugSubjectsSubjectSlugRoute,
   QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute:
     QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugRoute,
 }
@@ -432,6 +521,7 @@ export const routeTree = rootRoute
         "/exams/",
         "/subjects/",
         "/exams/$examSlug/",
+        "/exams/$examSlug/subjects/$subjectSlug",
         "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
       ]
     },
@@ -442,6 +532,9 @@ export const routeTree = rootRoute
       "filePath": "admin.tsx",
       "children": [
         "/admin/contributions",
+        "/admin/review",
+        "/admin/scraping",
+        "/admin/settings",
         "/admin/"
       ]
     },
@@ -459,6 +552,18 @@ export const routeTree = rootRoute
     },
     "/admin/contributions": {
       "filePath": "admin/contributions.tsx",
+      "parent": "/admin"
+    },
+    "/admin/review": {
+      "filePath": "admin/review.tsx",
+      "parent": "/admin"
+    },
+    "/admin/scraping": {
+      "filePath": "admin/scraping.tsx",
+      "parent": "/admin"
+    },
+    "/admin/settings": {
+      "filePath": "admin/settings.tsx",
       "parent": "/admin"
     },
     "/auth/signin": {
@@ -485,6 +590,9 @@ export const routeTree = rootRoute
     },
     "/exams/$examSlug/": {
       "filePath": "exams/$examSlug/index.tsx"
+    },
+    "/exams/$examSlug/subjects/$subjectSlug": {
+      "filePath": "exams/$examSlug/subjects/$subjectSlug.tsx"
     },
     "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug": {
       "filePath": "questions/$examSlug.$variantSlug.$year.$subjectSlug.$questionSlug.tsx"

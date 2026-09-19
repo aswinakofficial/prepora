@@ -25,12 +25,12 @@ function QuestionSetPage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-      {/* Header */}
-      <header className="px-6 py-8 flex justify-between items-center max-w-[1000px] mx-auto mb-16">
+      {/* Back Context */}
+      <div className="px-6 pt-12 flex justify-between items-center max-w-[1000px] mx-auto mb-16">
         <Link to="/" className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors">
           ← BACK TO INDEX
         </Link>
-      </header>
+      </div>
 
       <main className="max-w-[1000px] mx-auto px-6">
         {/* Context Rail */}

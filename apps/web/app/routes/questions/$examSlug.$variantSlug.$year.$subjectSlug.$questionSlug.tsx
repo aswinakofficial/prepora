@@ -36,6 +36,11 @@ const DEMO_QUESTION = {
   },
   topic: "Elasticity & Hooke's Law",
   subject: "Strength of Materials",
+  additionalReadingLinks: [
+    { text: "Young's Modulus - Wikipedia", url: "https://en.wikipedia.org/wiki/Young%27s_modulus" },
+    { text: "Elastic Modulus - GeeksforGeeks", url: "https://www.geeksforgeeks.org/elastic-modulus/" },
+    { text: "Hooke's Law - Khan Academy", url: "https://www.khanacademy.org/science/physics/work-and-energy/hookes-law" },
+  ],
   relatedQuestions: [
     { slug: "poissons-ratio-definition", text: "What is the theoretical range of Poisson's ratio for isotropic materials?" },
     { slug: "shear-modulus-relationship", text: "Which formula relates Young's Modulus (E) and Shear Modulus (G)?" },
@@ -58,12 +63,9 @@ function QuestionPage() {
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       
-      {/* Header */}
-      <header className="px-6 py-8 flex justify-between items-center max-w-[800px] mx-auto mb-16">
-        <Link to="/" className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors">
-          PREPORA
-        </Link>
-      </header>
+      {/* Back Spacer */}
+      <div className="px-6 pt-12 max-w-[800px] mx-auto mb-16">
+      </div>
 
       <main className="max-w-[800px] mx-auto px-6">
         {/* Context Rail */}
@@ -156,7 +158,7 @@ function QuestionPage() {
           <section className="border-t border-slate-900 pt-16">
             <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-8">Continue</h2>
             
-            <div className="flex flex-col space-y-6">
+              <div className="flex flex-col space-y-6">
               <div className="flex flex-col">
                 <span className="text-sm text-slate-600 mb-2">Related questions</span>
                 {DEMO_QUESTION.relatedQuestions.map((rq) => (
@@ -170,6 +172,25 @@ function QuestionPage() {
                   </Link>
                 ))}
               </div>
+
+              {DEMO_QUESTION.additionalReadingLinks && DEMO_QUESTION.additionalReadingLinks.length > 0 && (
+                <div className="border-t border-slate-800 pt-8">
+                  <span className="text-sm text-slate-600 mb-4 block">Additional reading resources</span>
+                  <div className="flex flex-col space-y-2">
+                    {DEMO_QUESTION.additionalReadingLinks.map((link, idx) => (
+                      <a
+                        key={idx}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 transition-colors py-2 flex items-center gap-4 text-sm hover:underline"
+                      >
+                        <span className="text-slate-600">📖</span> {link.text}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="pt-8">
                 <Link to="/search" search={{ q: DEMO_QUESTION.topic }} className="text-slate-300 hover:text-white transition-colors flex items-center gap-4">

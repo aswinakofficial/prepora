@@ -78,146 +78,186 @@ function AdminContributionsPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#080c14] text-slate-100 p-6 space-y-6">
-      {/* Top Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white flex flex-col">
+      {/* Top Protocol Header */}
+      <div className="px-8 py-10 flex items-center justify-between border-b border-slate-900 sticky top-0 bg-[#06080a] z-20">
+        <div className="flex items-center gap-8">
           <Link
             to="/admin"
-            className="p-2 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200 transition-colors"
+            className="font-mono text-[10px] uppercase text-slate-500 hover:text-white border-b border-transparent hover:border-slate-500 transition-colors pb-1 flex items-center gap-2"
           >
-            <ArrowLeft className="w-4 h-4" />
+            ← Root
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-white flex items-center gap-2">
-              Contribution Review Queue
-              <span className="px-2 py-0.5 rounded-full bg-amber-950 border border-amber-800 text-amber-400 text-xs font-mono">
-                {submissions.filter((s) => s.status === "pending").length} Pending
+            <h1 className="text-2xl font-light text-white uppercase tracking-widest mb-1 flex items-center gap-4">
+              Ingestion Queue
+              <span className="font-mono text-[10px] tracking-widest px-2 py-0.5 border border-amber-900 bg-amber-950/20 text-amber-500">
+                {submissions.filter((s) => s.status === "pending").length} ACTIVE PENDING
               </span>
             </h1>
-            <p className="text-xs text-slate-400">Review community submissions, diff check, and approve for publishing.</p>
+            <p className="font-mono text-[10px] text-slate-600 tracking-widest uppercase">
+              Community Contributions / Diff Inspection Protocol
+            </p>
           </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
+        {/* Filter Matrix */}
+        <div className="flex items-center gap-2">
           {(["pending", "approved", "all"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono capitalize transition-all ${
-                filter === f ? "bg-slate-950 text-white shadow-sm border border-slate-800" : "text-slate-400 hover:text-slate-200"
+              className={`px-4 py-1.5 text-[10px] font-mono uppercase tracking-widest transition-all ${
+                filter === f 
+                  ? "bg-slate-200 text-black border border-slate-200" 
+                  : "bg-transparent border border-slate-800 text-slate-500 hover:text-white hover:border-slate-600"
               }`}
             >
-              {f}
+              / {f}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Main Split Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Main Matrix Split */}
+      <div className="flex-1 w-full grid grid-cols-1 lg:grid-cols-12">
         {/* Submissions List Sidebar */}
-        <div className="lg:col-span-4 space-y-3">
-          <div className="text-xs font-mono uppercase text-slate-400 tracking-wider">Submissions Queue</div>
-          <div className="space-y-2">
-            {filteredSubmissions.map((sub) => (
-              <button
-                key={sub.id}
-                onClick={() => setSelectedId(sub.id)}
-                className={`w-full text-left p-4 rounded-xl border transition-all space-y-2 ${
-                  selectedId === sub.id
-                    ? "border-blue-500/80 bg-slate-900/90 shadow-md shadow-blue-500/5"
-                    : "border-slate-800/80 bg-slate-900/40 hover:bg-slate-900/70"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-blue-400">{sub.exam}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono capitalize border ${
-                      sub.status === "pending"
-                        ? "bg-amber-950/60 border-amber-800/60 text-amber-400"
-                        : sub.status === "approved"
-                        ? "bg-emerald-950/60 border-emerald-800/60 text-emerald-400"
-                        : "bg-rose-950/60 border-rose-800/60 text-rose-400"
+        <div className="lg:col-span-4 border-r border-slate-900 flex flex-col h-[calc(100vh-109px)]">
+          <div className="p-8 border-b border-slate-900">
+             <div className="text-[10px] font-mono uppercase text-slate-600 tracking-[0.3em]">
+               // Transaction Log
+             </div>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto scrollbar-hide divide-y divide-slate-900">
+            {filteredSubmissions.map((sub) => {
+               const isSelected = selectedId === sub.id;
+               return (
+                  <button
+                    key={sub.id}
+                    onClick={() => setSelectedId(sub.id)}
+                    className={`w-full text-left p-8 transition-colors group ${
+                      isSelected ? "bg-slate-900/40" : "hover:bg-slate-900/20"
                     }`}
                   >
-                    {sub.status}
-                  </span>
-                </div>
-                <div className="text-xs font-semibold text-slate-200">{sub.variant} ({sub.year})</div>
-                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 font-mono">
-                  <span>{sub.subject}</span>
-                  <span>{sub.submittedAt}</span>
-                </div>
-              </button>
-            ))}
+                    <div className="flex flex-col gap-6">
+                       <div className="flex items-center justify-between">
+                         <span className="text-[10px] font-mono tracking-widest text-[#00ff9d] uppercase">
+                           Node_ID: {sub.id}
+                         </span>
+                         <span
+                           className={`text-[10px] font-mono uppercase tracking-widest ${
+                             sub.status === "pending"
+                               ? "text-amber-500"
+                               : sub.status === "approved"
+                               ? "text-emerald-500"
+                               : "text-red-500"
+                           }`}
+                         >
+                           [{sub.status}]
+                         </span>
+                       </div>
+                       
+                       <div>
+                         <h3 className="text-lg text-white font-light uppercase tracking-wide group-hover:text-white transition-colors mb-2">
+                           {sub.exam} — {sub.variant}
+                         </h3>
+                         <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 tracking-widest uppercase">
+                           <span>{sub.subject}</span>
+                           <span>{sub.year}</span>
+                         </div>
+                       </div>
+                    </div>
+                  </button>
+               );
+            })}
           </div>
         </div>
 
         {/* Selected Submission Inspector & Diff Viewer */}
-        <div className="lg:col-span-8 space-y-4">
-          <div className="p-6 rounded-2xl border border-slate-800 bg-slate-900/50 space-y-6">
-            {/* Metadata bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
-              <div>
-                <div className="text-xs font-mono text-slate-400">Submission ID: {selectedSubmission.id}</div>
-                <h2 className="text-base font-bold text-white mt-0.5">
-                  {selectedSubmission.exam} - {selectedSubmission.variant} ({selectedSubmission.year})
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Submitted by {selectedSubmission.submittedBy}</p>
-              </div>
+        <div className="lg:col-span-8 bg-[#06080a] h-[calc(100vh-109px)] overflow-y-auto">
+          {/* Metadata Matrix */}
+          <div className="p-8 md:p-12 border-b border-slate-900">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-12">
+               <div>
+                  <div className="text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-6">
+                    // Inspector Metadata
+                  </div>
+                  <h2 className="text-3xl md:text-5xl font-light text-white uppercase tracking-tighter leading-none mb-6">
+                    {selectedSubmission.exam} <br/> {selectedSubmission.variant}
+                  </h2>
+                  <div className="flex flex-col gap-4">
+                     <span className="text-[10px] font-mono tracking-widest uppercase border-b border-slate-900/50 pb-2">
+                        <span className="text-slate-600">SRC: </span><span className="text-slate-300">{selectedSubmission.submittedBy}</span>
+                     </span>
+                     <span className="text-[10px] font-mono tracking-widest uppercase">
+                        <span className="text-slate-600">TIMESTAMP: </span><span className="text-slate-300">{selectedSubmission.submittedAt}</span> 
+                     </span>
+                  </div>
+               </div>
 
-              {/* Action Buttons */}
-              {selectedSubmission.status === "pending" && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleAction(selectedSubmission.id, "rejected")}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-950/80 border border-rose-800/80 text-rose-300 text-xs font-mono hover:bg-rose-900 transition-colors"
-                  >
-                    <XCircle className="w-3.5 h-3.5" /> Reject
-                  </button>
-                  <button
-                    onClick={() => handleAction(selectedSubmission.id, "approved")}
-                    className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition-all"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Approve & Publish
-                  </button>
-                </div>
-              )}
+               {/* Protocol Actions */}
+               <div className="shrink-0 flex flex-col gap-4 min-w-[240px]">
+                  {selectedSubmission.status === "pending" ? (
+                    <>
+                      <button
+                        onClick={() => handleAction(selectedSubmission.id, "approved")}
+                        className="w-full px-6 py-4 border border-emerald-500 hover:bg-emerald-500 text-emerald-500 hover:text-black font-mono text-xs tracking-widest uppercase transition-colors text-center"
+                      >
+                        APPROVE_COMMIT
+                      </button>
+                      <button
+                        onClick={() => handleAction(selectedSubmission.id, "rejected")}
+                        className="w-full px-6 py-4 border border-red-900 hover:border-red-500 hover:bg-red-950/20 text-red-500 font-mono text-xs tracking-widest uppercase transition-colors text-center"
+                      >
+                        REJECT_DISCARD
+                      </button>
+                    </>
+                  ) : (
+                    <div className="px-6 py-4 border border-slate-800 bg-slate-900/30 text-slate-500 font-mono text-xs tracking-widest uppercase text-center cursor-not-allowed">
+                       OPERATION EXECUTED
+                    </div>
+                  )}
+               </div>
             </div>
+          </div>
 
-            {/* Content Comparator / Inspector */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
-                <span className="flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-blue-400" /> Submitted Raw Format ({selectedSubmission.type.toUpperCase()})
-                </span>
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> Auto-validated syntax
-                </span>
+          <div className="p-8 md:p-12 flex flex-col lg:flex-row gap-12">
+            
+            {/* Raw Buffer Output */}
+            <div className="flex-1">
+              <div className="flex items-center justify-between text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-8 border-b border-slate-900 pb-4">
+                <span>// Buffer: {selectedSubmission.type.toUpperCase()}</span>
+                <span className="text-[#00ff9d]">SYNTAX_OK</span>
               </div>
 
-              <div className="p-4 rounded-xl border border-slate-800 bg-slate-950 font-mono text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
+              <div className="p-8 border border-slate-900 bg-black text-slate-300 font-mono text-sm leading-8 whitespace-pre-wrap">
                 {selectedSubmission.content}
               </div>
             </div>
 
-            {/* System Parser Verification Log */}
-            <div className="p-4 rounded-xl border border-slate-800/60 bg-slate-950/50 space-y-2">
-              <div className="text-xs font-mono text-slate-400 uppercase tracking-wider">Automated Verification Log</div>
-              <div className="space-y-1 font-mono text-[11px]">
-                <div className="text-emerald-400 flex items-center gap-2">
-                  <CheckCircle2 className="w-3 h-3" /> Question Structure Validated (1 Question extracted)
-                </div>
-                <div className="text-emerald-400 flex items-center gap-2">
-                  <CheckCircle2 className="w-3 h-3" /> Answer Key Present & Mapped to Option B
-                </div>
-                <div className="text-slate-400 flex items-center gap-2">
-                  <Sparkles className="w-3 h-3 text-blue-400" /> Duplicate Check Passed (0 match found in Database)
-                </div>
-              </div>
-            </div>
+            {/* Diagnostic Sidebar */}
+            <aside className="lg:w-80 shrink-0">
+               <div className="text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-8 border-b border-slate-900 pb-4">
+                 // System Diagnostics
+               </div>
+               
+               <ul className="space-y-6 font-mono text-[10px] tracking-widest uppercase">
+                 <li className="flex gap-4">
+                    <span className="text-[#00ff9d] shrink-0 mt-1">[OK]</span>
+                    <span className="text-slate-400 leading-snug">Structural integrity verified. One root node extracted.</span>
+                 </li>
+                 <li className="flex gap-4">
+                    <span className="text-[#00ff9d] shrink-0 mt-1">[OK]</span>
+                    <span className="text-slate-400 leading-snug">Resolution key located {'->'} Mapped to Option_B.</span>
+                 </li>
+                 <li className="flex gap-4">
+                    <span className="text-slate-600 shrink-0 mt-1">[--]</span>
+                    <span className="text-slate-600 leading-snug">Collision detection passed. 0 historical matches.</span>
+                 </li>
+               </ul>
+            </aside>
+            
           </div>
         </div>
       </div>
