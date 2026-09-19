@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { authClient } from "../../lib/auth-client";
 import { createServerFn } from "@tanstack/react-start";
+import { isAdminUser } from "@prepora/auth";
 
 export type UserRole = "admin" | "user" | "guest";
 
@@ -13,21 +14,15 @@ export interface RBACState {
   hasRole: (allowedRoles: UserRole[]) => boolean;
 }
 
+// Delegates to the one canonical authorization rule (packages/auth's
+// isAdminUser) instead of re-parsing ADMIN_USERS itself — a second,
+// independent copy of that rule previously lived here and could drift
+// from the version packages/api's adminProcedure actually enforces. See
+// docs/architecture/prepora-next-level-plan.md finding #20.
 const checkAdminRightsServerFn = createServerFn({ method: "POST" })
   .validator((email: string) => email)
   .handler(async (ctx) => {
-    const email = ctx.data.toLowerCase();
-    const adminUsersEnv = process.env.ADMIN_USERS || (globalThis as any)?.ADMIN_USERS || "";
-    
-    if (!adminUsersEnv) {
-      return { authorized: false };
-    }
-    
-    const allowed = adminUsersEnv
-      .split(",")
-      .map((e: string) => e.trim().replace(/['"]/g, "").toLowerCase());
-    
-    return { authorized: allowed.includes(email) };
+    return { authorized: isAdminUser({ email: ctx.data }) };
   });
 
 export function useRBAC(): RBACState {

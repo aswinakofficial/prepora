@@ -98,6 +98,17 @@ export const getAuth = () => {
   return createBetterAuthInstance();
 };
 
+// This Proxy exists because Cloudflare Workers pass per-request
+// environment bindings to the fetch handler rather than exposing them at
+// module-load time — so betterAuth(...) can't be constructed eagerly at
+// import time without risking empty secrets. setAuth() (called once per
+// request from apps/web/app/ssr.tsx, before any route handler runs) syncs
+// those bindings into process.env; every property access here goes
+// through getAuth(), which builds the real instance lazily on first use
+// (or rebuilds it if setAuth() just saw new binding values) rather than
+// at import time. Keep this lazy — it isn't defensive scaffolding left
+// over from the auth incident, it's the actual fix for a real Workers
+// constraint.
 export const auth = new Proxy({} as ReturnType<typeof betterAuth>, {
   get(_target, prop) {
     const instance = getAuth();
@@ -107,13 +118,12 @@ export const auth = new Proxy({} as ReturnType<typeof betterAuth>, {
 });
 
 /**
- * Resolves the authenticated user via multiple methods.
- * Implements cascading priority resolver (API Key -> Session Cookies).
+ * Resolves the currently authenticated user, if any, from a request's
+ * session cookie.
  */
 export async function resolveUserFromRequestHeaders(headers: Headers) {
-  // Cascading identity resolver implementation
   const authInstance = getAuth();
-  
+
   try {
     const session = await authInstance.api.getSession({ headers });
     return session?.user ?? null;
