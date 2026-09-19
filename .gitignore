@@ -14,6 +14,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# apps/pipeline's local raw artifact store (item 12) — content-addressed, regenerable from source,
+# and can grow large; never belongs in git.
+.data/
+
 # Vendored reference clones — never commit third-party source into this repo
 reactive-resume-repo/
 
