@@ -1,23 +1,33 @@
 import os
 import re
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import requests
 from bs4 import BeautifulSoup
 import psycopg2
 from psycopg2.extras import Json
 from dotenv import load_dotenv
 
+from security import assert_safe_url, cors_allowed_origins, require_service_token, safe_get
+
 load_dotenv()
 
-app = FastAPI(title="Prepora Web Scraper Microservice Engine")
+# Every endpoint on this service requires a valid PIPELINE_SERVICE_TOKEN
+# bearer token (see security.py). There is no unauthenticated endpoint,
+# including /health — this service has no legitimate public caller.
+app = FastAPI(
+    title="Prepora Web Scraper Microservice Engine",
+    dependencies=[Depends(require_service_token)],
+)
 
-# Enable CORS for local dev & admin panel triggers
+# CORS origins are configured, not wildcarded — see SCRAPER_CORS_ORIGINS
+# in .env.example. Wildcard origins combined with credentials (the prior
+# configuration) is both an invalid combination browsers reject and a
+# signal this was never exercised as designed.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -124,6 +134,13 @@ async def scrape_endpoint(req: ScrapeRequest):
     if not req.url:
         raise HTTPException(status_code=400, detail="Target URL is required for scraping.")
 
+    # Reject the request up front if the URL isn't safe to fetch server-side
+    # (wrong scheme, host not on SCRAPER_ALLOWED_HOSTS, or resolves to a
+    # loopback/private/link-local address such as cloud metadata). This
+    # covers both branches below — the Playwright path uses page.goto()
+    # rather than requests, so it can't route through safe_get().
+    assert_safe_url(req.url)
+
     # SPECIALIZED PLAYWRIGHT BRANCH: Microsoft Learn Assessment Crawler
     if "learn.microsoft.com" in req.url or "microsoft.com" in req.url:
         is_headless = req.headless if req.headless is not None else True
@@ -161,8 +178,10 @@ async def scrape_endpoint(req: ScrapeRequest):
     # MODE 1: Specific Target URL Ingestion
     print(f"[TARGET SCRAPE] URL: {req.url} | Mode: {req.parser_mode}")
     try:
-        response = requests.get(req.url, headers=headers, timeout=12)
+        response = safe_get(req.url, headers=headers, timeout=12)
         response.raise_for_status()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch target URL: {str(e)}")
 

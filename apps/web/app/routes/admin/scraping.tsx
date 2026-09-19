@@ -124,6 +124,12 @@ const TARGET_WEBSITES: TargetWebsite[] = [
 function AdminScrapingPage() {
   const { data: routeData, isLoading, refetch } = useQuery(orpc.admin.getScrapedQuestions.queryOptions());
   const { mutateAsync: triggerScrapeJobFn } = useMutation(orpc.admin.triggerScrapeJob.mutationOptions());
+  const { mutateAsync: fetchMsCatalogFn } = useMutation(orpc.admin.getMsLearnCatalog.mutationOptions());
+  const { mutateAsync: triggerMsLearnAuthFn } = useMutation(orpc.admin.triggerMsLearnAuth.mutationOptions());
+  const { data: healthData } = useQuery({
+    ...orpc.admin.getScraperHealth.queryOptions(),
+    refetchInterval: 15000,
+  });
   const initialQuestions = routeData || [];
   const [questions, setQuestions] = useState(initialQuestions);
   
@@ -143,7 +149,6 @@ function AdminScrapingPage() {
   const [targetExam, setTargetExam] = useState("Auto-detect");
   const [targetSubject, setTargetSubject] = useState("Auto-detect");
   const [parserMode, setParserMode] = useState(TARGET_WEBSITES[0].defaultMode);
-  const [backendUrl, setBackendUrl] = useState("http://localhost:8000/scrape");
   const [maxQuestions, setMaxQuestions] = useState<number>(50);
   const [maxExamSets, setMaxExamSets] = useState<number>(msCatalog?.length || 10);  
   const [isHeadless, setIsHeadless] = useState<boolean>(true);
@@ -169,16 +174,11 @@ function AdminScrapingPage() {
     setIsFetchingCatalog(true);
     setErrorMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/scrape/ms-learn/catalog");
-      if (res.ok) {
-        const data = await res.json();
-        const items = data.catalog || [];
-        setMsCatalog(items);
-        setSelectedCatalogUrls(items.map((item: any) => item.url));
-        setSuccessMsg(`Discovered ${data.catalog_count || 0} Microsoft Learn Practice Assessments!`);
-      } else {
-        setErrorMsg("Failed to scan Microsoft Learn assessment catalog.");
-      }
+      const data = await fetchMsCatalogFn({});
+      const items = data.catalog || [];
+      setMsCatalog(items);
+      setSelectedCatalogUrls(items.map((item: any) => item.url));
+      setSuccessMsg(`Discovered ${data.catalog_count || 0} Microsoft Learn Practice Assessments!`);
     } catch (err: any) {
       setErrorMsg(`Catalog fetch error: ${err.message}`);
     } finally {
@@ -215,7 +215,6 @@ function AdminScrapingPage() {
       try {
         const data = await triggerScrapeJobFn({
           url: cat.url,
-          backendUrl,
           targetExam: `Exam ${cat.exam}`,
           targetSubject: "Microsoft Certification",
           parserMode: "mcq",
@@ -242,19 +241,13 @@ function AdminScrapingPage() {
     setMsAuthStatus("Launching Playwright browser... Please log in to Microsoft in the opened browser window.");
     setErrorMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/scrape/ms-learn/auth", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.authenticated) {
-          setMsAuthStatus("Microsoft Account authenticated! Persistent session state saved.");
-          setSuccessMsg("Microsoft Account authenticated successfully!");
-        } else {
-          setMsAuthStatus("Login incomplete or timed out. Please click 'Authenticate Microsoft Account' and finish signing in.");
-          setErrorMsg("Authentication not completed. Please log in in the opened browser window.");
-        }
+      const data = await triggerMsLearnAuthFn({});
+      if (data.authenticated) {
+        setMsAuthStatus("Microsoft Account authenticated! Persistent session state saved.");
+        setSuccessMsg("Microsoft Account authenticated successfully!");
       } else {
-        const errJson = await res.json();
-        setMsAuthStatus(`Auth failed: ${errJson.detail || "Error launching Playwright session"}`);
+        setMsAuthStatus("Login incomplete or timed out. Please click 'Authenticate Microsoft Account' and finish signing in.");
+        setErrorMsg("Authentication not completed. Please log in in the opened browser window.");
       }
     } catch (err: any) {
       setMsAuthStatus(`Auth error: ${err.message}`);
@@ -264,25 +257,12 @@ function AdminScrapingPage() {
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem("scraperBackendUrl");
-    if (saved) setBackendUrl(saved);
-    checkBackendHealth(saved || "http://localhost:8000/scrape");
-  }, []);
-
-  const checkBackendHealth = async (endpoint: string) => {
-    setBackendStatus("checking");
-    try {
-      const healthUrl = endpoint.replace(/\/scrape$/, "/health");
-      const res = await fetch(healthUrl, { method: "GET" });
-      if (res.ok) {
-        setBackendStatus("online");
-      } else {
-        setBackendStatus("offline");
-      }
-    } catch {
+    if (healthData?.status === "online") {
+      setBackendStatus("online");
+    } else {
       setBackendStatus("offline");
     }
-  };
+  }, [healthData]);
 
   const handleSelectWebsite = (site: TargetWebsite) => {
     setSelectedWebsite(site);
@@ -293,13 +273,6 @@ function AdminScrapingPage() {
     setErrorMsg(null);
     setSuccessMsg(null);
     setLastExtractionResult(null);
-  };
-
-  const handleBackendUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUrl = e.target.value;
-    setBackendUrl(newUrl);
-    localStorage.setItem("scraperBackendUrl", newUrl);
-    checkBackendHealth(newUrl);
   };
 
   const handleScrape = async (e: React.FormEvent) => {
@@ -315,7 +288,6 @@ function AdminScrapingPage() {
       const jobId = Math.random().toString(36).substring(7);
       const data = await triggerScrapeJobFn({
         url,
-        backendUrl,
         parserMode,
         targetExam,
         targetSubject,
@@ -386,14 +358,20 @@ function AdminScrapingPage() {
               <div className="flex items-center justify-between gap-6 text-[11px] uppercase tracking-wider">
                 <span className="text-slate-500">FASTAPI SERVICE:</span>
                 <span className={`flex items-center gap-1.5 font-semibold ${
-                  backendStatus === "online" ? "text-emerald-400" : "text-amber-400"
+                  healthData?.status === "online" ? "text-emerald-400"
+                    : healthData?.status === "misconfigured" ? "text-rose-400"
+                    : "text-amber-400"
                 }`}>
-                  <span className={`w-2 h-2 rounded-full ${backendStatus === "online" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`}></span>
-                  {backendStatus === "online" ? "ONLINE (PORT 8000)" : "OFFLINE (NODE FALLBACK READY)"}
+                  <span className={`w-2 h-2 rounded-full ${healthData?.status === "online" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`}></span>
+                  {healthData?.status === "online" ? "ONLINE"
+                    : healthData?.status === "misconfigured" ? "MISCONFIGURED"
+                    : "OFFLINE"}
                 </span>
               </div>
               <div className="text-[10px] text-slate-600 truncate max-w-[280px]">
-                {backendUrl}
+                {healthData?.status === "misconfigured" || healthData?.status === "offline"
+                  ? healthData.reason
+                  : "Address and credential are configured server-side (SCRAPER_SERVICE_URL)."}
               </div>
             </div>
           </div>
@@ -717,19 +695,6 @@ function AdminScrapingPage() {
                       </span>
                       <span className="text-[10px] opacity-75">{isHeadless ? "ON" : "OFF"}</span>
                     </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="font-mono text-xs uppercase tracking-widest text-slate-400">
-                      ENDPOINT (FASTAPI)
-                    </label>
-                    <input
-                      type="text"
-                      value={backendUrl}
-                      onChange={handleBackendUrlChange}
-                      placeholder="http://localhost:8000/scrape"
-                      className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-300 px-3 py-3 outline-none transition-colors"
-                    />
                   </div>
                 </div>
 

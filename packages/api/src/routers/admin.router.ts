@@ -21,6 +21,34 @@ export const adminProcedure = protectedProcedure.use(async ({ context, next }) =
   return next({ context });
 });
 
+// ─── Scraper service connectivity ──────────────────────────────────────────────
+// The scraper's address and credential are server configuration, never
+// caller input — a prior version accepted a `backendUrl` from the request
+// body, which let a caller point this server's outbound fetch at an
+// arbitrary host (see docs/architecture/prepora-next-level-plan.md
+// finding #4 and roadmap item 3). The admin UI never talks to apps/scraper
+// directly either; every call is proxied through fetchScraper() so the
+// service token never reaches the browser.
+
+function getScraperBaseUrl(): string {
+  return (process.env.SCRAPER_SERVICE_URL || "http://localhost:8000").replace(/\/+$/, "");
+}
+
+function getScraperAuthHeaders(): Record<string, string> {
+  const token = process.env.PIPELINE_SERVICE_TOKEN;
+  if (!token) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "PIPELINE_SERVICE_TOKEN is not configured. Set it in the environment (see .env.example) to enable scraping.",
+    });
+  }
+  return { Authorization: `Bearer ${token}` };
+}
+
+async function fetchScraper(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = { ...getScraperAuthHeaders(), ...(init.headers as Record<string, string> | undefined) };
+  return fetch(`${getScraperBaseUrl()}${path}`, { ...init, headers });
+}
+
 export const adminRouter = {
   getDashboardStats: adminProcedure
     .route({
@@ -223,6 +251,64 @@ export const adminRouter = {
       return { success: true, message: `Approved and published ${publishCount} questions.` };
     }),
 
+  getScraperHealth: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/scrape/health",
+      summary: "Check scraper service health and configuration",
+    })
+    .handler(async () => {
+      try {
+        const res = await fetchScraper("/health");
+        if (res.ok) {
+          const body = await res.json().catch(() => ({}));
+          return { status: "online" as const, ...body };
+        }
+        return { status: "offline" as const, reason: `Scraper returned HTTP ${res.status}` };
+      } catch (err: any) {
+        if (err instanceof ORPCError) {
+          // PIPELINE_SERVICE_TOKEN isn't configured — that's a
+          // configuration problem, not "the service is down".
+          return { status: "misconfigured" as const, reason: err.message };
+        }
+        return { status: "offline" as const, reason: err?.message || `Scraper is unreachable at ${getScraperBaseUrl()}` };
+      }
+    }),
+
+  getMsLearnCatalog: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/scrape/ms-learn/catalog",
+      summary: "Discover available Microsoft Learn practice assessments",
+    })
+    .handler(async () => {
+      const res = await fetchScraper("/scrape/ms-learn/catalog");
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new ORPCError("BAD_GATEWAY", {
+          message: `Scraper returned ${res.status} while fetching the MS Learn catalog${errText ? `: ${errText.slice(0, 500)}` : ""}.`,
+        });
+      }
+      return res.json();
+    }),
+
+  triggerMsLearnAuth: adminProcedure
+    .route({
+      method: "POST",
+      path: "/admin/scrape/ms-learn/auth",
+      summary: "Launch the interactive Microsoft Learn authentication flow",
+    })
+    .handler(async () => {
+      const res = await fetchScraper("/scrape/ms-learn/auth", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new ORPCError("BAD_GATEWAY", {
+          message: body?.detail || `Scraper returned ${res.status} while launching Microsoft authentication.`,
+        });
+      }
+      return body;
+    }),
+
   getScraperLogs: adminProcedure
     .route({
       method: "GET",
@@ -231,12 +317,17 @@ export const adminRouter = {
     })
     .handler(async () => {
       try {
-        const res = await fetch("http://localhost:8000/scrape/logs");
+        const res = await fetchScraper("/scrape/logs");
         if (res.ok) {
           return await res.json();
         }
-      } catch (e) {}
-      return { status: "offline", logs: ["[SYSTEM]: Scraper Python service on http://localhost:8000 is currently offline."] };
+        return { status: "offline", logs: [`[SYSTEM]: Scraper returned HTTP ${res.status}.`] };
+      } catch (err: any) {
+        if (err instanceof ORPCError) {
+          return { status: "misconfigured", logs: [`[SYSTEM]: ${err.message}`] };
+        }
+        return { status: "offline", logs: [`[SYSTEM]: Scraper service at ${getScraperBaseUrl()} is currently offline.`] };
+      }
     }),
 
   triggerScrapeJob: adminProcedure
@@ -247,7 +338,6 @@ export const adminRouter = {
     })
     .input(z.object({
       url: z.string(),
-      backendUrl: z.string().optional(),
       parserMode: z.string().optional(),
       targetExam: z.string().optional(),
       targetSubject: z.string().optional(),
@@ -256,11 +346,10 @@ export const adminRouter = {
       headless: z.boolean().optional(),
     }))
     .handler(async ({ input }) => {
-      const { 
-        url, 
-        backendUrl = "http://localhost:8000/scrape", 
-        parserMode = "mcq", 
-        targetExam = "Kerala PSC AE Civil", 
+      const {
+        url,
+        parserMode = "mcq",
+        targetExam = "Kerala PSC AE Civil",
         targetSubject = "Strength of Materials",
         maxQuestions = 50,
         headless = true
@@ -273,7 +362,7 @@ export const adminRouter = {
       // question content when the backend was unreachable.
       let responseData: any;
       try {
-        const pyRes = await fetch(backendUrl, {
+        const pyRes = await fetchScraper("/scrape", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -298,7 +387,7 @@ export const adminRouter = {
         if (err instanceof ORPCError) throw err;
         console.error("[SCRAPE PROXY ERROR]: Python scraper backend unreachable:", err);
         throw new ORPCError("BAD_GATEWAY", {
-          message: `Scraper service is unreachable at ${backendUrl}. No content was extracted or saved.`,
+          message: `Scraper service is unreachable at ${getScraperBaseUrl()}. No content was extracted or saved.`,
         });
       }
 
