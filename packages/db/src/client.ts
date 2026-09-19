@@ -1,9 +1,16 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema/index.ts";
 
+function cleanConnectionString(urlStr?: string): string {
+  if (!urlStr) return "";
+  return urlStr.replace(/[\?&]channel_binding=[^&]+/g, "");
+}
+
 export const getDb = (baseUrl?: string) => {
-  const connectionString = baseUrl || process.env.DATABASE_URL || "";
+  const rawString = baseUrl || process.env.DATABASE_URL || "";
+  const connectionString = cleanConnectionString(rawString);
+  
   if (!connectionString) {
     console.error("⚠️ [DB ERROR] DATABASE_URL environment variable is missing when attempting to initialize DB!");
   } else {
@@ -21,7 +28,7 @@ export const getDb = (baseUrl?: string) => {
 
 // Also keep `db` for local usages where process.env is set
 export const db = typeof process !== 'undefined' && process.env.DATABASE_URL 
-  ? drizzle(neon(process.env.DATABASE_URL), { schema })
+  ? drizzle(neon(cleanConnectionString(process.env.DATABASE_URL)), { schema })
   : {} as any; // mock or keep empty if not available
 
 

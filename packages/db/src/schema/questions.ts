@@ -167,3 +167,13 @@ export const questionOccurrencesRelations = relations(questionOccurrences, ({ on
   question: one(questions, { fields: [questionOccurrences.questionId], references: [questions.id] }),
   questionSet: one(questionSets, { fields: [questionOccurrences.questionSetId], references: [questionSets.id] }),
 }));
+
+// ─── Zod Schemas ──────────────────────────────────────────────────────────────
+
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+
+export const insertQuestionSchema = createInsertSchema(questions);
+export const selectQuestionSchema = createSelectSchema(questions);
+export const insertQuestionOptionSchema = createInsertSchema(questionOptions);
+export const selectQuestionOptionSchema = createSelectSchema(questionOptions);
+

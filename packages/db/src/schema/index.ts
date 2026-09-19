@@ -4,3 +4,4 @@ export * from "./catalog.ts";
 export * from "./questions.ts";
 export * from "./users.ts";
 export * from "./analytics.ts";
+export * from "./scraping.ts";
