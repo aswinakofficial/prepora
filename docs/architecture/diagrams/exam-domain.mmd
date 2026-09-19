@@ -1,0 +1,135 @@
+%% Prepora — Multi-Exam-Type Domain Model
+%% Companion diagram to docs/architecture/exam-domain-model.md
+%% Every entity here has a corresponding table/column list in that document's §7.
+
+erDiagram
+    ORGANIZATIONS ||--o{ EXAMS : conducts
+    EXAM_TYPES ||--o{ EXAMS : classifies
+    EXAMS ||--o{ EXAM_VARIANTS : has
+    EXAM_VARIANTS ||--o{ EXAM_SESSIONS : "has (always at least one)"
+    EXAM_VARIANTS ||--o{ COURSES : "offers (university/school only)"
+    EXAM_VARIANTS ||--o{ QUESTION_SETS : has
+    EXAM_SESSIONS ||--o{ QUESTION_SETS : scopes
+    SUBJECTS ||--o{ COURSES : "mapped by"
+    SUBJECTS ||--o{ TOPICS : has
+    SUBJECTS ||--o{ QUESTION_SETS : classifies
+    TOPICS ||--o{ TOPICS : "parent of"
+    TOPICS ||--o{ QUESTIONS : classifies
+    QUESTION_SETS ||--o{ QUESTION_OCCURRENCES : contains
+    QUESTIONS ||--o{ QUESTION_OCCURRENCES : "appears in"
+    QUESTIONS ||--o{ QUESTION_OPTIONS : has
+    QUESTIONS ||--o{ QUESTION_ANSWERS : has
+    QUESTION_OPTIONS ||--o| QUESTION_ANSWERS : "is correct option for"
+
+    ORGANIZATIONS {
+        text id PK
+        text name
+        text slug UK
+        text description
+        text official_url
+        text logo_url
+        text jurisdiction
+    }
+    EXAM_TYPES {
+        text id PK
+        text slug UK
+        text label
+        text description
+        boolean has_program_hierarchy
+    }
+    EXAMS {
+        text id PK
+        text organization_id FK
+        text exam_type_id FK
+        text name
+        text slug UK
+        text description
+        text official_url
+        text logo_url
+        text status
+    }
+    EXAM_VARIANTS {
+        text id PK
+        text exam_id FK
+        text name
+        text slug "unique per exam_id"
+        text description
+        text syllabus
+        jsonb metadata
+        text status
+    }
+    EXAM_SESSIONS {
+        text id PK
+        text exam_variant_id FK
+        text label
+        integer year "nullable"
+        text session_code "nullable"
+        timestamp start_date
+        timestamp end_date
+        text status
+    }
+    COURSES {
+        text id PK
+        text exam_variant_id FK
+        text subject_id FK
+        text code "nullable"
+        integer semester "nullable"
+        integer credits "nullable"
+    }
+    SUBJECTS {
+        text id PK
+        text name
+        text slug UK
+        text description
+    }
+    TOPICS {
+        text id PK
+        text parent_id FK "self-reference"
+        text subject_id FK
+        text name
+        text slug "unique per subject_id"
+        text description
+    }
+    QUESTION_SETS {
+        text id PK
+        text exam_variant_id FK
+        text exam_session_id FK
+        text subject_id FK "nullable"
+        text shift_label "nullable"
+        text title
+        text slug UK
+        text source_type
+        text source_url
+        text publication_status
+    }
+    QUESTIONS {
+        text id PK
+        text stable_content_id UK
+        text topic_id FK
+        text slug
+        text question_text
+        text question_type
+        text difficulty
+        text status
+    }
+    QUESTION_OPTIONS {
+        text id PK
+        text question_id FK
+        text option_key
+        text option_text
+        integer sequence
+    }
+    QUESTION_ANSWERS {
+        text id PK
+        text question_id FK
+        text correct_option_id FK
+        text text_answer "nullable"
+        text numerical_answer "nullable"
+    }
+    QUESTION_OCCURRENCES {
+        text id PK
+        text question_id FK
+        text question_set_id FK
+        integer original_question_number "nullable"
+        integer page_number "nullable"
+    }

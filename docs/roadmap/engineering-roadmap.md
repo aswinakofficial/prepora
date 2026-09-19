@@ -25,7 +25,7 @@ Each item carries seven fields:
 
 **Priorities.** P0 is foundation and integrity — nothing downstream is trustworthy until it lands,
 and most of it is deletion. P1 is the data platform, and is the substance of the project. P2 is
-product work that depends only on the read path and can run in parallel with P1 from item 12 onward.
+product work that depends only on the read path and can run in parallel with P1 from item 13 onward.
 P3 is advanced infrastructure, gated on measured need.
 
 ---
@@ -47,38 +47,40 @@ graph TB
     end
 
     subgraph P1["P1 · Data platform"]
-        B1["10 · Contracts<br/>+ versioning"]
-        B2["11 · Raw artifact store<br/>→ reprocessing"]
-        B3["12 · Durable job model"]
-        B4["13 · Source registry"]
-        B5["14 · Connector SDK<br/>+ fixtures"]
-        B6["15 · Politeness layer"]
-        B7["16 · Incremental crawl"]
-        B8["17 · Idempotent publish"]
-        B9["18 · Quality gate"]
-        B10["19 · Deduplication"]
-        B11["20 · Operations UI"]
-        B12["21 · Markdown connector"]
+        B0["10 · Multi-exam-type<br/>domain model"]
+        B1["11 · Contracts<br/>+ versioning"]
+        B2["12 · Raw artifact store<br/>→ reprocessing"]
+        B3["13 · Durable job model"]
+        B4["14 · Source registry"]
+        B5["15 · Connector SDK<br/>+ fixtures"]
+        B6["16 · Politeness layer"]
+        B7["17 · Incremental crawl"]
+        B8["18 · Idempotent publish"]
+        B9["19 · Quality gate"]
+        B10["20 · Deduplication"]
+        B11["21 · Operations UI"]
+        B12["22 · Markdown connector"]
     end
 
     subgraph P2["P2 · Product"]
-        C1["22 · Search"]
-        C2["23 · Retire mocks"]
-        C3["24 · Persist attempts"]
-        C4["25 · SEO"]
-        C5["26 · Product analytics"]
+        C1["23 · Search"]
+        C2["24 · Retire mocks"]
+        C3["25 · Persist attempts"]
+        C4["26 · SEO"]
+        C5["27 · Product analytics"]
     end
 
     subgraph P3["P3 · Advanced"]
-        D1["27 · Containerised worker"]
-        D2["28 · Queue (if justified)"]
-        D3["29 · RAG groundwork"]
-        D4["30 · Observability"]
+        D1["28 · Containerised worker"]
+        D2["29 · Queue (if justified)"]
+        D3["30 · RAG groundwork"]
+        D4["31 · Observability"]
     end
 
     A1 --> A9
     A3 --> B4
-    A8 --> B1
+    A8 --> B0
+    B0 --> B1
     A9 --> B1
     B1 --> B2 --> B5
     B1 --> B3
@@ -86,9 +88,11 @@ graph TB
     B5 --> B6
     B2 --> B7
     B1 --> B8
+    B0 --> B8
     B1 --> B9 --> B10 --> B8
     B3 --> B11
     B5 --> B12
+    B0 --> B12
     B8 --> C1
     B8 --> C2
     B8 --> C4
@@ -188,9 +192,9 @@ host can reach" primitive, including cloud metadata endpoints. The Node side has
 **Affected.** `apps/scraper/main.py`, `packages/api/src/routers/admin.router.ts`,
 `apps/web/app/routes/admin/scraping.tsx`, `.env.example`.
 
-**Depends on.** Nothing. *Supersedes/feeds item 13 — the source registry later becomes the allowlist.*
+**Depends on.** Nothing. *Supersedes/feeds item 14 — the source registry later becomes the allowlist.*
 
-**Notes.** Interim allowlist is a configured set of permitted hostnames; item 13 replaces it with the
+**Notes.** Interim allowlist is a configured set of permitted hostnames; item 14 replaces it with the
 registry, so keep the check behind one function. Reject non-`http(s)` schemes; resolve the hostname
 and reject loopback, link-local (`169.254.0.0/16`), and RFC1918 ranges; disable redirect-following,
 or re-validate the target after each hop. Add a shared service token (`PIPELINE_SERVICE_TOKEN`)
@@ -225,7 +229,7 @@ something the next twenty lines already do correctly.
 **Depends on.** Nothing.
 
 **Notes.** Delete the curl branch; keep the `psycopg2` path. While here, consolidate the three
-duplicated `INSERT INTO scraped_questions` statements into one helper — item 10 replaces it with the
+duplicated `INSERT INTO scraped_questions` statements into one helper — item 11 replaces it with the
 contract layer, so a single call site makes that migration trivial. Rotate the Neon credential, since
 it has been embedded in a command line and may appear in shell history or process listings.
 
@@ -283,7 +287,7 @@ treats it as an ordinary mutation.
 **Affected.** `packages/api/src/routers/admin.router.ts`, `apps/web/app/routes/admin/settings.tsx`,
 `packages/db/src/schema/analytics.ts` (first real use of `auditLogs`).
 
-**Depends on.** Nothing. *This is the first write to `auditLogs`, establishing the pattern item 25
+**Depends on.** Nothing. *This is the first write to `auditLogs`, establishing the pattern item 26
 extends.*
 
 **Notes.** Require a typed confirmation phrase in the request body, validated server-side. Write an
@@ -339,7 +343,8 @@ nothing detects the divergence.
 **Affected.** `packages/db/{clean.mjs,migrate.js,migrate-accounts.mjs}`,
 `packages/db/src/create_scraped_table.ts`, `drizzle/`.
 
-**Depends on.** Nothing. *Blocks item 10, since the pipeline contracts must target a known schema.*
+**Depends on.** Nothing. *Blocks item 10, and transitively item 11 — the domain-model migration and
+the pipeline contracts both need a clean, known schema to build on.*
 
 **Notes.** Because the database holds only scratch data, the cleanest path is to verify the Drizzle
 schema is complete, regenerate from a clean database, and delete all four scripts. Replace `clean.mjs`
@@ -373,7 +378,7 @@ ESLint/Prettier decision entirely. Add `vitest.config.ts` at the root with works
 `packages/auth`, which currently have no scripts at all. For Python, add `ruff` and `pytest`. The CI
 workflow runs lint, typecheck, unit tests and `drizzle-kit check` on pull requests; keep it under
 five minutes so it is actually used. Seed the suite with tests for the `packages/content` logic that
-item 18 will port — they document current behaviour before it moves.
+item 19 will port — they document current behaviour before it moves.
 
 **Testing.** The workflow is itself the test: it must fail on an intentionally broken commit and pass
 on `main`.
@@ -389,7 +394,58 @@ every pull request; a deliberate type error fails the build.
 
 ---
 
-### 10 · Pipeline contracts and version stamping
+### 10 · Multi-exam-type domain model
+
+**Goal.** The exam catalog represents organization, exam type, and exam session as real, queryable
+entities instead of free-text columns and hardcoded application logic, so a new exam category — or a
+new exam within an already-supported organization — is a data change, not a schema or code change.
+
+**Why it matters.** The current schema cannot express "one organization conducts many exams": Kerala
+PSC is modeled today as if it *were* an exam, not the body that runs many. Five Microsoft
+certifications are hardcoded by slug-substring match directly in
+`packages/api/src/routers/exams.router.ts` (`resolveExamMeta`/`getExamDescription`), bypassing the
+database entirely — adding a sixth needs a code change, not a row. The frontend
+(`apps/web/app/routes/exams/index.tsx`) maintains its own, independent copy of the exam-type
+taxonomy. Two items later in this list — 18 (occurrence-aware publishing) and 22 (the Markdown
+connector) — would otherwise be built against a catalog shape already known to be wrong here, and
+have to be redone once this lands.
+
+**Affected.** `packages/db/src/schema/catalog.ts` (four new tables — `organizations`, `exam_types`,
+`exam_sessions`, `courses` — plus changes to `exams`, `exam_variants`, `question_sets`, `topics`),
+`packages/api/src/routers/exams.router.ts` (remove `resolveExamMeta`/`getExamDescription`),
+`apps/web/app/routes/exams/index.tsx` (source `CATEGORIES` from data),
+`apps/web/app/routes/admin/scraping.tsx` (reference real entities instead of raw strings),
+`packages/content/src/schema.ts` and `agents/content/schema.md` (new optional frontmatter fields).
+
+**Depends on.** Item 8 (a clean Drizzle migration baseline to build this migration on).
+
+**Notes.** Full design, worked examples, and migration sequence live in
+`docs/architecture/exam-domain-model.md` (diagram at `docs/architecture/diagrams/exam-domain.mmd`) —
+implement that document, don't re-derive it. In short: `organizations` and `exam_types` (a lookup
+table, not an enum — adding a type is one insert, no migration) become real entities; every exam
+variant gets an `exam_sessions` row uniformly, including a degenerate single-version row for exam
+types that don't recur yearly, so `question_sets.year` retires in favour of
+`question_sets.examSessionId` with no per-type branching anywhere it's read; `courses` is a thin,
+optional enrichment join for university/school exams that reuses the existing universal `subjects`
+rather than duplicating them. Two small pre-existing integrity gaps get fixed in the same pass, since
+both tables are already being touched: `exam_variants.slug` gains a real `unique(examId, slug)`
+constraint (today it's only indexed, not unique), and `topics.slug` moves from globally unique to
+`unique(subjectId, slug)`.
+
+**Testing.** Unit: each of the four worked examples in the design doc (Microsoft AB-100, GATE CSE,
+Kerala PSC AE Civil, CUSAT B.Tech IT) round-trips through the new schema with no special-case code.
+Unit: inserting a new `exam_types` row (a hypothetical fifth category) requires no migration and
+becomes visible in `apps/web/app/routes/exams/index.tsx` with no application code change. Integration:
+a seed script for the five currently-hardcoded Microsoft certifications produces rows that the
+rewritten `exams.router.ts` read path serves identically to today's hardcoded output.
+
+**Done when.** `resolveExamMeta`/`getExamDescription` are deleted; the frontend's `CATEGORIES` list is
+sourced from `exam_types`; every `question_sets` row has a non-null `examSessionId`; both slug
+uniqueness gaps are fixed; items 18 and 22 are written against this shape rather than the old one.
+
+---
+
+### 11 · Pipeline contracts and version stamping
 
 **Goal.** Every stage boundary is a typed, versioned contract.
 
@@ -400,7 +456,8 @@ every other P1 item depends on them.
 
 **Affected.** `apps/pipeline/prepora_pipeline/contracts/` (new).
 
-**Depends on.** Items 8, 9.
+**Depends on.** Items 8, 9, 10 (the contracts should target the catalog shape item 10 lands, not the
+one it replaces).
 
 **Notes.** Five Pydantic models: `RawArtifact` → `ExtractedQuestion` → `NormalizedQuestion` →
 `ValidatedQuestion` → `CanonicalQuestion`. Stamp `contract_version`, `parser_version` and
@@ -420,7 +477,7 @@ CI; no stage accepts or returns an untyped dictionary.
 
 ---
 
-### 11 · Raw artifact store and reprocessing
+### 12 · Raw artifact store and reprocessing
 
 **Goal.** Every fetch is stored in full and immutably. A parser fix replays stored artifacts instead
 of re-crawling.
@@ -435,13 +492,13 @@ capability the brief identifies as particularly important.
 **Affected.** `apps/pipeline/prepora_pipeline/core/artifact_store.py` (new), `packages/db/src/schema/`
 (new `raw_artifacts` table), `drizzle/`.
 
-**Depends on.** Item 10.
+**Depends on.** Item 11.
 
 **Notes.** Content-address by SHA-256; store under `.data/raw/<prefix>/<hash>` locally. The
 `raw_artifacts` row records hash, source id, URL, fetched-at, content type, HTTP status, and storage
 key. Define the store as an interface with a filesystem implementation so S3/R2 is a second
 implementation rather than a refactor (§16, guarantee 3). Artifacts are immutable — a changed page is
-a new artifact, which is what makes change detection in item 16 nearly free. Add
+a new artifact, which is what makes change detection in item 17 nearly free. Add
 `prepora pipeline reprocess --source X --from <date>` to replay stored artifacts through the current
 parser. Add a retention policy so the store does not grow without bound.
 
@@ -454,7 +511,7 @@ can be validated against stored artifacts offline; retention is configured.
 
 ---
 
-### 12 · Durable job model
+### 13 · Durable job model
 
 **Goal.** Every pipeline run is a database record with per-stage detail and full history.
 
@@ -467,12 +524,12 @@ the admin scraping console work against a deployed instance, since it stops depe
 **Affected.** `packages/db/src/schema/` (new `pipeline_jobs`, `pipeline_job_stages`),
 `apps/pipeline/prepora_pipeline/core/jobs.py` (new), `packages/api/src/routers/admin.router.ts`.
 
-**Depends on.** Item 10.
+**Depends on.** Item 11.
 
 **Notes.** `pipeline_jobs`: id, source_id, job_type, status (`queued|running|completed|partial|failed|cancelled`),
 trigger_type, requested_by, configuration, timestamps, error summary. `pipeline_job_stages`: job_id,
 stage, status, counts (discovered, processed, failed, duplicate, skipped), duration, error detail.
-Per-stage counters give the stage-breakdown view in item 20 for free. Structured logs carry the job
+Per-stage counters give the stage-breakdown view in item 21 for free. Structured logs carry the job
 id so file logs become a debugging aid rather than the source of truth. Replace `seen_jobs` with a
 database-backed idempotency key. Job state in Postgres is §16 guarantee 2 — it is what lets any
 number of workers be observed from one UI.
@@ -486,7 +543,7 @@ in-memory job state; `/tmp` log tailing is gone.
 
 ---
 
-### 13 · Source registry
+### 14 · Source registry
 
 **Goal.** Sources are configuration, not code. The registry is also the fetch allowlist.
 
@@ -518,7 +575,7 @@ registry; the admin UI lists sources from the database.
 
 ---
 
-### 14 · Connector SDK with fixtures and contract tests
+### 15 · Connector SDK with fixtures and contract tests
 
 **Goal.** Adding a source means adding one directory. Website changes cannot silently corrupt the
 dataset.
@@ -532,13 +589,13 @@ silently. Contract tests are the brief's §38 requirement and the main defence f
 **Affected.** `apps/pipeline/prepora_pipeline/connectors/` (new), `apps/scraper/handlers/` (migrated
 then removed), `docs/connectors/` (new authoring guide).
 
-**Depends on.** Items 10, 11, 13.
+**Depends on.** Items 11, 12, 14.
 
 **Notes.** Each connector directory holds `connector.py` (discover, fetch), `parser.py` (extract),
 `normalizer.py` (map to the shared contract), `fixtures/` (captured real responses), `test_parser.py`
 (fixture → expected `CanonicalQuestion`), and `README.md`. **Wire up `discover`** — the methods exist
 and just need a caller. Migrate the five handlers one at a time, capturing fixtures from stored raw
-artifacts (item 11 makes this free). Microsoft Learn is the hardest case because of Playwright and
+artifacts (item 12 makes this free). Microsoft Learn is the hardest case because of Playwright and
 authentication; do it last, and treat it as one connector among several rather than the reference
 implementation (architecture assessment R3). Delete `apps/scraper/` once the last handler has moved.
 Write the authoring guide as the tenth step of the first migration, while the friction is fresh.
@@ -553,7 +610,7 @@ guide is followed end to end by someone who did not write it.
 
 ---
 
-### 15 · Politeness and resilience layer
+### 16 · Politeness and resilience layer
 
 **Goal.** The crawler is well-behaved by default and survives transient failure.
 
@@ -565,7 +622,7 @@ ethical gap.
 
 **Affected.** `apps/pipeline/prepora_pipeline/core/{http_client,rate_limiter,robots}.py` (new).
 
-**Depends on.** Item 14.
+**Depends on.** Item 15.
 
 **Notes.** One HTTP client used by every connector, carrying per-source rate limiting from the
 registry, bounded exponential backoff with jitter, a retry budget, connect and read timeouts, and a
@@ -583,7 +640,7 @@ is honoured; the user-agent identifies Prepora; one bad page never fails a whole
 
 ---
 
-### 16 · Incremental crawling and change detection
+### 17 · Incremental crawling and change detection
 
 **Goal.** Unchanged content is skipped. Changes are classified and visible.
 
@@ -595,9 +652,9 @@ content freshness unmeasurable.
 **Affected.** `apps/pipeline/prepora_pipeline/stages/`, `packages/db/src/schema/` (`raw_artifacts`
 extensions, source state).
 
-**Depends on.** Item 11.
+**Depends on.** Item 12.
 
-**Notes.** Item 11 already computes a content hash, so most of this is comparison logic. Send
+**Notes.** Item 12 already computes a content hash, so most of this is comparison logic. Send
 `If-None-Match` and `If-Modified-Since` where the source supplies validators; store ETag and
 `Last-Modified` alongside the artifact. Classify each discovered resource as `new`, `changed`,
 `unchanged` or `removed`, record counts per stage, and skip processing for `unchanged`. `removed`
@@ -613,7 +670,7 @@ new/changed/unchanged/removed; freshness per source is queryable.
 
 ---
 
-### 17 · Idempotent, occurrence-aware publishing
+### 18 · Idempotent, occurrence-aware publishing
 
 **Goal.** Publishing twice produces the same result. Published questions are connected to the catalog.
 
@@ -627,14 +684,15 @@ item finally uses the canonical/occurrence model the schema has had since the fi
 **Affected.** `apps/pipeline/prepora_pipeline/stages/publish.py` (new),
 `packages/api/src/routers/admin.router.ts` (approval delegates to the pipeline).
 
-**Depends on.** Items 10, 19.
+**Depends on.** Items 10, 11, 20 (publish must write to the catalog shape item 10 defines —
+`examSessionId`, `organizationId` via the exam, not the columns it replaces).
 
 **Notes.** Derive `stable_content_id` deterministically from source, exam, variant, year and original
 question number — following the convention already documented in `agents/content/schema.md:177-189`.
 Upsert on it. Resolve the answer by option *key*, carried through the contract from the normalizer,
 never by string equality on option text. Create or resolve exam, variant, subject and topic rows, and
 write a `questionOccurrences` row for each appearance. Re-publishing an existing canonical question
-seen in a new paper adds an occurrence rather than a question — this is the payoff of item 19.
+seen in a new paper adds an occurrence rather than a question — this is the payoff of item 20.
 
 **Testing.** Unit: publishing the same content twice produces one question row and one occurrence.
 Unit: the same question in two exam years produces one question and two occurrences. Unit: every
@@ -646,7 +704,7 @@ published question is reachable through the catalog; answer keys never depend on
 
 ---
 
-### 18 · Quality gate
+### 19 · Quality gate
 
 **Goal.** Deterministic rules decide what may be published, and the human-review flag actually works.
 
@@ -659,7 +717,7 @@ fires when the answer is absent entirely. The documented safety net does not fun
 **Affected.** `apps/pipeline/prepora_pipeline/stages/validate.py` (new), ported from
 `packages/content/src/validate.ts`.
 
-**Depends on.** Item 10.
+**Depends on.** Item 11.
 
 **Notes.** Port the seven existing rules — they are well-chosen and deterministic. Then fix the flag
 defect: detect `FLAG FOR HUMAN REVIEW` explicitly and route to quarantine, never to publish. Add the
@@ -682,7 +740,7 @@ and reproducible.
 
 ---
 
-### 19 · Deduplication subsystem
+### 20 · Deduplication subsystem
 
 **Goal.** Distinguish a duplicate record from the same question legitimately appearing in a different
 exam or year.
@@ -696,7 +754,7 @@ review queue's `ilike` check (`admin.router.ts:143`) is a separate, weaker secon
 **Affected.** `apps/pipeline/prepora_pipeline/stages/dedupe.py` (new), ported and extended from
 `packages/content/src/duplicates.ts`.
 
-**Depends on.** Item 18.
+**Depends on.** Item 19.
 
 **Notes.** Port the existing two-stage approach — normalised content hash for exact matches, then
 Levenshtein similarity at 0.9 for near matches (`duplicates.ts:66-101`). Then extend it in the two
@@ -704,7 +762,7 @@ ways it currently cannot go: compare **across** sources and files, not within on
 hash index so the comparison is not O(n²) over the whole corpus; and carry exam, variant and year
 through the contract so the decision can be made. Three outcomes: exact duplicate within the same
 paper → drop with a reason; same question in a different exam or year → one canonical question plus
-a new occurrence (item 17); near-duplicate below confidence → flag for human review, never auto-merge.
+a new occurrence (item 18); near-duplicate below confidence → flag for human review, never auto-merge.
 Preserve the existing design principle, which the content rules state explicitly: never merge
 silently. Retire the separate `ilike` check so there is one implementation.
 
@@ -718,19 +776,19 @@ nothing merges without human confirmation; one implementation remains.
 
 ---
 
-### 20 · Admin operations UI on real data
+### 21 · Admin operations UI on real data
 
 **Goal.** The admin surface shows what the pipeline actually did, sourced from the database.
 
 **Why it matters.** The scraping console tails a `/tmp` file through a proxy and calls `localhost:8000`
-directly from the browser, so it cannot work against a deployed instance. With items 12 and 13
+directly from the browser, so it cannot work against a deployed instance. With items 13 and 14
 landed, real job and source data exists; this item surfaces it. The brief's §31–32 source-health and
 job-inspection views become mostly presentation work.
 
 **Affected.** `apps/web/app/routes/admin/scraping.tsx`, `apps/web/app/routes/admin/review.tsx`,
 `packages/api/src/routers/admin.router.ts`, new admin operations routes.
 
-**Depends on.** Items 12, 13.
+**Depends on.** Items 13, 14.
 
 **Notes.** Separate the admin information architecture into Content, Pipeline, Review and Analytics
 as the brief describes — the sidebar currently lists eleven destinations of which six have no route
@@ -749,7 +807,7 @@ review batch actions are one request; admin sections match the documented inform
 
 ---
 
-### 21 · Markdown as a connector
+### 22 · Markdown as a connector
 
 **Goal.** Markdown content enters through the same pipeline as every other source.
 
@@ -763,11 +821,12 @@ stops being the write path.
 **Affected.** `apps/pipeline/prepora_pipeline/connectors/markdown/` (new),
 `scripts/import-content.ts` (removed), `packages/content/` (format spec retained).
 
-**Depends on.** Item 14.
+**Depends on.** Items 10, 15 (frontmatter gains the `organization`/`session_label`/`shift`/`course`
+fields item 10 defines).
 
 **Notes.** Port `parser.ts` to Python as the Markdown connector's extractor, preserving the format
 contract in `agents/content/schema.md` exactly. Fix the two documented drifts while porting: `**Tags:**`
-is specified but never parsed, and `FLAG FOR HUMAN REVIEW` is not recognised (item 18 covers the
+is specified but never parsed, and `FLAG FOR HUMAN REVIEW` is not recognised (item 19 covers the
 latter). Discovery walks `content/**/*.md`; fetch reads the file; the content hash gives change
 detection for free. Contributions submitted as Markdown then flow through the same validation,
 deduplication and publishing as scraped content — one quality gate for all content regardless of
@@ -785,11 +844,11 @@ files publish end to end; one quality gate serves every content source.
 
 # P2 — Product
 
-*Depends on the read path only. Can run in parallel with P1 from item 12 onward.*
+*Depends on the read path only. Can run in parallel with P1 from item 13 onward.*
 
 ---
 
-### 22 · Search
+### 23 · Search
 
 **Goal.** Search returns real results from the database, behind an interface that survives an engine
 change.
@@ -804,7 +863,7 @@ an SEO-first platform.
 `apps/web/app/routes/search.tsx`, `apps/web/app/components/search/SearchCommandModal.tsx`,
 `packages/db/src/schema/` (full-text indexes).
 
-**Depends on.** Item 17 (real published content to search).
+**Depends on.** Item 18 (real published content to search).
 
 **Notes.** Postgres full-text search is sufficient for the foreseeable corpus and needs no new
 infrastructure — this is ADR-006. What matters is the seam: define a `SearchProvider` interface with
@@ -822,7 +881,7 @@ queries are logged; no hardcoded results remain.
 
 ---
 
-### 23 · Retire the mock datasets
+### 24 · Retire the mock datasets
 
 **Goal.** Every page renders real data or an honest empty state.
 
@@ -834,7 +893,7 @@ same problem as item 2.
 **Affected.** `apps/web/app/routes/{topics/$topicSlug,questions/...,search}.tsx`,
 `apps/web/app/routes/admin/contributions.tsx`, `apps/web/app/components/search/SearchCommandModal.tsx`.
 
-**Depends on.** Items 17, 22.
+**Depends on.** Items 18, 23.
 
 **Notes.** Replace each mock with a real query, or with a designed empty state where the feature is
 genuinely not built yet — an honest "no content yet" is better than convincing fiction.
@@ -851,7 +910,7 @@ admin contributions page reads and writes real rows.
 
 ---
 
-### 24 · Persist practice attempts
+### 25 · Persist practice attempts
 
 **Goal.** Practice results survive a refresh and accumulate into progress.
 
@@ -864,7 +923,7 @@ and nothing for a future study assistant to personalise against.
 
 **Affected.** `apps/web/app/routes/practice.tsx`, `packages/api/src/routers/questions.router.ts`.
 
-**Depends on.** Item 17.
+**Depends on.** Item 18.
 
 **Notes.** Call the existing `submitAnswer` procedure and extend it to write `attempts`. Create a
 `practiceSessions` row at start and finalise it on completion. Support anonymous sessions via the
@@ -881,7 +940,7 @@ server-authoritative; results survive refresh; anonymous practice works.
 
 ---
 
-### 25 · SEO completion
+### 26 · SEO completion
 
 **Goal.** Question pages are independently discoverable, with correct structured data on one domain.
 
@@ -896,7 +955,7 @@ is organic discovery, this is core product work, not polish.
 **Affected.** `scripts/generate-sitemap.ts`, `scripts/generate-rss.ts`, route `head` definitions,
 `apps/web/public/robots.txt`, `packages/auth/src/index.ts`.
 
-**Depends on.** Item 17.
+**Depends on.** Item 18.
 
 **Notes.** Settle on one canonical production domain and make every reference agree. Generate
 sitemaps from the database, including the two missing files, and wire generation into the build so
@@ -914,17 +973,17 @@ validates; canonical tags are present; one domain is used everywhere.
 
 ---
 
-### 26 · Product analytics
+### 27 · Product analytics
 
 **Goal.** Product behaviour is measured.
 
 **Why it matters.** `analyticsEvents` is dead schema (#16). Without it there is no way to know which
 content is used, which searches fail, or where students drop out — and no data-driven basis for
-deciding what to scrape next. Pipeline metrics arrive with item 12; this is the product half.
+deciding what to scrape next. Pipeline metrics arrive with item 13; this is the product half.
 
 **Affected.** `packages/api/src/routers/analytics.router.ts` (new), route-level instrumentation.
 
-**Depends on.** Items 22, 24.
+**Depends on.** Items 23, 25.
 
 **Notes.** Instrument the events the schema anticipates: page view, search, result click, question
 view, answer reveal, practice start and completion, bookmark, contribution, report. Keep anonymous
@@ -948,18 +1007,18 @@ the simpler alternative, trade-offs.*
 
 ---
 
-### 27 · Containerised worker and scheduler
+### 28 · Containerised worker and scheduler
 
 **Goal.** The pipeline runs in the cloud without code changes.
 
 **Why it matters.** The confirmed decision is local-only for now. This item exists so that decision
-stays cheap to revisit — and it is only correct once items 12, 13 and 11 have delivered the four
+stays cheap to revisit — and it is only correct once items 13, 14 and 12 have delivered the four
 guarantees in §16 of the architecture assessment: CLI entry point, job state in Postgres, artifact
 store behind an interface, and fully environment-driven configuration.
 
 **Affected.** `apps/pipeline/Dockerfile` (new), `docker-compose.yml` (new), deployment configuration.
 
-**Depends on.** Items 11, 12, 13.
+**Depends on.** Items 12, 13, 14.
 
 **Notes.** Recommended target is Architecture A from §16 — web stays on Cloudflare Pages, workers run
 as containers on a container host against the same Neon database, with artifacts moving to R2 or
@@ -976,17 +1035,17 @@ locally; artifacts persist to object storage; a scheduled run completes end to e
 
 ---
 
-### 28 · Job queue — if and when justified
+### 29 · Job queue — if and when justified
 
 **Goal.** Concurrent jobs are coordinated across workers.
 
-**Why it matters.** Postgres-backed job state (item 12) with `SELECT … FOR UPDATE SKIP LOCKED` handles
+**Why it matters.** Postgres-backed job state (item 13) with `SELECT … FOR UPDATE SKIP LOCKED` handles
 far more concurrency than this project is likely to need. **Do not build this until a measured limit
 is hit.** The brief is explicit that infrastructure added for appearance is a negative signal.
 
 **Affected.** `apps/pipeline/prepora_pipeline/core/queue.py`.
 
-**Depends on.** Item 27, plus evidence.
+**Depends on.** Item 28, plus evidence.
 
 **Notes.** The ADR must state the measured limit that justified moving beyond Postgres. If that
 evidence does not exist, the correct outcome is an ADR recording the decision *not* to add a queue —
@@ -999,7 +1058,7 @@ remains sufficient.
 
 ---
 
-### 29 · RAG groundwork
+### 30 · RAG groundwork
 
 **Goal.** The retrieval layer can be added without reworking the pipeline.
 
@@ -1009,7 +1068,7 @@ provenance and versioning fields it needs are already required by P1 for debuggi
 
 **Affected.** `apps/pipeline/prepora_pipeline/stages/embed.py` (new), `packages/db/src/schema/`.
 
-**Depends on.** Item 17.
+**Depends on.** Item 18.
 
 **Notes.** Embedding is a pipeline stage consuming the same contracts and carrying the same version
 stamps, not a side system — when the model changes, that is a reprocessing run. Chunk at question
@@ -1025,17 +1084,17 @@ cannot reach unpublished content.
 
 ---
 
-### 30 · Observability
+### 31 · Observability
 
 **Goal.** Operational questions are answerable without reading source.
 
-**Why it matters.** Item 12 already delivers job durations, failure rates, source health and pipeline
+**Why it matters.** Item 13 already delivers job durations, failure rates, source health and pipeline
 throughput from the job tables — which covers most of what the brief asks for. This item adds only
 what those tables cannot answer.
 
 **Affected.** `apps/pipeline/prepora_pipeline/core/telemetry.py`, `packages/api`.
 
-**Depends on.** Item 12.
+**Depends on.** Item 13.
 
 **Notes.** Structured JSON logs with job id correlation first — cheapest and highest value. Add
 OpenTelemetry tracing only where a trace answers a question logs cannot, most plausibly cross-service
@@ -1063,7 +1122,7 @@ Not a phase — written as the work lands, while the detail is fresh.
 | `CONTRIBUTING.md` | Item 9 | Setup, conventions, test expectations, PR process |
 | `SECURITY.md` | Item 3 | Reporting policy, scraping ethics, data handling |
 | `CODE_OF_CONDUCT.md` | Item 1 | Standard adoption |
-| `docs/connectors/authoring-guide.md` | Item 14 | The ten-step process for adding a source |
+| `docs/connectors/authoring-guide.md` | Item 15 | The ten-step process for adding a source |
 | `docs/adr/*.md` | As each decision is made | Eleven records — see §21 of the architecture assessment |
 | `CHANGELOG.md` | From item 1 onward | Keep-a-changelog format |
 
