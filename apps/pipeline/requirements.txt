@@ -2,5 +2,7 @@ pydantic
 psycopg2-binary
 python-dotenv
 PyYAML
+beautifulsoup4
+requests
 pytest
 ruff

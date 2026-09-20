@@ -7,7 +7,14 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!apps/web/app/routeTree.gen.ts", "!.stitch", "!**/*.css", "!drizzle/**"]
+    "includes": [
+      "**",
+      "!apps/web/app/routeTree.gen.ts",
+      "!.stitch",
+      "!**/*.css",
+      "!drizzle",
+      "!**/connectors/*/fixtures"
+    ]
   },
   "formatter": {
     "enabled": true,
