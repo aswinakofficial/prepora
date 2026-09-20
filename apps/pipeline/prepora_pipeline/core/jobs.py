@@ -132,20 +132,24 @@ def complete_job(job_id: str, status: JobStatus, *, error_summary: str | None = 
 
 def finalize_job(job_id: str) -> JobStatus:
     """
-    Derives and applies the job's final status from its stages: 'completed' if every stage
-    completed, 'failed' if none did, 'partial' if some did and some didn't — this is what makes
-    "a failing stage marks the job partial or failed" true without every caller having to decide
-    it themselves.
+    Derives and applies the job's final status from its stages: 'failed' if no stage completed,
+    'completed' if every stage completed with zero item-level failures, 'partial' otherwise. The
+    item-level check matters as much as the stage-level one — a stage that fetched 99 pages fine
+    and failed on 1 still reports status='completed' for itself (it ran to the end), but a job
+    where that happened is not fully successful and must not be reported as 'completed'
+    (docs/roadmap/engineering-roadmap.md item 16: "a job with one failing page completes as
+    partial with the failure recorded").
     """
     stages = list_stages(job_id)
     if not stages:
         status: JobStatus = "failed"
     else:
-        completed = sum(1 for s in stages if s.status == "completed")
-        if completed == len(stages):
-            status = "completed"
-        elif completed == 0:
+        completed_count = sum(1 for s in stages if s.status == "completed")
+        any_item_failures = any(s.counts.failed > 0 for s in stages)
+        if completed_count == 0:
             status = "failed"
+        elif completed_count == len(stages) and not any_item_failures:
+            status = "completed"
         else:
             status = "partial"
 
@@ -153,6 +157,10 @@ def finalize_job(job_id: str) -> JobStatus:
     failed_stages = [s for s in stages if s.status == "failed" and s.error_detail]
     if failed_stages:
         error_summary = "; ".join(f"{s.stage}: {s.error_detail}" for s in failed_stages)
+    elif status == "partial":
+        failure_counts = [(s.stage, s.counts.failed) for s in stages if s.counts.failed > 0]
+        if failure_counts:
+            error_summary = "; ".join(f"{stage}: {n} item(s) failed" for stage, n in failure_counts)
 
     complete_job(job_id, status, error_summary=error_summary)
     return status

@@ -133,6 +133,20 @@ class TestFinalizeJob:
         assert job.status == "partial"
         assert "malformed HTML" in job.error_summary
 
+    def test_a_completed_stage_with_item_level_failures_marks_the_job_partial(self, source_id):
+        # docs/roadmap/engineering-roadmap.md item 16: "a job with one failing page completes as
+        # partial" — the stage itself can still report status='completed' (it ran to the end),
+        # but a real item failed within it, so the job must not be 'completed'.
+        job_id = create_job(source_id=source_id, job_type="scrape", trigger_type="manual")
+        record_stage(job_id, "fetch", "completed", counts=StageCounts(processed=2, failed=1))
+
+        status = finalize_job(job_id)
+
+        job = get_job(job_id)
+        assert status == "partial"
+        assert job.status == "partial"
+        assert "1 item(s) failed" in job.error_summary
+
 
 class TestStageRun:
     def test_stage_run_records_completed_with_counts_on_success(self, source_id):

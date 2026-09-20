@@ -169,6 +169,23 @@ def get_allowed_base_urls(*, enabled_only: bool = True) -> list[str]:
     return [urlparse(s.base_url).hostname for s in list_sources(enabled_only=enabled_only)]
 
 
+def is_url_allowed(url: str) -> bool:
+    """
+    Whether `url`'s host is an enabled source's base_url, or a subdomain of one — the same rule
+    apps/scraper/security.py's _host_is_allowlisted() applies, duplicated narrowly here (not
+    imported from apps/scraper, which depends on apps/pipeline and not the other way around) so
+    prepora_pipeline.core.http_client (item 16) enforces the registry allowlist itself rather than
+    relying on every caller to check it first.
+    """
+    hostname = (urlparse(url).hostname or "").lower()
+    if not hostname:
+        return False
+    for allowed in get_allowed_base_urls():
+        if allowed and (hostname == allowed or hostname.endswith(f".{allowed}")):
+            return True
+    return False
+
+
 def record_crawl_attempt(name: str, *, success: bool) -> None:
     """
     Updates last_crawl_at always; on success also stamps last_successful_crawl_at and resets

@@ -6,22 +6,18 @@ apps/scraper/handlers/indiabix.py's discover_next_links(), which has existed sin
 written but has never been called by anything (finding #9 in
 docs/architecture/prepora-next-level-plan.md).
 
-fetch() is a minimal, direct HTTP GET behind the same registry allowlist item 14 built — it exists
-so this connector is genuinely complete and independently testable, not so it's already the live
-trigger path. apps/scraper/main.py's /scrape endpoint (with its SSRF hardening in
-apps/scraper/security.py) remains the actual production entry point until every handler has
-migrated and that cutover happens as its own step — see docs/connectors/README.md.
+fetch() goes through prepora_pipeline.core.http_client (item 16) — rate limited from this source's
+registry entry, retried with backoff, and checked against robots.txt — rather than a bare
+`requests.get()`. It exists so this connector is genuinely complete and independently testable, not
+so it's already the live trigger path: apps/scraper/main.py's /scrape endpoint (with its SSRF
+hardening in apps/scraper/security.py) remains the actual production entry point until every
+handler has migrated and that cutover happens as its own step — see docs/connectors/README.md.
 """
-import requests
 from bs4 import BeautifulSoup
 
-from prepora_pipeline.core import get_allowed_base_urls
+from prepora_pipeline.core import http_client
 
 SOURCE_SLUG = "indiabix"
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
 
 
 def discover(html: str, current_url: str) -> list[str]:
@@ -42,9 +38,6 @@ def discover(html: str, current_url: str) -> list[str]:
 
 
 def fetch(url: str) -> bytes:
-    hostname = requests.utils.urlparse(url).hostname
-    if hostname not in get_allowed_base_urls():
-        raise ValueError(f"{hostname!r} is not an enabled source in the registry.")
-    response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+    response = http_client.fetch(url, source_slug=SOURCE_SLUG)
     response.raise_for_status()
     return response.content

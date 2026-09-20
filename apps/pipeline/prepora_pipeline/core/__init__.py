@@ -1,3 +1,4 @@
+from . import http_client, rate_limiter, robots
 from .artifact_store import ArtifactNotFoundError, ArtifactStore, FilesystemArtifactStore
 from .jobs import (
     JobRecord,
@@ -26,6 +27,9 @@ from .registry import (
 from .reprocess import reprocess_source
 
 __all__ = [
+    "http_client",
+    "rate_limiter",
+    "robots",
     "ArtifactStore",
     "ArtifactNotFoundError",
     "FilesystemArtifactStore",
