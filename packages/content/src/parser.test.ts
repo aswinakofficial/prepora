@@ -44,6 +44,36 @@ describe("parsePreporaMarkdown — frontmatter", () => {
 });
 
 describe("parsePreporaMarkdown — question blocks", () => {
+  // Regression test for a real bug found while building the Markdown connector
+  // (docs/roadmap/engineering-roadmap.md item 22), not one of that item's own documented drifts:
+  // agents/content/schema.md's own File Structure example — and both files in
+  // agents/content/examples/ — use "# Question N" headings *and* a trailing "---" between them.
+  // The blank line between a "---" and the next heading used to count as "block content" by a
+  // bare `.length > 0` check, producing a phantom empty, needsReview question between every real
+  // pair. Only surfaced by running the actual example files through the parser, not synthetic
+  // unit-test snippets that only ever used one separator style at a time.
+  it("does not produce a phantom empty question between headings separated by a trailing ---", () => {
+    const md = `${VALID_FRONTMATTER}
+# Question 1
+
+Q1?
+
+**Answer:** A
+
+---
+
+# Question 2
+
+Q2?
+
+**Answer:** B
+`;
+    const { data } = parsePreporaMarkdown(md);
+    expect(data?.questions).toHaveLength(2);
+    expect(data?.questions.map((q) => q.number)).toEqual([1, 2]);
+    expect(data?.questions.every((q) => q.needsReview === false)).toBe(true);
+  });
+
   it("parses an MCQ with options and a single-letter answer", () => {
     const md = `${VALID_FRONTMATTER}
 # Question 1
@@ -212,6 +242,20 @@ Q?
     if (!q) throw new Error("expected a parsed question");
     expect(q.needsReview).toBe(true);
     expect(q.reviewNote).toBe("ocr unreadable");
+  });
+
+  // Regression test for docs/roadmap/engineering-roadmap.md item 22: **Tags:** is documented in
+  // agents/content/schema.md but was never parsed at all — tags stayed undefined forever.
+  it("parses a comma-separated Tags line", () => {
+    const md = `${VALID_FRONTMATTER}\n# Question 1\nQ?\n\n**Answer:** 1\n\n**Tags:** reinforced-concrete, beam-design, IS-456\n`;
+    const { data } = parsePreporaMarkdown(md);
+    expect(data?.questions[0].tags).toEqual(["reinforced-concrete", "beam-design", "IS-456"]);
+  });
+
+  it("leaves tags undefined when no Tags line is present", () => {
+    const md = `${VALID_FRONTMATTER}\n# Question 1\nQ?\n\n**Answer:** 1\n`;
+    const { data } = parsePreporaMarkdown(md);
+    expect(data?.questions[0].tags).toBeUndefined();
   });
 
   it("joins multi-line explanations with a newline", () => {

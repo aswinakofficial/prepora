@@ -4,13 +4,14 @@ prepora-pipeline — CLI-first per docs/architecture/prepora-next-level-plan.md 
 principle ("CLI-first, HTTP-second"): every stage is independently runnable from here, and a
 future thin FastAPI wrapper calls into the same functions rather than duplicating them.
 
-Currently implements what items 12, 14, 18, and 20 need: `reprocess` (replay stored artifacts
+Currently implements what items 12, 14, 18, 20, and 22 need: `reprocess` (replay stored artifacts
 through a parser, no network access), `prune` (the retention policy), `sync-sources` (load
 connectors/*/source.yaml into the sources table), `publish` (idempotent, occurrence-aware
-publishing of a single NormalizedQuestion), and `dedupe-check` (report whether a NormalizedQuestion
-is a duplicate, near-duplicate, or unique, without publishing it). `run`/`--stage` (the full
-discover -> publish pipeline) is later roadmap work — no discover/extract/normalize stages exist
-yet to chain together.
+publishing of a single NormalizedQuestion), `dedupe-check` (report whether a NormalizedQuestion is
+a duplicate, near-duplicate, or unique, without publishing it), and `import-markdown` (the first
+full discover -> fetch -> parse -> normalize -> publish connector run). A generic `run --connector
+<name>` covering every connector the same way is later roadmap work, once more than one connector
+needs it.
 """
 import argparse
 import dataclasses
@@ -20,6 +21,7 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
+from prepora_pipeline.connectors.markdown.run import run as run_markdown_import
 from prepora_pipeline.contracts import NormalizedQuestion
 from prepora_pipeline.core import (
     FilesystemArtifactStore,
@@ -95,6 +97,20 @@ def cmd_dedupe_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_markdown(args: argparse.Namespace) -> int:
+    results = run_markdown_import(args.content_dir)
+    if not results:
+        print(f"No Markdown files found under {args.content_dir!r}.")
+        return 0
+
+    for result in results:
+        print(f"[{result.status:>9}] {result.path} — {result.detail}")
+
+    errors = sum(1 for r in results if r.status == "error")
+    print(f"\n{len(results)} result(s), {errors} error(s).")
+    return 1 if errors else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
 
@@ -137,6 +153,17 @@ def main(argv: list[str] | None = None) -> int:
         "--file", default="-", help="Path to a NormalizedQuestion JSON file, or '-' for stdin."
     )
     dedupe_check_parser.set_defaults(func=cmd_dedupe_check)
+
+    import_markdown_parser = subparsers.add_parser(
+        "import-markdown",
+        help="Discover, parse, normalize, and publish every Markdown file under a directory.",
+    )
+    import_markdown_parser.add_argument(
+        "--content-dir",
+        default="content",
+        help="Directory to walk for *.md files (default: content).",
+    )
+    import_markdown_parser.set_defaults(func=cmd_import_markdown)
 
     args = parser.parse_args(argv)
     return args.func(args)

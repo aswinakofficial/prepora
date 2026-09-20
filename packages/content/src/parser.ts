@@ -59,6 +59,7 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
   let explanation: string | undefined;
   let topic: string | undefined;
   let difficulty: Question["difficulty"];
+  let tags: string[] | undefined;
   let needsReview = false;
   let reviewNote: string | undefined;
 
@@ -125,6 +126,18 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
       continue;
     }
 
+    // Tags line — specified in agents/content/schema.md's Tags section but never parsed until
+    // docs/roadmap/engineering-roadmap.md item 22.
+    if (line.match(/^\*{0,2}Tags[:\s*]*\*{0,2}:?\s*/i)) {
+      const rawTags = line.replace(/^\*{0,2}Tags[:\s*]*\*{0,2}:?\s*/i, "").trim();
+      const parsedTags = rawTags
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+      if (parsedTags.length > 0) tags = parsedTags;
+      continue;
+    }
+
     // Option line
     const option = parseOptionLine(line);
     if (option) {
@@ -168,6 +181,7 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
     explanation: explanation?.trim(),
     topic,
     difficulty,
+    tags,
     needsReview,
     reviewNote,
   };
@@ -212,18 +226,26 @@ export function parsePreporaMarkdown(markdown: string, _filePath = "<input>"): P
   const allLines = content.split("\n");
   let currentBlock: string[] = [];
   let currentNumber = 0;
+  // A block only has real content once it has a non-blank line — a blank line between a trailing
+  // "---" and the next "# Question N" heading (exactly what agents/content/schema.md's own File
+  // Structure example, and both files in agents/content/examples/, look like) otherwise gets
+  // counted as "content" by a bare `.length > 0` check, producing a phantom empty, needsReview
+  // question between every real pair. Found by actually running the real example files through
+  // this parser rather than trusting only synthetic unit-test snippets — see
+  // docs/roadmap/engineering-roadmap.md item 22.
+  const hasContent = (block: string[]) => block.some((l) => l.trim().length > 0);
 
   for (const line of allLines) {
     const heading = line.match(/^#\s+Question\s+(\d+)/i);
     if (heading) {
-      if (currentBlock.length > 0 && currentNumber > 0) {
+      if (hasContent(currentBlock) && currentNumber > 0) {
         questionBlocks.push({ number: currentNumber, lines: currentBlock });
       }
       currentNumber = parseInt(heading[1], 10);
       currentBlock = [];
     } else if (line.trim() === "---") {
       // HR as question separator
-      if (currentBlock.length > 0 && currentNumber > 0) {
+      if (hasContent(currentBlock) && currentNumber > 0) {
         questionBlocks.push({ number: currentNumber, lines: currentBlock });
         currentBlock = [];
         currentNumber++;
@@ -232,7 +254,7 @@ export function parsePreporaMarkdown(markdown: string, _filePath = "<input>"): P
       currentBlock.push(line);
     }
   }
-  if (currentBlock.length > 0 && currentNumber > 0) {
+  if (hasContent(currentBlock) && currentNumber > 0) {
     questionBlocks.push({ number: currentNumber, lines: currentBlock });
   }
 

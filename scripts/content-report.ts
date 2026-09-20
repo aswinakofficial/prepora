@@ -16,7 +16,8 @@ function findMarkdownFiles(dir: string): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) files.push(...findMarkdownFiles(full));
-    else if (entry.endsWith(".md")) files.push(full);
+    // content/README.md documents the directory for humans, not a Prepora Markdown file itself.
+    else if (entry.endsWith(".md") && entry.toLowerCase() !== "readme.md") files.push(full);
   }
   return files;
 }

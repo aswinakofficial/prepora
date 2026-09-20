@@ -18,7 +18,10 @@ function findMarkdownFiles(dir: string): string[] {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
       files.push(...findMarkdownFiles(full));
-    } else if (entry.endsWith(".md")) {
+      // content/README.md documents the directory for humans — it is not itself a Prepora
+      // Markdown file, and would otherwise always fail validation (see the identical fix in
+      // apps/pipeline/prepora_pipeline/connectors/markdown/connector.py's discover()).
+    } else if (entry.endsWith(".md") && entry.toLowerCase() !== "readme.md") {
       files.push(full);
     }
   }
