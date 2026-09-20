@@ -4,5 +4,7 @@ python-dotenv
 PyYAML
 beautifulsoup4
 requests
+fastapi
+uvicorn
 pytest
 ruff

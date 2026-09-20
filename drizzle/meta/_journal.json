@@ -57,6 +57,13 @@
       "when": 1789869459786,
       "tag": "0007_damp_vertigo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789872717091,
+      "tag": "0008_chief_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }

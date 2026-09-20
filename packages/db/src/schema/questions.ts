@@ -16,9 +16,18 @@ export const questions = pgTable(
   "questions",
   {
     id: id(),
-    stableContentId: text("stable_content_id").unique(), // e.g. KPSC-AE-2025-CIVIL-Q001
+    stableContentId: text("stable_content_id").unique(), // e.g. KPSC-AE-2025-CIVIL-Q001 — a
+    // per-*appearance* id (it embeds year), so it alone cannot tell "the same question in a
+    // different year's paper" from a genuinely new question — see contentHash below.
     slug: text("slug").notNull(),
     questionText: text("question_text").notNull(),
+    // Exact-duplicate content hash — the same normalize+djb2 algorithm as
+    // packages/content/src/duplicates.ts's contentHash(), ported to Python in
+    // apps/pipeline/prepora_pipeline/stages/publish.py. This is what lets the same question
+    // republished under a different stable_content_id (a different exam year) reuse the existing
+    // canonical row instead of creating a duplicate — an exact-match-only precursor to the fuzzy
+    // near-duplicate detection docs/roadmap/engineering-roadmap.md item 20 adds on top.
+    contentHash: text("content_hash"),
     questionType: questionTypeEnum("question_type").notNull().default("mcq"),
     explanation: text("explanation"),
     sourceLabel: aiSourceEnum("source_label").notNull().default("verified"),
@@ -31,6 +40,7 @@ export const questions = pgTable(
   (t) => [
     index("questions_slug_idx").on(t.slug),
     index("questions_stable_id_idx").on(t.stableContentId),
+    index("questions_content_hash_idx").on(t.contentHash),
     index("questions_topic_id_idx").on(t.topicId),
     index("questions_status_idx").on(t.status),
   ],

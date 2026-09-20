@@ -94,6 +94,65 @@ async function fetchScraper(path: string, init: RequestInit = {}): Promise<Respo
   return fetch(`${getScraperBaseUrl()}${path}`, { ...init, headers });
 }
 
+// ─── Pipeline service connectivity ─────────────────────────────────────────────
+// apps/pipeline's HTTP wrapper (prepora_pipeline/api.py) — same reasoning and same
+// PIPELINE_SERVICE_TOKEN as fetchScraper() above: this Worker cannot spawn subprocesses, so
+// idempotent, occurrence-aware publishing (docs/roadmap/engineering-roadmap.md item 18) has to be
+// reached over HTTP, never by shelling out to the CLI.
+
+function getPipelineBaseUrl(): string {
+  return (process.env.PIPELINE_SERVICE_URL || "http://localhost:8001").replace(/\/+$/, "");
+}
+
+async function fetchPipeline(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = {
+    ...getScraperAuthHeaders(),
+    "Content-Type": "application/json",
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  return fetch(`${getPipelineBaseUrl()}${path}`, { ...init, headers });
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Maps a legacy scraped review-queue element onto a NormalizedQuestion for apps/pipeline's
+// /publish endpoint. The review queue's free-text exam/subject metadata (apps/scraper/main.py's
+// target_exam/target_subject) was never designed to carry real catalog slugs
+// (docs/roadmap/engineering-roadmap.md item 10) — slugifying it here is a best-effort guess, not a
+// guarantee of a match. When it doesn't match a registered exam, publish_question() raises a clear
+// PublishError instead of the old code's silent slug collisions and string-equality answer
+// mismatches; that is the intended, documented boundary of this delegation, not a bug.
+function reviewElementToNormalizedQuestion(
+  el: { questionText: string; options: string[]; answer: string; explanation?: string },
+  meta: { exam?: string; subject?: string; targetExam?: string; targetSubject?: string },
+  number: number,
+) {
+  const examName = meta.exam || meta.targetExam || "unknown-exam";
+  const subjectName = meta.subject || meta.targetSubject || "unknown-subject";
+
+  return {
+    exam_slug: slugify(examName),
+    exam_variant_slug: "standard",
+    subject_slug: slugify(subjectName),
+    number,
+    question_text: el.questionText,
+    question_type: "mcq" as const,
+    options: el.options.map((text, i) => ({ key: String.fromCharCode(65 + i), text })),
+    answer: {
+      type: "mcq" as const,
+      correct_key: String.fromCharCode(65 + el.options.indexOf(el.answer)),
+    },
+    explanation: el.explanation || null,
+    parser_version: "legacy-review-queue-v1",
+  };
+}
+
 export const adminRouter = {
   getDashboardStats: adminProcedure
     .route({
@@ -350,50 +409,33 @@ export const adminRouter = {
       }
 
       const elements = parsedData?.extractedElements || [];
-      const _meta = parsedData?.metadata || {};
+      const meta = parsedData?.metadata || {};
 
+      // Delegates to apps/pipeline's /publish (docs/roadmap/engineering-roadmap.md item 18)
+      // instead of writing questions/options/answers directly — that inline logic used a random
+      // slug suffix and matched answers by string equality against option text, so a reworded or
+      // retyped option silently published with no correct answer at all. Each element publishes
+      // independently so one bad item (most likely: exam/subject metadata that doesn't match a
+      // registered catalog slug — see reviewElementToNormalizedQuestion's docstring) doesn't block
+      // the rest of the batch.
       let publishCount = 0;
+      const failures: string[] = [];
+      let number = 1;
       for (const el of elements) {
         if (!el.questionText || !el.options || !el.answer) continue;
 
-        const insertedQ = await db
-          .insert(questions)
-          .values({
-            slug:
-              el.questionText
-                .slice(0, 30)
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "-") +
-              "-" +
-              Math.random().toString(36).substring(2, 6),
-            questionText: el.questionText,
-            explanation: el.explanation || null,
-            questionType: "mcq",
-            status: "published",
-          })
-          .returning({ id: questions.id });
+        const normalized = reviewElementToNormalizedQuestion(el, meta, number++);
+        const res = await fetchPipeline("/publish", {
+          method: "POST",
+          body: JSON.stringify(normalized),
+        });
 
-        const qId = insertedQ[0].id;
-        let seq = 1;
-        for (const opt of el.options) {
-          const insertedOpt = await db
-            .insert(questionOptions)
-            .values({
-              questionId: qId,
-              optionKey: String.fromCharCode(64 + seq),
-              optionText: opt,
-              sequence: seq++,
-            })
-            .returning({ id: questionOptions.id });
-
-          if (opt === el.answer) {
-            await db.insert(questionAnswers).values({
-              questionId: qId,
-              correctOptionId: insertedOpt[0].id,
-            });
-          }
+        if (res.ok) {
+          publishCount++;
+        } else {
+          const body = await res.text().catch(() => res.statusText);
+          failures.push(`${el.questionText.slice(0, 40)}...: ${body}`);
         }
-        publishCount++;
       }
 
       await db
@@ -407,10 +449,14 @@ export const adminRouter = {
         entityType: "scraped_question",
         entityId: input.id,
         oldValue: { status: "pending" },
-        newValue: { status: "approved", publishCount },
+        newValue: { status: "approved", publishCount, failures },
       });
 
-      return { success: true, message: `Approved and published ${publishCount} questions.` };
+      const message =
+        failures.length > 0
+          ? `Published ${publishCount} question(s); ${failures.length} failed: ${failures.join("; ")}`
+          : `Approved and published ${publishCount} questions.`;
+      return { success: true, message };
     }),
 
   // Drives the site-selector cards in apps/web/app/routes/admin/scraping.tsx — replaces the
