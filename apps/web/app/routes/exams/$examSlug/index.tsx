@@ -1,15 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../../lib/json-ld";
 
 export const Route = createFileRoute("/exams/$examSlug/")({
   head: ({ params }) => ({
     meta: [
       {
-        title: `${params.examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} — Question Repository | Prepora`,
+        title: `${titleCase(params.examSlug)} — Question Repository | Prepora`,
       },
       {
         name: "description",
         content: `Explore official previous-year question sets, subject breakdowns, and topic-wise practice for ${params.examSlug}.`,
       },
+    ],
+    links: [canonicalLink(`/exams/${params.examSlug}`)],
+    scripts: [
+      breadcrumbListJsonLd([
+        { name: "Home", path: "/" },
+        { name: "Exams", path: "/exams" },
+        { name: titleCase(params.examSlug), path: `/exams/${params.examSlug}` },
+      ]),
     ],
   }),
   component: ExamPage,
@@ -17,6 +26,7 @@ export const Route = createFileRoute("/exams/$examSlug/")({
 
 import { useQuery } from "@tanstack/react-query";
 import { orpc } from "../../../../lib/orpc";
+import { CANONICAL_ORIGIN } from "../../../../lib/site-config";
 
 function ExamPage() {
   const { examSlug } = Route.useParams();
@@ -47,6 +57,31 @@ function ExamPage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
+      {/* docs/roadmap/engineering-roadmap.md item 26: Course JSON-LD, rendered here rather than in
+          head() because it needs the real exam data useQuery fetches — this app has no loader/SSR
+          data-hydration pattern anywhere (confirmed repo-wide), so head() only ever has access to
+          route params. React 19 hoists <script> tags rendered anywhere in the tree into <head>. */}
+      {realExam && (
+        <script
+          type="application/ld+json"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON.stringify output, not user HTML.
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Course",
+              name: examName,
+              description:
+                realExam.description ||
+                `Practice questions and verified explanations for ${examName}.`,
+              provider: {
+                "@type": "Organization",
+                name: realExam.organization || examName,
+              },
+              url: `${CANONICAL_ORIGIN}/exams/${examSlug}`,
+            }),
+          }}
+        />
+      )}
       {/* Back Context */}
       <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
         <Link

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute("/subjects/$subjectSlug")({
@@ -12,6 +13,14 @@ export const Route = createFileRoute("/subjects/$subjectSlug")({
           name: "description",
           content: `Browse all previous-year exam questions for ${name} with answers and explanations.`,
         },
+      ],
+      links: [canonicalLink(`/subjects/${params.subjectSlug}`)],
+      scripts: [
+        breadcrumbListJsonLd([
+          { name: "Home", path: "/" },
+          { name: "Subjects", path: "/subjects" },
+          { name, path: `/subjects/${params.subjectSlug}` },
+        ]),
       ],
     };
   },

@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import { useState } from "react";
+import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
 
 export const Route = createFileRoute("/contribute")({
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/contribute")({
           "Help thousands of students by contributing past question papers via Markdown. Fast, open, and verified.",
       },
     ],
+    links: [canonicalLink("/contribute")],
   }),
   component: ContributePage,
 });

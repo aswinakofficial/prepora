@@ -3,6 +3,11 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { reactStartCookies } from "better-auth/react-start";
 
+// docs/roadmap/engineering-roadmap.md item 26: prepora.xpar.in is the canonical production
+// domain (see apps/web/lib/site-config.ts) — auth requests can still legitimately arrive at the
+// underlying Cloudflare Pages domain (e.g. before a custom-domain request reaches the app, or
+// during a deploy preview), so prepora-9g4.pages.dev stays trusted here for that functional
+// reason even though it's never used as a canonical URL anywhere else.
 const trustedOrigins = Array.from(
   new Set([
     "http://localhost:3000",

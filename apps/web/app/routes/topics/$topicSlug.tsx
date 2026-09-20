@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowUpRight, BookOpen, Search, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
+import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute("/topics/$topicSlug")({
@@ -15,6 +16,17 @@ export const Route = createFileRoute("/topics/$topicSlug")({
           content: `Master ${name} with previous-year exam questions and verified step-by-step explanations.`,
         },
         { property: "og:title", content: `${name} — Exam Questions Index | Prepora` },
+      ],
+      links: [canonicalLink(`/topics/${params.topicSlug}`)],
+      // The topic's parent subject isn't known from params alone (this route has no subjectSlug
+      // segment) — a two-level trail is what head() can build without a data fetch; the page's own
+      // visual breadcrumb rail fills in the real subject once topics.getBySlug resolves.
+      scripts: [
+        breadcrumbListJsonLd([
+          { name: "Home", path: "/" },
+          { name: "Subjects", path: "/subjects" },
+          { name, path: `/topics/${params.topicSlug}` },
+        ]),
       ],
     };
   },

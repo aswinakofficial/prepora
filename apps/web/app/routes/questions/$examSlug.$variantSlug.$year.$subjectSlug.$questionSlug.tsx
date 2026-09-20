@@ -2,14 +2,17 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { getAnonymousSessionId } from "../../../lib/anonymous-session";
+import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
+import { CANONICAL_ORIGIN } from "../../../lib/site-config";
 
 export const Route = createFileRoute(
   "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug",
 )({
   head: ({ params }) => {
-    const examName = params.examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const examName = titleCase(params.examSlug);
     const title = `${examName} — Q: ${params.questionSlug.replace(/-/g, " ")}`;
+    const path = `/questions/${params.examSlug}/${params.variantSlug}/${params.year}/${params.subjectSlug}/${params.questionSlug}`;
     return {
       meta: [
         { title: `${title} | Prepora` },
@@ -17,6 +20,16 @@ export const Route = createFileRoute(
           name: "description",
           content: `${title} with detailed verified answer and step-by-step explanation.`,
         },
+      ],
+      links: [canonicalLink(path)],
+      scripts: [
+        breadcrumbListJsonLd([
+          { name: "Home", path: "/" },
+          { name: "Exams", path: "/exams" },
+          { name: examName, path: `/exams/${params.examSlug}` },
+          { name: titleCase(params.subjectSlug), path: `/subjects/${params.subjectSlug}` },
+          { name: titleCase(params.questionSlug), path },
+        ]),
       ],
     };
   },
@@ -98,6 +111,38 @@ function QuestionPage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
+      {/* docs/roadmap/engineering-roadmap.md item 26: Question JSON-LD, rendered here (not in
+          head()) because it needs the real question useQuery fetches — see the exam page's
+          identical note on why this app's routes render data-dependent JSON-LD inline instead.
+          `acceptedAnswer` is only included once the user has actually revealed it: the correct
+          option is never sent to the client before that (a deliberate item 24/25 design, not an
+          oversight), so structured data can't honestly claim to know it either. */}
+      <script
+        type="application/ld+json"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON.stringify output, not user HTML.
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Question",
+            name: question.text,
+            text: question.text,
+            url: `${CANONICAL_ORIGIN}/questions/${examSlug}/${variantSlug}/${year}/${subjectSlug}/${questionSlug}`,
+            suggestedAnswer: question.options.map((opt) => ({
+              "@type": "Answer",
+              text: opt.text,
+            })),
+            ...(isRevealed && correctOption
+              ? {
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: correctOption.text,
+                  },
+                }
+              : {}),
+          }),
+        }}
+      />
+
       <div className="px-6 pt-12 max-w-[800px] mx-auto mb-16"></div>
 
       <main className="max-w-[800px] mx-auto px-6">

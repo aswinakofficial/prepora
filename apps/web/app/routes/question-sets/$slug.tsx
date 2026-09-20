@@ -1,17 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute("/question-sets/$slug")({
   head: ({ params }) => ({
     meta: [
       {
-        title: `${params.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} — Question Set | Prepora`,
+        title: `${titleCase(params.slug)} — Question Set | Prepora`,
       },
       {
         name: "description",
         content: `Browse all high-yield practice questions from this curated exam question set with verified step-by-step explanations.`,
       },
+    ],
+    links: [canonicalLink(`/question-sets/${params.slug}`)],
+    scripts: [
+      breadcrumbListJsonLd([
+        { name: "Home", path: "/" },
+        { name: "Exams", path: "/exams" },
+        { name: titleCase(params.slug), path: `/question-sets/${params.slug}` },
+      ]),
     ],
   }),
   component: QuestionSetPage,

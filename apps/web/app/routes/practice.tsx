@@ -9,6 +9,7 @@ import {
   mergeReadingResources,
 } from "../../lib/additional-reading";
 import { getAnonymousSessionId } from "../../lib/anonymous-session";
+import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
 
 const practiceSearchSchema = z.object({
@@ -28,6 +29,9 @@ export const Route = createFileRoute("/practice")({
           "Distraction-free exam practice, Learn Mode, and mock test environment with verified step-by-step resolution logic.",
       },
     ],
+    // Canonicalizes to the base path regardless of ?examSlug=/?viewMode= — this is an interactive
+    // session UI, not per-parameter indexable content.
+    links: [canonicalLink("/practice")],
   }),
   component: PracticePage,
 });

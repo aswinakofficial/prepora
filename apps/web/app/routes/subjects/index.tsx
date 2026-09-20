@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 
 export const Route = createFileRoute("/subjects/")({
   head: () => ({
@@ -9,6 +10,13 @@ export const Route = createFileRoute("/subjects/")({
         content:
           "Browse exam questions by subject: Civil Engineering, Electronics, Computer Science, General Knowledge and more.",
       },
+    ],
+    links: [canonicalLink("/subjects")],
+    scripts: [
+      breadcrumbListJsonLd([
+        { name: "Home", path: "/" },
+        { name: "Subjects", path: "/subjects" },
+      ]),
     ],
   }),
   component: SubjectsPage,

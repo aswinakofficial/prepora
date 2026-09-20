@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
+import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
 
 const examsSearchSchema = z.object({
@@ -24,6 +25,13 @@ export const Route = createFileRoute("/exams/")({
         content:
           "Explore official previous-year question repositories for global and local competitive exams, university papers, and strict certifications.",
       },
+    ],
+    links: [canonicalLink("/exams")],
+    scripts: [
+      breadcrumbListJsonLd([
+        { name: "Home", path: "/" },
+        { name: "Exams", path: "/exams" },
+      ]),
     ],
   }),
   component: ExamsPage,

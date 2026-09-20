@@ -4,6 +4,7 @@ import { ArrowRight, Layers } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { authClient } from "../../lib/auth-client";
+import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
 
 export const Route = createFileRoute("/")({
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/")({
           "Discover and analyze verified exam question sets directly from the live database.",
       },
     ],
+    links: [canonicalLink("/")],
   }),
   component: HomePage,
 });

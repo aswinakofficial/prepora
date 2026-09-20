@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { zodValidator } from "@tanstack/zod-adapter";
 import type React from "react";
 import { z } from "zod";
+import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
 
 const searchSchema = z.object({
@@ -22,6 +23,9 @@ export const Route = createFileRoute("/search")({
           "Search real previous year questions, exams, subjects, and specific topics on Prepora's knowledge index.",
       },
     ],
+    // Canonicalizes to the base path regardless of ?q= — a search results page isn't unique,
+    // indexable content per query string.
+    links: [canonicalLink("/search")],
   }),
   component: SearchPage,
 });

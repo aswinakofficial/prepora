@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { CANONICAL_ORIGIN } from "../../../lib/site-config";
 
 export const Route = (createFileRoute("/api/llms-txt" as any) as any)({
   server: {
     handlers: {
       GET: async () => {
-        const baseUrl = process.env.VITE_PUBLIC_APP_URL || "https://prepora.xpar.in";
+        const baseUrl = process.env.VITE_PUBLIC_APP_URL || CANONICAL_ORIGIN;
 
         // NOTE: this list must only name capabilities that actually exist.
         // A previous version advertised an /mcp endpoint and exam domains

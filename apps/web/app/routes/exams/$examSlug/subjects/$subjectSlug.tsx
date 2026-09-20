@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../../../lib/json-ld";
 import { orpc } from "../../../../../lib/orpc";
 
 export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
   head: ({ params }) => {
-    const examName = params.examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    const subjectName = params.subjectSlug
-      .replace(/-/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    const examName = titleCase(params.examSlug);
+    const subjectName = titleCase(params.subjectSlug);
+    const path = `/exams/${params.examSlug}/subjects/${params.subjectSlug}`;
     return {
       meta: [
         { title: `${subjectName} — ${examName} | Prepora` },
@@ -15,6 +15,15 @@ export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
           name: "description",
           content: `Explore verified previous-year questions for ${subjectName} in ${examName}.`,
         },
+      ],
+      links: [canonicalLink(path)],
+      scripts: [
+        breadcrumbListJsonLd([
+          { name: "Home", path: "/" },
+          { name: "Exams", path: "/exams" },
+          { name: examName, path: `/exams/${params.examSlug}` },
+          { name: subjectName, path },
+        ]),
       ],
     };
   },
