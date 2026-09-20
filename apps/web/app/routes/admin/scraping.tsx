@@ -28,6 +28,17 @@ export const Route = createFileRoute("/admin/scraping")({
 // Site cards are driven by orpc.admin.listSources (the sources table) instead of a hardcoded
 // constant — see docs/roadmap/engineering-roadmap.md item 14. Adding a source is now a
 // source.yaml file plus a sync, never a change to this file.
+// docs/roadmap/engineering-roadmap.md item 21: source health (last successful crawl, consecutive
+// failures, average runtime, error rate) — computed server-side in
+// packages/api/src/lib/pipeline-health.ts from sources + pipeline_jobs, not derivable in the UI.
+export interface SourceHealth {
+  recentJobCount: number;
+  recentFailedCount: number;
+  errorRate: number | null;
+  averageRuntimeMs: number | null;
+  degraded: boolean;
+}
+
 export interface SiteOption {
   id: string; // the source's registry slug, e.g. "ms-learn"
   name: string;
@@ -41,7 +52,19 @@ export interface SiteOption {
   defaultMode: string;
   engine: string;
   connectorName: string;
+  health: SourceHealth;
+  lastCrawlAt: string | null;
+  lastSuccessfulCrawlAt: string | null;
+  consecutiveFailures: number;
 }
+
+const EMPTY_HEALTH: SourceHealth = {
+  recentJobCount: 0,
+  recentFailedCount: 0,
+  errorRate: null,
+  averageRuntimeMs: null,
+  degraded: false,
+};
 
 const EMPTY_SITE: SiteOption = {
   id: "",
@@ -56,6 +79,10 @@ const EMPTY_SITE: SiteOption = {
   defaultMode: "mcq",
   engine: "",
   connectorName: "",
+  health: EMPTY_HEALTH,
+  lastCrawlAt: null,
+  lastSuccessfulCrawlAt: null,
+  consecutiveFailures: 0,
 };
 
 function humanizeSlug(slug: string): string {
@@ -71,6 +98,10 @@ function toSiteOption(source: {
   sourceType: string | null;
   connectorName: string;
   requiresAuth: boolean;
+  health: SourceHealth;
+  lastCrawlAt: string | Date | null;
+  lastSuccessfulCrawlAt: string | Date | null;
+  consecutiveFailures: number;
 }): SiteOption {
   let domain = source.baseUrl;
   try {
@@ -88,6 +119,12 @@ function toSiteOption(source: {
       : "text-emerald-400 border-emerald-900/80 bg-emerald-950/40",
     description: `${source.sourceType ? humanizeSlug(source.sourceType) : "External"} source, handled by the ${source.connectorName} connector.`,
     defaultUrl: source.baseUrl,
+    health: source.health,
+    lastCrawlAt: source.lastCrawlAt ? new Date(source.lastCrawlAt).toISOString() : null,
+    lastSuccessfulCrawlAt: source.lastSuccessfulCrawlAt
+      ? new Date(source.lastSuccessfulCrawlAt).toISOString()
+      : null,
+    consecutiveFailures: source.consecutiveFailures,
     defaultExam: "Auto-detect",
     defaultSubject: "Auto-detect",
     defaultMode: "mcq",
@@ -162,6 +199,13 @@ function AdminScrapingPage() {
   const { data: logsData, refetch: refetchLogs } = useQuery({
     ...orpc.admin.getScraperLogs.queryOptions(),
     refetchInterval: isScraping ? 1500 : 4000,
+  });
+
+  // docs/roadmap/engineering-roadmap.md item 21: structured per-stage counts/durations, drawn
+  // from pipeline_job_stages, alongside the raw log panel above.
+  const { data: pipelineJobsData } = useQuery({
+    ...orpc.admin.listPipelineJobs.queryOptions(),
+    refetchInterval: isScraping ? 1500 : 5000,
   });
 
   useEffect(() => {
@@ -443,6 +487,24 @@ function AdminScrapingPage() {
                     <p className="font-mono text-xs text-slate-400 leading-relaxed mb-6">
                       {site.description}
                     </p>
+
+                    <div className="flex items-center gap-2 mb-4">
+                      <span
+                        className={`font-mono text-[10px] uppercase tracking-widest px-2 py-0.5 border ${
+                          site.health.degraded
+                            ? "text-rose-400 border-rose-900/80 bg-rose-950/40"
+                            : "text-emerald-400 border-emerald-900/80 bg-emerald-950/40"
+                        }`}
+                      >
+                        {site.health.degraded ? "DEGRADED" : "HEALTHY"}
+                      </span>
+                      {site.consecutiveFailures > 0 && (
+                        <span className="font-mono text-[10px] text-amber-400">
+                          {site.consecutiveFailures} consecutive failure
+                          {site.consecutiveFailures === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="pt-4 border-t border-slate-900/80 flex items-center justify-between font-mono text-xs">
@@ -870,6 +932,65 @@ function AdminScrapingPage() {
                 </div>
               </div>
 
+              {/* docs/roadmap/engineering-roadmap.md item 21: source health, drawn from
+                  sources + pipeline_jobs (packages/api/src/lib/pipeline-health.ts). */}
+              <div className="p-6 border border-slate-900 bg-slate-950/60 space-y-4">
+                <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 border-b border-slate-900 pb-3">
+                  Source Health
+                </h3>
+                <div className="space-y-4 font-mono text-xs">
+                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                    <span className="text-slate-600">STATUS</span>
+                    <span
+                      className={
+                        selectedWebsite.health.degraded ? "text-rose-400" : "text-emerald-400"
+                      }
+                    >
+                      {selectedWebsite.health.degraded ? "DEGRADED" : "HEALTHY"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                    <span className="text-slate-600">LAST SUCCESSFUL CRAWL</span>
+                    <span className="text-slate-300" suppressHydrationWarning>
+                      {selectedWebsite.lastSuccessfulCrawlAt
+                        ? new Date(selectedWebsite.lastSuccessfulCrawlAt)
+                            .toISOString()
+                            .replace("T", " ")
+                            .slice(0, 19)
+                        : "Never"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                    <span className="text-slate-600">CONSECUTIVE FAILURES</span>
+                    <span
+                      className={
+                        selectedWebsite.consecutiveFailures > 0
+                          ? "text-amber-400"
+                          : "text-slate-300"
+                      }
+                    >
+                      {selectedWebsite.consecutiveFailures}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                    <span className="text-slate-600">ERROR RATE (30D)</span>
+                    <span className="text-slate-300">
+                      {selectedWebsite.health.errorRate == null
+                        ? "No recent runs"
+                        : `${Math.round(selectedWebsite.health.errorRate * 100)}%`}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">AVG RUNTIME</span>
+                    <span className="text-slate-300">
+                      {selectedWebsite.health.averageRuntimeMs == null
+                        ? "—"
+                        : `${(selectedWebsite.health.averageRuntimeMs / 1000).toFixed(1)}s`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <div className="p-6 border border-slate-900 bg-slate-950/40 space-y-3 font-mono text-xs text-slate-500">
                 <div className="text-slate-300 font-medium uppercase tracking-wider mb-2 flex items-center gap-2">
                   <Sparkles className="w-3.5 h-3.5 text-blue-400" />
@@ -953,6 +1074,92 @@ function AdminScrapingPage() {
                 real-time Playwright execution logs.
               </div>
             )}
+          </div>
+        </section>
+
+        {/* SECTION 3.5: JOB INSPECTION — docs/roadmap/engineering-roadmap.md item 21 */}
+        <section className="mb-12">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-900 pb-3">
+            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-blue-400" />
+              <span>03.5 / Job Inspection (Per-Stage Counts & Durations)</span>
+            </h2>
+          </div>
+
+          <div className="border border-slate-900 overflow-hidden bg-slate-950/40">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="border-b border-slate-900 bg-slate-900/50 text-slate-500 uppercase tracking-widest text-[10px]">
+                <tr>
+                  <th className="p-4 font-normal">Job</th>
+                  <th className="p-4 font-normal">Source</th>
+                  <th className="p-4 font-normal">Status</th>
+                  <th className="p-4 font-normal">Stages</th>
+                  <th className="p-4 font-normal">Started</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-900/80 text-slate-300">
+                {!pipelineJobsData || pipelineJobsData.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-600">
+                      No pipeline jobs recorded yet.
+                    </td>
+                  </tr>
+                ) : (
+                  pipelineJobsData.map((job: any) => (
+                    <tr key={job.id} className="hover:bg-slate-900/40 transition-colors align-top">
+                      <td className="p-4 text-slate-400">#{job.id.slice(0, 8)}</td>
+                      <td className="p-4 text-slate-300">{job.sourceId}</td>
+                      <td className="p-4">
+                        <span
+                          className={`px-2 py-0.5 text-[10px] uppercase tracking-wider border ${
+                            job.status === "completed"
+                              ? "bg-emerald-950/40 border-emerald-900/80 text-emerald-400"
+                              : job.status === "partial"
+                                ? "bg-amber-950/40 border-amber-900/80 text-amber-400"
+                                : job.status === "failed"
+                                  ? "bg-rose-950/40 border-rose-900/80 text-rose-400"
+                                  : "bg-slate-900 border-slate-800 text-slate-400"
+                          }`}
+                        >
+                          {job.status}
+                        </span>
+                      </td>
+                      <td className="p-4 space-y-1">
+                        {job.stages.length === 0 ? (
+                          <span className="text-slate-600">No stages recorded</span>
+                        ) : (
+                          job.stages.map((stage: any) => (
+                            <div key={stage.id} className="text-[11px] text-slate-400">
+                              <span className="text-slate-300">{stage.stage}</span>{" "}
+                              <span
+                                className={
+                                  stage.status === "completed"
+                                    ? "text-emerald-500"
+                                    : stage.status === "failed"
+                                      ? "text-rose-500"
+                                      : "text-amber-500"
+                                }
+                              >
+                                {stage.status}
+                              </span>{" "}
+                              — processed={stage.processedCount} failed={stage.failedCount}{" "}
+                              duplicate={stage.duplicateCount} skipped={stage.skippedCount}
+                              {stage.durationMs != null ? ` (${stage.durationMs}ms)` : ""}
+                            </div>
+                          ))
+                        )}
+                      </td>
+                      <td className="p-4 text-slate-600 text-[11px]" suppressHydrationWarning>
+                        {job.startedAt
+                          ? new Date(job.startedAt).toISOString().replace("T", " ").slice(0, 19)
+                          : "—"}{" "}
+                        UTC
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
 

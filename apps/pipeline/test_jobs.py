@@ -42,6 +42,30 @@ def source_id():
         conn.close()
 
 
+@pytest.fixture
+def registered_source(source_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sources (name, base_url, connector_name) VALUES (%s, %s, %s)",
+                (source_id, "https://example.com", "generic"),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+    yield source_id
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM sources WHERE name = %s", (source_id,))
+            conn.commit()
+    finally:
+        conn.close()
+
+
 class TestCreateJob:
     def test_creates_a_queued_job(self, source_id):
         job_id = create_job(source_id=source_id, job_type="scrape", trigger_type="manual")
@@ -210,3 +234,62 @@ class TestFullRunIntegration:
         assert extract_stage.counts.discovered == 10
         assert extract_stage.counts.processed == 9
         assert extract_stage.counts.skipped == 1
+
+
+class TestFinalizeJobRecordsCrawlAttempt:
+    """
+    docs/roadmap/engineering-roadmap.md item 21's source-health view reads sources.last_crawl_at/
+    last_successful_crawl_at/consecutive_failures — record_crawl_attempt (item 14) existed since
+    before item 21 but nothing outside its own tests ever called it, so those columns sat at their
+    defaults in every real crawl. finalize_job() now calls it itself so every job updates them.
+    """
+
+    def _source_row(self, name):
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT last_crawl_at, last_successful_crawl_at, consecutive_failures "
+                    "FROM sources WHERE name = %s",
+                    (name,),
+                )
+                return cur.fetchone()
+        finally:
+            conn.close()
+
+    def test_a_completed_job_stamps_success_and_resets_failures(self, registered_source):
+        job_id = create_job(source_id=registered_source, job_type="scrape", trigger_type="manual")
+        start_job(job_id)
+        with stage_run(job_id, "fetch") as counts:
+            counts.processed = 1
+
+        status = finalize_job(job_id)
+        assert status == "completed"
+
+        last_crawl_at, last_successful_crawl_at, consecutive_failures = self._source_row(
+            registered_source
+        )
+        assert last_crawl_at is not None
+        assert last_successful_crawl_at is not None
+        assert consecutive_failures == 0
+
+    def test_a_failed_job_increments_consecutive_failures_without_a_success_stamp(
+        self, registered_source
+    ):
+        job_id = create_job(source_id=registered_source, job_type="scrape", trigger_type="manual")
+        start_job(job_id)
+        try:
+            with stage_run(job_id, "fetch"):
+                raise RuntimeError("boom")
+        except RuntimeError:
+            pass
+
+        status = finalize_job(job_id)
+        assert status == "failed"
+
+        last_crawl_at, last_successful_crawl_at, consecutive_failures = self._source_row(
+            registered_source
+        )
+        assert last_crawl_at is not None
+        assert last_successful_crawl_at is None
+        assert consecutive_failures == 1

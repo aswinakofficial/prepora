@@ -17,6 +17,11 @@ import {
 import { count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure } from "../context.js";
+import {
+  computeSourceHealthStats,
+  EMPTY_SOURCE_HEALTH_STATS,
+  isSourceDegraded,
+} from "../lib/pipeline-health.js";
 
 // Typed confirmation required before wipeDatabase executes — see docs/roadmap/engineering-roadmap.md
 // item 6. Exported so the frontend prompts for exactly this string rather than hardcoding a second
@@ -151,6 +156,97 @@ function reviewElementToNormalizedQuestion(
     explanation: el.explanation || null,
     parser_version: "legacy-review-queue-v1",
   };
+}
+
+// Shared by processReviewItem and processReviewBatch (docs/roadmap/engineering-roadmap.md item
+// 21) so there is exactly one place that decides what happens to a review item, whether it's
+// processed alone or as part of a batch.
+async function processOneReviewItem(
+  db: ReturnType<typeof getDb>,
+  actorId: string,
+  input: { id: string; action: "approve" | "reject" },
+): Promise<{ success: boolean; message: string }> {
+  if (input.action === "reject") {
+    await db
+      .update(scrapedQuestions)
+      .set({ status: "rejected" })
+      .where(eq(scrapedQuestions.id, input.id));
+    await writeAuditLog(db, {
+      actorId,
+      action: "reject_scraped_question",
+      entityType: "scraped_question",
+      entityId: input.id,
+      oldValue: { status: "pending" },
+      newValue: { status: "rejected" },
+    });
+    return { success: true, message: `Rejected batch ${input.id.substring(0, 8)}...` };
+  }
+
+  // Approve logic
+  const item = await db
+    .select()
+    .from(scrapedQuestions)
+    .where(eq(scrapedQuestions.id, input.id))
+    .limit(1);
+  if (!item.length) {
+    throw new ORPCError("NOT_FOUND", { message: "Item not found" });
+  }
+
+  let parsedData: any = item[0].parsedData;
+  if (typeof parsedData === "string") {
+    try {
+      parsedData = JSON.parse(parsedData);
+    } catch (_e) {}
+  }
+
+  const elements = parsedData?.extractedElements || [];
+  const meta = parsedData?.metadata || {};
+
+  // Delegates to apps/pipeline's /publish (docs/roadmap/engineering-roadmap.md item 18) instead
+  // of writing questions/options/answers directly — that inline logic used a random slug suffix
+  // and matched answers by string equality against option text, so a reworded or retyped option
+  // silently published with no correct answer at all. Each element publishes independently so one
+  // bad item (most likely: exam/subject metadata that doesn't match a registered catalog slug —
+  // see reviewElementToNormalizedQuestion's docstring) doesn't block the rest of the batch.
+  let publishCount = 0;
+  const failures: string[] = [];
+  let number = 1;
+  for (const el of elements) {
+    if (!el.questionText || !el.options || !el.answer) continue;
+
+    const normalized = reviewElementToNormalizedQuestion(el, meta, number++);
+    const res = await fetchPipeline("/publish", {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    });
+
+    if (res.ok) {
+      publishCount++;
+    } else {
+      const body = await res.text().catch(() => res.statusText);
+      failures.push(`${el.questionText.slice(0, 40)}...: ${body}`);
+    }
+  }
+
+  await db
+    .update(scrapedQuestions)
+    .set({ status: "approved" })
+    .where(eq(scrapedQuestions.id, input.id));
+
+  await writeAuditLog(db, {
+    actorId,
+    action: "approve_scraped_question",
+    entityType: "scraped_question",
+    entityId: input.id,
+    oldValue: { status: "pending" },
+    newValue: { status: "approved", publishCount, failures },
+  });
+
+  const message =
+    failures.length > 0
+      ? `Published ${publishCount} question(s); ${failures.length} failed: ${failures.join("; ")}`
+      : `Approved and published ${publishCount} questions.`;
+  return { success: true, message };
 }
 
 export const adminRouter = {
@@ -383,89 +479,47 @@ export const adminRouter = {
     )
     .handler(async ({ input, context }) => {
       const db = getDb();
+      return processOneReviewItem(db, context.user.id, input);
+    }),
 
-      if (input.action === "reject") {
-        await db
-          .update(scrapedQuestions)
-          .set({ status: "rejected" })
-          .where(eq(scrapedQuestions.id, input.id));
-        await writeAuditLog(db, {
-          actorId: context.user.id,
-          action: "reject_scraped_question",
-          entityType: "scraped_question",
-          entityId: input.id,
-          oldValue: { status: "pending" },
-          newValue: { status: "rejected" },
-        });
-        return { success: true, message: `Rejected batch ${input.id.substring(0, 8)}...` };
-      }
-
-      // Approve logic
-      const item = await db
-        .select()
-        .from(scrapedQuestions)
-        .where(eq(scrapedQuestions.id, input.id))
-        .limit(1);
-      if (!item.length) {
-        throw new ORPCError("NOT_FOUND", { message: "Item not found" });
-      }
-
-      let parsedData: any = item[0].parsedData;
-      if (typeof parsedData === "string") {
-        try {
-          parsedData = JSON.parse(parsedData);
-        } catch (_e) {}
-      }
-
-      const elements = parsedData?.extractedElements || [];
-      const meta = parsedData?.metadata || {};
-
-      // Delegates to apps/pipeline's /publish (docs/roadmap/engineering-roadmap.md item 18)
-      // instead of writing questions/options/answers directly — that inline logic used a random
-      // slug suffix and matched answers by string equality against option text, so a reworded or
-      // retyped option silently published with no correct answer at all. Each element publishes
-      // independently so one bad item (most likely: exam/subject metadata that doesn't match a
-      // registered catalog slug — see reviewElementToNormalizedQuestion's docstring) doesn't block
-      // the rest of the batch.
-      let publishCount = 0;
-      const failures: string[] = [];
-      let number = 1;
-      for (const el of elements) {
-        if (!el.questionText || !el.options || !el.answer) continue;
-
-        const normalized = reviewElementToNormalizedQuestion(el, meta, number++);
-        const res = await fetchPipeline("/publish", {
-          method: "POST",
-          body: JSON.stringify(normalized),
-        });
-
-        if (res.ok) {
-          publishCount++;
-        } else {
-          const body = await res.text().catch(() => res.statusText);
-          failures.push(`${el.questionText.slice(0, 40)}...: ${body}`);
-        }
-      }
-
-      await db
-        .update(scrapedQuestions)
-        .set({ status: "approved" })
-        .where(eq(scrapedQuestions.id, input.id));
-
-      await writeAuditLog(db, {
-        actorId: context.user.id,
-        action: "approve_scraped_question",
-        entityType: "scraped_question",
-        entityId: input.id,
-        oldValue: { status: "pending" },
-        newValue: { status: "approved", publishCount, failures },
-      });
-
-      const message =
-        failures.length > 0
-          ? `Published ${publishCount} question(s); ${failures.length} failed: ${failures.join("; ")}`
-          : `Approved and published ${publishCount} questions.`;
-      return { success: true, message };
+  // docs/roadmap/engineering-roadmap.md item 21: review.tsx's batch approve/discard actions used
+  // to loop processReviewItem sequentially — one browser round-trip per item, and the network cost
+  // scaled with queue size. This does the same per-item work (processOneReviewItem, shared with
+  // the single-item procedure above so there is one place that decides how a review item is
+  // processed) but as a single request regardless of how many items are in the batch.
+  processReviewBatch: adminProcedure
+    .route({
+      method: "POST",
+      path: "/admin/review/process-batch",
+      summary: "Process multiple review items in one request",
+    })
+    .input(
+      z.object({
+        ids: z.array(z.string()).min(1),
+        action: z.enum(["approve", "reject"]),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const db = getDb();
+      const results = await Promise.all(
+        input.ids.map(async (id) => {
+          try {
+            const result = await processOneReviewItem(db, context.user.id, {
+              id,
+              action: input.action,
+            });
+            return { id, ...result };
+          } catch (err: any) {
+            return { id, success: false, message: err?.message || "Failed to process item" };
+          }
+        }),
+      );
+      const succeeded = results.filter((r) => r.success).length;
+      return {
+        success: succeeded === results.length,
+        message: `Processed ${succeeded}/${results.length} item(s).`,
+        results,
+      };
     }),
 
   // Drives the site-selector cards in apps/web/app/routes/admin/scraping.tsx — replaces the
@@ -476,11 +530,39 @@ export const adminRouter = {
     .route({
       method: "GET",
       path: "/admin/sources",
-      summary: "List registered scrape sources",
+      summary: "List registered scrape sources with health status",
     })
     .handler(async () => {
       const db = getDb();
-      return db.select().from(sources).orderBy(sources.name);
+      const [rows, healthBySource] = await Promise.all([
+        db.select().from(sources).orderBy(sources.name),
+        computeSourceHealthStats(db),
+      ]);
+      return rows.map((source) => ({
+        ...source,
+        health: {
+          ...(healthBySource.get(source.name) ?? EMPTY_SOURCE_HEALTH_STATS),
+          degraded: isSourceDegraded(source.consecutiveFailures),
+        },
+      }));
+    }),
+
+  // docs/roadmap/engineering-roadmap.md item 21's "Job inspection: per-stage counts and
+  // durations" — structured data for the admin Pipeline view, drawn straight from
+  // pipeline_job_stages rather than the flattened text lines getScraperLogs produces.
+  listPipelineJobs: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/pipeline/jobs",
+      summary: "List recent pipeline jobs with per-stage counts and durations",
+    })
+    .handler(async () => {
+      const db = getDb();
+      return db.query.pipelineJobs.findMany({
+        orderBy: (t, { desc: descOrder }) => [descOrder(t.createdAt)],
+        limit: 30,
+        with: { stages: { orderBy: (t, { asc }) => [asc(t.createdAt)] } },
+      });
     }),
 
   getScraperHealth: adminProcedure

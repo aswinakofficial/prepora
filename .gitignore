@@ -23,3 +23,7 @@ reactive-resume-repo/
 
 # Stray build artifacts occasionally left by vinxi/vite in apps/web
 apps/web/app.config.timestamp_*.js
+
+# Playwright e2e output (tests/e2e, item 21) — regenerated per run, never belongs in git.
+test-results/
+playwright-report/

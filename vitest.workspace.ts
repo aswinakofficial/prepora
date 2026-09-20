@@ -5,4 +5,4 @@ import { defineWorkspace } from "vitest/config";
 // the repo root discover and run all of them together. Add a package here as soon as it gains its
 // first test file — an empty/no-test package listed here is harmless (vitest reports 0 tests for
 // it), so there's no reason to wait.
-export default defineWorkspace(["packages/content"]);
+export default defineWorkspace(["packages/content", "packages/api"]);

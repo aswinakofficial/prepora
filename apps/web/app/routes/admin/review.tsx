@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import React, { useState } from "react";
+import { extractLabeledSection, mergeReadingResources } from "../../../lib/additional-reading";
 import { orpc } from "../../../lib/orpc";
 
 interface QuestionElement {
@@ -32,85 +33,29 @@ interface QuestionElement {
   additionalReadingLinks?: Array<{ text: string; url?: string }>;
 }
 
-interface AdditionalReadingResource {
-  text: string;
-  url?: string;
-}
-
-function normalizeReadingTitle(text: string) {
-  return text
-    .replace(/^[-*•]\s*/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractSection(content: string, label: string, stopLabels: string[]) {
-  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const escapedStops = stopLabels
-    .map((stop) => stop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|");
-  const regex = new RegExp(
-    `${escapedLabel}:\\s*([\\s\\S]*?)(?=\\n\\s*(?:${escapedStops}):|$)`,
-    "i",
-  );
-  const match = content.match(regex);
-  return match?.[1]?.trim() || "";
-}
+const ADDITIONAL_READING_STOP_LABELS = [
+  "Objective",
+  "What This Item Tests",
+  "Rationale",
+  "Additional Reading Resources",
+];
 
 function parseAdditionalReadingText(content: string) {
-  const readText = extractSection(content, "Additional Reading", [
-    "Objective",
-    "What This Item Tests",
-    "Rationale",
-    "Additional Reading Resources",
-  ]);
-
+  const readText = extractLabeledSection(
+    content,
+    "Additional Reading",
+    ADDITIONAL_READING_STOP_LABELS,
+  );
   if (!readText) return [];
-
-  return readText
-    .split(/\n+/)
-    .map(normalizeReadingTitle)
-    .filter((line) => line.length > 0);
+  return readText.split(/\n+/).filter((line) => line.trim().length > 0);
 }
 
-function mergeAdditionalReadings(
-  q: QuestionElement,
-  fullContent: string,
-): AdditionalReadingResource[] {
-  const resources = new Map<string, AdditionalReadingResource>();
-
-  const addResource = (text?: string, url?: string) => {
-    const title = normalizeReadingTitle(text || "");
-    if (!title) return;
-
-    const key = title.toLowerCase();
-    const existing = resources.get(key);
-    resources.set(key, {
-      text: existing?.text || title,
-      url: url || existing?.url,
-    });
-  };
-
-  parseAdditionalReadingText(fullContent).forEach((title) => {
-    addResource(title);
+function mergeAdditionalReadings(q: QuestionElement, fullContent: string) {
+  return mergeReadingResources({
+    extractedTitles: parseAdditionalReadingText(fullContent),
+    rawReadings: q.additionalReadings || q.additionalReading,
+    readingLinks: q.additionalReadingLinks,
   });
-
-  const rawAdditionalReadings = q.additionalReadings || q.additionalReading;
-  if (Array.isArray(rawAdditionalReadings)) {
-    rawAdditionalReadings.forEach((title) => {
-      addResource(title);
-    });
-  } else if (typeof rawAdditionalReadings === "string") {
-    rawAdditionalReadings.split(/\n+/).forEach((title) => {
-      addResource(title);
-    });
-  }
-
-  (q.additionalReadingLinks || []).forEach((link) => {
-    addResource(link.text, link.url);
-  });
-
-  return Array.from(resources.values());
 }
 
 function parseQuestionElement(q: QuestionElement, index: number) {
@@ -183,6 +128,9 @@ function AdminReviewPage() {
   const { mutateAsync: processReviewItem } = useMutation(
     orpc.admin.processReviewItem.mutationOptions(),
   );
+  const { mutateAsync: processReviewBatch } = useMutation(
+    orpc.admin.processReviewBatch.mutationOptions(),
+  );
 
   const [items, setItems] = React.useState<any[]>(queue || []);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -208,6 +156,9 @@ function AdminReviewPage() {
     }
   };
 
+  // docs/roadmap/engineering-roadmap.md item 21: these used to loop handleAction sequentially —
+  // one browser round-trip per item in the batch. Both now send the whole id list in a single
+  // processReviewBatch request.
   const handleBatchApprove = async () => {
     const safeItems = items.filter((i) => !i.hasCollision);
     if (safeItems.length === 0) {
@@ -215,14 +166,23 @@ function AdminReviewPage() {
       return;
     }
     if (
-      confirm(
+      !confirm(
         `Approve and publish all ${safeItems.length} collision-free scraped batches to live database?`,
       )
     ) {
-      setIsProcessing(true);
-      for (const item of safeItems) {
-        await handleAction(item.id, "approve");
-      }
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const { results } = await processReviewBatch({
+        ids: safeItems.map((item) => item.id),
+        action: "approve",
+      });
+      const succeededIds = new Set(results.filter((r) => r.success).map((r) => r.id));
+      setItems((prev) => prev.filter((i) => !succeededIds.has(i.id)));
+    } catch (_err) {
+      alert("Error processing batch approve");
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -230,14 +190,23 @@ function AdminReviewPage() {
   const handleBatchDelete = async () => {
     if (items.length === 0) return;
     if (
-      confirm(
+      !confirm(
         `Are you sure you want to discard ALL ${items.length} scraped batches in the queue? This cannot be undone.`,
       )
     ) {
-      setIsProcessing(true);
-      for (const item of [...items]) {
-        await handleAction(item.id, "discard");
-      }
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const { results } = await processReviewBatch({
+        ids: items.map((item) => item.id),
+        action: "reject",
+      });
+      const succeededIds = new Set(results.filter((r) => r.success).map((r) => r.id));
+      setItems((prev) => prev.filter((i) => !succeededIds.has(i.id)));
+    } catch (_err) {
+      alert("Error processing batch discard");
+    } finally {
       setIsProcessing(false);
     }
   };

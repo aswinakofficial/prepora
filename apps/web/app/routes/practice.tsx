@@ -3,6 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen, Clock, ExternalLink, Flag, Sparkles, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import {
+  type AdditionalReadingResource,
+  extractLabeledSection,
+  mergeReadingResources,
+} from "../../lib/additional-reading";
 import { orpc } from "../../lib/orpc";
 
 const practiceSearchSchema = z.object({
@@ -41,71 +46,40 @@ interface Question {
   additionalReadingLinks?: Array<{ text: string; url?: string }>;
 }
 
-interface AdditionalReadingResource {
-  text: string;
-  url?: string;
-}
-
-function normalizeReadingTitle(text: string) {
-  return text
-    .replace(/^[-*•]\s*/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+const ADDITIONAL_READING_STOP_LABELS = [
+  "Objective",
+  "What This Item Tests",
+  "Rationale",
+  "Additional Reading Resources",
+];
 
 function extractAdditionalReadingFromExplanation(explanation: string) {
-  const resources: string[] = [];
   const additionalReadingPattern =
     /Additional Reading:\s*([\s\S]*?)(?=\n\s*(?:Objective|What This Item Tests|Rationale|Additional Reading Resources):|$)/i;
-  const match = explanation.match(additionalReadingPattern);
-
-  if (match?.[1]) {
-    resources.push(...match[1].split(/\n+/).map(normalizeReadingTitle).filter(Boolean));
-  }
+  const section = extractLabeledSection(
+    explanation,
+    "Additional Reading",
+    ADDITIONAL_READING_STOP_LABELS,
+  );
 
   return {
     explanation: explanation.replace(additionalReadingPattern, "").trim(),
-    resources,
+    resources: section ? section.split(/\n+/).filter(Boolean) : [],
   };
 }
 
 function getQuestionResolution(question: Question) {
   const extracted = extractAdditionalReadingFromExplanation(question.explanation || "");
-  const resourceMap = new Map<string, AdditionalReadingResource>();
 
-  const addResource = (text?: string, url?: string) => {
-    const title = normalizeReadingTitle(text || "");
-    if (!title) return;
-    const key = title.toLowerCase();
-    const existing = resourceMap.get(key);
-    resourceMap.set(key, {
-      text: existing?.text || title,
-      url: url || existing?.url,
-    });
-  };
-
-  extracted.resources.forEach((text) => {
-    addResource(text);
-  });
-
-  const rawReadings = question.additionalReadings || question.additionalReading;
-  if (Array.isArray(rawReadings)) {
-    rawReadings.forEach((text) => {
-      addResource(text);
-    });
-  } else if (typeof rawReadings === "string") {
-    rawReadings.split(/\n+/).forEach((text) => {
-      addResource(text);
-    });
-  }
-
-  (question.additionalReadingLinks || []).forEach((link) => {
-    addResource(link.text, link.url);
+  const additionalReadings = mergeReadingResources({
+    extractedTitles: extracted.resources,
+    rawReadings: question.additionalReadings || question.additionalReading,
+    readingLinks: question.additionalReadingLinks,
   });
 
   return {
     explanation: extracted.explanation || question.explanation,
-    additionalReadings: Array.from(resourceMap.values()),
+    additionalReadings,
   };
 }
 

@@ -19,6 +19,7 @@ from typing import Any
 from psycopg2.extras import Json
 
 from .db import get_db_connection
+from .registry import record_crawl_attempt
 
 JobStatus = str  # "queued" | "running" | "completed" | "partial" | "failed" | "cancelled"
 
@@ -172,6 +173,16 @@ def finalize_job(job_id: str) -> JobStatus:
             error_summary = "; ".join(f"{stage}: {n} item(s) failed" for stage, n in failure_counts)
 
     complete_job(job_id, status, error_summary=error_summary)
+
+    # docs/roadmap/engineering-roadmap.md item 21's source-health view needs sources.last_crawl_at
+    # /last_successful_crawl_at/consecutive_failures to actually be populated — record_crawl_attempt
+    # has existed since item 14 but nothing ever called it outside its own tests, so those columns
+    # sat at their defaults forever. A job that got at least one stage to "completed" counts as the
+    # source having been reachable; a job that failed outright (no stage completed) does not.
+    job = get_job(job_id)
+    if job is not None:
+        record_crawl_attempt(job.source_id, success=status != "failed")
+
     return status
 
 

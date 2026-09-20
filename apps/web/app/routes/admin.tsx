@@ -1,18 +1,7 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import {
-  BarChart2,
-  BookOpen,
-  CheckSquare,
-  ChevronRight,
-  FileText,
-  Flag,
-  Globe,
-  LayoutDashboard,
-  MessageSquare,
-  Settings,
-  Users,
-} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { CheckSquare, ChevronRight, Globe, LayoutDashboard, Settings, Users } from "lucide-react";
 import { getWebRequest } from "vinxi/http";
 import { requireAdmin } from "../../lib/auth";
 
@@ -74,19 +63,60 @@ export const Route = createFileRoute("/admin")({
   },
 });
 
-const navItems = [
-  { to: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/admin/scraping", label: "Web Scraper Engine", icon: Globe },
-  { to: "/admin/review", label: "Scrape Review Queue", icon: CheckSquare },
-  { to: "/admin/exams", label: "Exams", icon: BookOpen },
-  { to: "/admin/question-sets", label: "Question Sets", icon: FileText },
-  { to: "/admin/questions", label: "Questions", icon: FileText },
-  { to: "/admin/contributions", label: "Contributions", icon: Users },
-  { to: "/admin/comments", label: "Comments", icon: MessageSquare },
-  { to: "/admin/reports", label: "Reports", icon: Flag },
-  { to: "/admin/analytics", label: "Analytics", icon: BarChart2 },
-  { to: "/admin/settings", label: "Settings", icon: Settings },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  exact?: boolean;
+}
+
+const dashboardItem: NavItem = {
+  to: "/admin",
+  label: "Dashboard",
+  icon: LayoutDashboard,
+  exact: true,
+};
+
+// docs/roadmap/engineering-roadmap.md item 21: grouped into Content/Pipeline/Review, matching the
+// documented admin information architecture — replaces a flat list of eleven destinations, six of
+// which had no route at all. Only real, working routes are listed; a section with no working
+// destination yet (e.g. Analytics) is omitted rather than shown with dead links, until its own
+// roadmap item builds it.
+const navSections: { label: string; items: NavItem[] }[] = [
+  {
+    label: "Content",
+    items: [{ to: "/admin/contributions", label: "Contributions", icon: Users }],
+  },
+  {
+    label: "Pipeline",
+    items: [{ to: "/admin/scraping", label: "Web Scraper Engine", icon: Globe }],
+  },
+  {
+    label: "Review",
+    items: [{ to: "/admin/review", label: "Scrape Review Queue", icon: CheckSquare }],
+  },
 ];
+
+const settingsItem: NavItem = { to: "/admin/settings", label: "Settings", icon: Settings };
+
+function NavListItem({ item: { to, label, icon: Icon, exact } }: { item: NavItem }) {
+  return (
+    <li>
+      <Link
+        to={to}
+        className="flex items-center justify-between px-8 py-3 border-l-2 border-transparent text-[10px] font-mono tracking-widest uppercase text-slate-500 hover:text-white transition-colors group [&.active]:border-white [&.active]:text-white [&.active]:bg-slate-900/40"
+        activeProps={{ className: "active" }}
+        activeOptions={exact ? { exact: true } : {}}
+      >
+        <div className="flex items-center gap-4">
+          <Icon className="w-3.5 h-3.5 text-slate-600 group-[.active]:text-white transition-colors" />
+          {label}
+        </div>
+        <ChevronRight className="w-3 h-3 text-slate-800 group-hover:text-slate-500 group-[.active]:text-white transition-colors" />
+      </Link>
+    </li>
+  );
+}
 
 function AdminLayout() {
   return (
@@ -103,22 +133,24 @@ function AdminLayout() {
         </div>
         <nav className="flex-1 py-8 overflow-y-auto scrollbar-hide">
           <ul className="space-y-0.5">
-            {navItems.map(({ to, label, icon: Icon }) => (
-              <li key={to}>
-                <Link
-                  to={to}
-                  className="flex items-center justify-between px-8 py-3 border-l-2 border-transparent text-[10px] font-mono tracking-widest uppercase text-slate-500 hover:text-white transition-colors group [&.active]:border-white [&.active]:text-white [&.active]:bg-slate-900/40"
-                  activeProps={{ className: "active" }}
-                  activeOptions={to === "/admin" ? { exact: true } : {}}
-                >
-                  <div className="flex items-center gap-4">
-                    <Icon className="w-3.5 h-3.5 text-slate-600 group-[.active]:text-white transition-colors" />
-                    {label}
-                  </div>
-                  <ChevronRight className="w-3 h-3 text-slate-800 group-hover:text-slate-500 group-[.active]:text-white transition-colors" />
-                </Link>
-              </li>
-            ))}
+            <NavListItem item={dashboardItem} />
+          </ul>
+
+          {navSections.map((section) => (
+            <div key={section.label} className="mt-8">
+              <div className="px-8 pb-2 font-mono text-[10px] tracking-[0.25em] text-slate-700 uppercase">
+                {section.label}
+              </div>
+              <ul className="space-y-0.5">
+                {section.items.map((item) => (
+                  <NavListItem key={item.to} item={item} />
+                ))}
+              </ul>
+            </div>
+          ))}
+
+          <ul className="mt-8 space-y-0.5">
+            <NavListItem item={settingsItem} />
           </ul>
         </nav>
 
