@@ -50,6 +50,14 @@ export const pipelineJobStages = pgTable(
     failedCount: integer("failed_count").notNull().default(0),
     duplicateCount: integer("duplicate_count").notNull().default(0),
     skippedCount: integer("skipped_count").notNull().default(0),
+    // Change-detection breakdown (item 17) — deliberately separate from the generic counts above
+    // rather than overloading them, since "how many were new vs. changed vs. unchanged vs.
+    // flagged as removed" is a distinct, queryable fact a caller may want without having to infer
+    // it from skipped/processed/duplicate.
+    newCount: integer("new_count").notNull().default(0),
+    changedCount: integer("changed_count").notNull().default(0),
+    unchangedCount: integer("unchanged_count").notNull().default(0),
+    removedCount: integer("removed_count").notNull().default(0),
     durationMs: integer("duration_ms"),
     errorDetail: text("error_detail"),
     ...timestamps,

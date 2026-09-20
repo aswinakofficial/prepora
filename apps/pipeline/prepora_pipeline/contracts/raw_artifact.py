@@ -31,5 +31,15 @@ class RawArtifact(BaseModel):
         "once item 12 adds one.",
     )
     http_status: int | None = None
+    etag: str | None = Field(
+        default=None,
+        description="Conditional-request validator (item 17) — sent back as If-None-Match on the "
+        "next fetch of this URL so an unchanged page can skip re-downloading entirely.",
+    )
+    last_modified: str | None = Field(
+        default=None,
+        description="Conditional-request validator (item 17) — sent back as If-Modified-Since, "
+        "stored verbatim as the source returned it rather than parsed into a datetime.",
+    )
 
     contract_version: str = CONTRACT_VERSION

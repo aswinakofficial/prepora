@@ -93,3 +93,11 @@ export const robotsReviewStatusEnum = pgEnum("robots_review_status", [
   "reviewed_allowed",
   "reviewed_disallowed",
 ]);
+
+// See docs/roadmap/engineering-roadmap.md item 17 — a resource that disappeared from a source's
+// discovery pass is flagged for human review, never silently deleted or unpublished.
+export const removedResourceStatusEnum = pgEnum("removed_resource_status", [
+  "flagged",
+  "confirmed_removed",
+  "restored",
+]);

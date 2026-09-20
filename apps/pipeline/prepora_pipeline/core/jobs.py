@@ -30,6 +30,15 @@ class StageCounts:
     failed: int = 0
     duplicate: int = 0
     skipped: int = 0
+    # Change-detection breakdown (item 17) — separate from the generic counts above so "how many
+    # were new vs. changed vs. unchanged vs. flagged as removed" is directly queryable rather than
+    # inferred. A caller doing change detection is expected to also set the generic fields
+    # consistently (new+changed -> processed, unchanged -> skipped) so finalize_job()'s existing
+    # partial/failed logic keeps working without special-casing these.
+    new: int = 0
+    changed: int = 0
+    unchanged: int = 0
+    removed: int = 0
 
 
 @dataclass
@@ -182,14 +191,18 @@ def record_stage(
             cur.execute(
                 "INSERT INTO pipeline_job_stages "
                 "(job_id, stage, status, discovered_count, processed_count, failed_count, "
-                "duplicate_count, skipped_count, duration_ms, error_detail) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "duplicate_count, skipped_count, new_count, changed_count, unchanged_count, "
+                "removed_count, duration_ms, error_detail) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (job_id, stage) DO UPDATE SET "
                 "status = EXCLUDED.status, discovered_count = EXCLUDED.discovered_count, "
                 "processed_count = EXCLUDED.processed_count, "
                 "failed_count = EXCLUDED.failed_count, "
                 "duplicate_count = EXCLUDED.duplicate_count, "
                 "skipped_count = EXCLUDED.skipped_count, "
+                "new_count = EXCLUDED.new_count, changed_count = EXCLUDED.changed_count, "
+                "unchanged_count = EXCLUDED.unchanged_count, "
+                "removed_count = EXCLUDED.removed_count, "
                 "duration_ms = EXCLUDED.duration_ms, error_detail = EXCLUDED.error_detail, "
                 "updated_at = now()",
                 (
@@ -201,6 +214,10 @@ def record_stage(
                     counts.failed,
                     counts.duplicate,
                     counts.skipped,
+                    counts.new,
+                    counts.changed,
+                    counts.unchanged,
+                    counts.removed,
                     duration_ms,
                     error_detail,
                 ),
@@ -282,7 +299,8 @@ def list_stages(job_id: str) -> list[StageRecord]:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, job_id, stage, status, discovered_count, processed_count, "
-                "failed_count, duplicate_count, skipped_count, duration_ms, error_detail "
+                "failed_count, duplicate_count, skipped_count, new_count, changed_count, "
+                "unchanged_count, removed_count, duration_ms, error_detail "
                 "FROM pipeline_job_stages WHERE job_id = %s ORDER BY created_at",
                 (job_id,),
             )
@@ -331,6 +349,10 @@ def _row_to_stage(row) -> StageRecord:
         failed,
         duplicate,
         skipped,
+        new,
+        changed,
+        unchanged,
+        removed,
         duration_ms,
         error_detail,
     ) = row
@@ -345,6 +367,10 @@ def _row_to_stage(row) -> StageRecord:
             failed=failed,
             duplicate=duplicate,
             skipped=skipped,
+            new=new,
+            changed=changed,
+            unchanged=unchanged,
+            removed=removed,
         ),
         duration_ms=duration_ms,
         error_detail=error_detail,

@@ -20,10 +20,15 @@ export const rawArtifacts = pgTable(
     contentType: text("content_type").notNull(),
     httpStatus: integer("http_status"),
     storageKey: text("storage_key").notNull(),
+    // Conditional-request validators (item 17) — stored so the next fetch of this exact URL can
+    // send If-None-Match/If-Modified-Since and skip re-downloading unchanged content entirely.
+    etag: text("etag"),
+    lastModified: text("last_modified"),
     ...timestamps,
   },
   (t) => [
     index("raw_artifacts_source_slug_idx").on(t.sourceSlug),
     index("raw_artifacts_fetched_at_idx").on(t.fetchedAt),
+    index("raw_artifacts_source_url_idx").on(t.sourceUrl),
   ],
 );

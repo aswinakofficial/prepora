@@ -52,6 +52,42 @@ def test_a_disallowed_robots_path_is_not_fetched(monkeypatch):
     assert calls == []  # requests.get was never called
 
 
+def test_etag_and_last_modified_are_sent_as_conditional_headers(monkeypatch):
+    captured_headers = {}
+
+    def _get(url, headers=None, **_kwargs):
+        captured_headers.update(headers or {})
+        return _FakeResponse(304)
+
+    monkeypatch.setattr(requests, "get", _get)
+
+    response = http_client.fetch(
+        "https://example.com/page",
+        source_slug="test-source",
+        etag='"abc123"',
+        last_modified="Wed, 21 Oct 2015 07:28:00 GMT",
+    )
+
+    assert response.status_code == 304
+    assert captured_headers["If-None-Match"] == '"abc123"'
+    assert captured_headers["If-Modified-Since"] == "Wed, 21 Oct 2015 07:28:00 GMT"
+
+
+def test_no_conditional_headers_are_sent_without_prior_validators(monkeypatch):
+    captured_headers = {}
+
+    def _get(url, headers=None, **_kwargs):
+        captured_headers.update(headers or {})
+        return _FakeResponse(200)
+
+    monkeypatch.setattr(requests, "get", _get)
+
+    http_client.fetch("https://example.com/page", source_slug="test-source")
+
+    assert "If-None-Match" not in captured_headers
+    assert "If-Modified-Since" not in captured_headers
+
+
 def test_successful_fetch_returns_the_response_with_no_retries(monkeypatch):
     attempts = []
     monkeypatch.setattr(requests, "get", lambda *a, **kw: attempts.append(1) or _FakeResponse(200))

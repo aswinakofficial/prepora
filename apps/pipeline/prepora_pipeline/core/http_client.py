@@ -73,6 +73,8 @@ def fetch(
     *,
     source_slug: str,
     headers: dict[str, str] | None = None,
+    etag: str | None = None,
+    last_modified: str | None = None,
     concurrency_per_domain: int = DEFAULT_CONCURRENCY_PER_DOMAIN,
     sleep_fn=time.sleep,
 ) -> requests.Response:
@@ -83,6 +85,12 @@ def fetch(
     security boundary, checked here so every connector gets it for free rather than
     reimplementing it), RobotsDisallowedError if robots.txt disallows the path, or FetchError if
     every retry attempt failed.
+
+    `etag`/`last_modified`, when given (from the last stored artifact for this URL — item 17),
+    are sent as If-None-Match/If-Modified-Since so an unchanged page comes back as a 304 with no
+    body, saving the source's bandwidth and this process's. A 304 is returned like any other
+    non-retryable response — it is not an error, the caller (change_detection.py) is what
+    interprets it as "unchanged".
     """
     if not is_url_allowed(url):
         raise NotAllowlistedError(f"{url!r} is not on an enabled source's allowlist.")
@@ -91,6 +99,10 @@ def fetch(
 
     requests_per_minute = _requests_per_minute_for(source_slug)
     request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+    if etag:
+        request_headers["If-None-Match"] = etag
+    if last_modified:
+        request_headers["If-Modified-Since"] = last_modified
     domain = urlparse(url).netloc
     semaphore = _domain_semaphore(domain, concurrency_per_domain)
 

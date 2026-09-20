@@ -40,6 +40,8 @@ class ArtifactStore(ABC):
         content_type: str,
         http_status: int | None = None,
         fetched_at: datetime | None = None,
+        etag: str | None = None,
+        last_modified: str | None = None,
     ) -> RawArtifact:
         """Persist `content`, deduping on its SHA-256. Returns the RawArtifact record — a fresh
         insert on first sight of this exact content, or the existing record on a repeat."""
@@ -57,6 +59,11 @@ class ArtifactStore(ABC):
         self, *, source_slug: str | None = None, since: datetime | None = None
     ) -> Iterator[RawArtifact]:
         """Metadata only, in fetched_at order — the source reprocess() reads from."""
+
+    @abstractmethod
+    def latest_for_url(self, source_slug: str, url: str) -> RawArtifact | None:
+        """The most recently fetched artifact for this exact URL, or None if never fetched —
+        what change detection (item 17) compares a fresh fetch against."""
 
     @abstractmethod
     def prune(self, *, older_than_days: int) -> int:
@@ -77,8 +84,23 @@ class FilesystemArtifactStore(ArtifactStore):
         # number of entries as the store grows.
         return self.root_dir / sha256[:2] / sha256
 
+    _COLUMNS = (
+        "sha256, source_slug, source_url, fetched_at, content_type, http_status, storage_key, "
+        "etag, last_modified"
+    )
+
     def _row_to_artifact(self, row) -> RawArtifact:
-        sha256, source_slug, source_url, fetched_at, content_type, http_status, storage_key = row
+        (
+            sha256,
+            source_slug,
+            source_url,
+            fetched_at,
+            content_type,
+            http_status,
+            storage_key,
+            etag,
+            last_modified,
+        ) = row
         return RawArtifact(
             sha256=sha256,
             source_slug=source_slug,
@@ -87,6 +109,8 @@ class FilesystemArtifactStore(ArtifactStore):
             content_type=content_type,
             http_status=http_status,
             storage_key=storage_key,
+            etag=etag,
+            last_modified=last_modified,
         )
 
     def store(
@@ -98,6 +122,8 @@ class FilesystemArtifactStore(ArtifactStore):
         content_type: str,
         http_status: int | None = None,
         fetched_at: datetime | None = None,
+        etag: str | None = None,
+        last_modified: str | None = None,
     ) -> RawArtifact:
         sha256 = hashlib.sha256(content).hexdigest()
         fetched_at = fetched_at or datetime.now(timezone.utc)
@@ -106,8 +132,7 @@ class FilesystemArtifactStore(ArtifactStore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT sha256, source_slug, source_url, fetched_at, content_type, "
-                    "http_status, storage_key FROM raw_artifacts WHERE sha256 = %s",
+                    f"SELECT {self._COLUMNS} FROM raw_artifacts WHERE sha256 = %s",
                     (sha256,),
                 )
                 existing = cur.fetchone()
@@ -124,7 +149,7 @@ class FilesystemArtifactStore(ArtifactStore):
                 cur.execute(
                     "INSERT INTO raw_artifacts "
                     "(sha256, source_slug, source_url, fetched_at, content_type, http_status, "
-                    "storage_key) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    "storage_key, etag, last_modified) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         sha256,
                         source_slug,
@@ -133,6 +158,8 @@ class FilesystemArtifactStore(ArtifactStore):
                         content_type,
                         http_status,
                         storage_key,
+                        etag,
+                        last_modified,
                     ),
                 )
                 conn.commit()
@@ -147,6 +174,8 @@ class FilesystemArtifactStore(ArtifactStore):
             content_type=content_type,
             http_status=http_status,
             storage_key=storage_key,
+            etag=etag,
+            last_modified=last_modified,
         )
 
     def _lookup_storage_key(self, sha256: str) -> str | None:
@@ -196,8 +225,7 @@ class FilesystemArtifactStore(ArtifactStore):
                     params.append(since)
                 where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
                 cur.execute(
-                    f"SELECT sha256, source_slug, source_url, fetched_at, content_type, "
-                    f"http_status, storage_key FROM raw_artifacts {where} ORDER BY fetched_at",
+                    f"SELECT {self._COLUMNS} FROM raw_artifacts {where} ORDER BY fetched_at",
                     params,
                 )
                 rows = cur.fetchall()
@@ -206,6 +234,21 @@ class FilesystemArtifactStore(ArtifactStore):
 
         for row in rows:
             yield self._row_to_artifact(row)
+
+    def latest_for_url(self, source_slug: str, url: str) -> RawArtifact | None:
+        conn = self._db_connection_factory()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {self._COLUMNS} FROM raw_artifacts "
+                    "WHERE source_slug = %s AND source_url = %s "
+                    "ORDER BY fetched_at DESC LIMIT 1",
+                    (source_slug, url),
+                )
+                row = cur.fetchone()
+                return self._row_to_artifact(row) if row else None
+        finally:
+            conn.close()
 
     def prune(self, *, older_than_days: int) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
