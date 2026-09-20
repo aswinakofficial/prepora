@@ -75,12 +75,25 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
     // Answer line
     const answerMatch = line.match(/^\*{0,2}Answer[:\s*]*\*{0,2}:?\s*(.+)/i);
     if (answerMatch) {
-      const parsed = parseAnswerLine(line);
-      if (parsed) {
-        answer = parsed;
-      } else {
+      // The documented content convention (agents/content/rules.md's Flagging section) mandates
+      // the literal string "FLAG FOR HUMAN REVIEW" — optionally followed by "— <reason>" — as the
+      // answer whenever the source material doesn't support one. This used to fall through to
+      // parseAnswerLine's text-fallback branch and parse as an ordinary answer, so the documented
+      // safety net never fired (docs/architecture/prepora-next-level-plan.md finding #12,
+      // docs/roadmap/engineering-roadmap.md item 19). Checked before parseAnswerLine so it can
+      // never be mistaken for a real answer.
+      const flagMatch = answerMatch[1].trim().match(/^FLAG FOR HUMAN REVIEW\b\s*[-—]*\s*(.*)$/i);
+      if (flagMatch) {
         needsReview = true;
-        reviewNote = `Could not parse answer: "${line}"`;
+        reviewNote = flagMatch[1].trim() || "Flagged for human review by content agent";
+      } else {
+        const parsed = parseAnswerLine(line);
+        if (parsed) {
+          answer = parsed;
+        } else {
+          needsReview = true;
+          reviewNote = `Could not parse answer: "${line}"`;
+        }
       }
       mode = "explanation";
       continue;

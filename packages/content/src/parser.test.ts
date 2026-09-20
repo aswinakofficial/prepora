@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parsePreporaMarkdown } from "./parser.ts";
 
-// These tests document the parser's actual current behaviour, including a known defect
-// (FLAG FOR HUMAN REVIEW is not recognised — see the dedicated test below and
-// docs/architecture/prepora-next-level-plan.md finding #12 / docs/roadmap/engineering-roadmap.md
-// item 19) — they exist to catch regressions and to record what changes once that item ports and
-// fixes this logic, not to assert what the parser *should* do.
+// These tests document the parser's actual current behaviour — they exist to catch regressions,
+// not to assert what the parser *should* do beyond that. See the dedicated FLAG FOR HUMAN REVIEW
+// tests below for the docs/architecture/prepora-next-level-plan.md finding #12 /
+// docs/roadmap/engineering-roadmap.md item 19 defect fix.
 
 const VALID_FRONTMATTER = `---
 id: TEST-2025-SUBJ
@@ -181,20 +180,38 @@ Q?
     expect(data?.questions[0].reviewNote).toContain("not in options");
   });
 
-  // Known defect (docs/architecture/prepora-next-level-plan.md finding #12): the documented
-  // content convention (agents/content/rules.md, agents/content/schema.md) mandates the literal
-  // string "FLAG FOR HUMAN REVIEW" as the answer whenever the source material doesn't support one.
-  // The parser does not special-case that string at all — it parses successfully as an ordinary
-  // free-text answer, so needsReview stays false. This test documents that current behaviour; it
-  // should start failing (and be updated) once roadmap item 19 fixes the parser to recognise the
-  // flag.
-  it("does NOT currently flag needsReview for the documented FLAG FOR HUMAN REVIEW convention", () => {
+  // Regression tests for docs/architecture/prepora-next-level-plan.md finding #12 / roadmap item
+  // 19: the documented content convention (agents/content/rules.md's Flagging section) mandates
+  // the literal string "FLAG FOR HUMAN REVIEW" as the answer whenever the source material doesn't
+  // support one. The parser used to parse it as an ordinary free-text answer instead of
+  // recognising it, so the documented safety net never fired.
+  it("flags needsReview for the documented FLAG FOR HUMAN REVIEW convention, with its reason", () => {
+    const md = `${VALID_FRONTMATTER}\n# Question 1\nAn ambiguous question.\n\n**Answer:** FLAG FOR HUMAN REVIEW — multiple plausible answers\n`;
+    const { data } = parsePreporaMarkdown(md);
+    const q = data?.questions[0];
+    if (!q) throw new Error("expected a parsed question");
+    expect(q.answer).toBeUndefined();
+    expect(q.needsReview).toBe(true);
+    expect(q.reviewNote).toBe("multiple plausible answers");
+  });
+
+  it("flags needsReview for FLAG FOR HUMAN REVIEW with no reason given", () => {
     const md = `${VALID_FRONTMATTER}\n# Question 1\nAn ambiguous question.\n\n**Answer:** FLAG FOR HUMAN REVIEW\n`;
     const { data } = parsePreporaMarkdown(md);
     const q = data?.questions[0];
     if (!q) throw new Error("expected a parsed question");
-    expect(q.answer).toEqual({ type: "text", answer: "FLAG FOR HUMAN REVIEW" });
-    expect(q.needsReview).toBe(false); // <- the bug: this "should" be true per the content spec
+    expect(q.answer).toBeUndefined();
+    expect(q.needsReview).toBe(true);
+    expect(q.reviewNote).toBe("Flagged for human review by content agent");
+  });
+
+  it("is case-insensitive and tolerant of an em-dash or hyphen before the reason", () => {
+    const md = `${VALID_FRONTMATTER}\n# Question 1\nQ?\n\n**Answer:** flag for human review - ocr unreadable\n`;
+    const { data } = parsePreporaMarkdown(md);
+    const q = data?.questions[0];
+    if (!q) throw new Error("expected a parsed question");
+    expect(q.needsReview).toBe(true);
+    expect(q.reviewNote).toBe("ocr unreadable");
   });
 
   it("joins multi-line explanations with a newline", () => {

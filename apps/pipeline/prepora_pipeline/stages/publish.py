@@ -36,6 +36,8 @@ from prepora_pipeline.contracts import (
 )
 
 from ..core.db import get_db_connection
+from .stable_id import derive_question_set_slug, derive_stable_content_id
+from .validate import validate_question
 
 
 class PublishError(Exception):
@@ -86,84 +88,54 @@ def _to_base36(n: int) -> str:
     return "".join(reversed(out))
 
 
-def _slug_component(value: str) -> str:
-    return value.strip().upper().replace(" ", "-").replace("_", "-")
-
-
-def _year_or_session(normalized: NormalizedQuestion):
-    return normalized.year if normalized.year is not None else (normalized.session_label or "v1")
-
-
-def derive_stable_content_id(normalized: NormalizedQuestion) -> str:
-    """
-    {EXAM}-{VARIANT}-{YEAR-or-SESSION}-{SUBJECT}-Q{number}, following the convention documented in
-    agents/content/schema.md's "Stable IDs" section (e.g. KPSC-AE-2025-CIVIL-Q001), built from the
-    slugs a NormalizedQuestion already carries rather than a separate "code" field no table has.
-    """
-    if normalized.number is None:
-        raise PublishError("Cannot derive a stable_content_id without a question number.")
-    parts = [
-        normalized.exam_slug,
-        normalized.exam_variant_slug,
-        str(_year_or_session(normalized)),
-        normalized.subject_slug,
-    ]
-    base = "-".join(_slug_component(p) for p in parts)
-    return f"{base}-Q{normalized.number:03d}"
-
-
-def derive_question_set_slug(normalized: NormalizedQuestion) -> str:
-    parts = [
-        normalized.exam_slug,
-        normalized.exam_variant_slug,
-        str(_year_or_session(normalized)),
-        normalized.subject_slug,
-    ]
-    if normalized.shift:
-        parts.append(normalized.shift)
-    return "-".join(p.lower().replace(" ", "-").replace("_", "-") for p in parts)
-
-
 def _humanize(slug: str) -> str:
     return " ".join(word.capitalize() for word in slug.replace("_", "-").split("-"))
 
 
 def publish_question(normalized: NormalizedQuestion) -> PublishResult:
-    if normalized.needs_review:
-        raise PublishError(
-            f"Question is flagged needs_review ({normalized.review_note!r}) and cannot be "
-            "published until resolved."
+    # docs/roadmap/engineering-roadmap.md item 19: nothing publishes without passing the
+    # deterministic quality gate first — this replaces the narrower needs_review/answer-None
+    # checks this function used to do inline, since validate_question() covers both plus every
+    # other rule (duplicate option keys, invalid answer keys, an unregistered exam, ...).
+    report = validate_question(normalized)
+    if not report.valid:
+        reasons = "; ".join(
+            f"{i.code}: {i.message}" for i in report.issues if i.severity == "error"
         )
-    if normalized.answer is None:
-        raise PublishError("Cannot publish a question with no answer.")
+        raise PublishError(f"Question failed the quality gate ({reasons}).")
+    validated = report.validated
+    assert validated is not None  # guaranteed whenever report.valid is True
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            exam_id = _resolve_exam(cur, normalized.exam_slug)
-            variant_id = _resolve_or_create_variant(cur, exam_id, normalized.exam_variant_slug)
+            exam_id = _resolve_exam(cur, validated.exam_slug)
+            variant_id = _resolve_or_create_variant(cur, exam_id, validated.exam_variant_slug)
             session_id = _resolve_or_create_session(
-                cur, variant_id, normalized.year, normalized.session_label
+                cur, variant_id, validated.year, validated.session_label
             )
-            subject_id = _resolve_or_create_subject(cur, normalized.subject_slug)
+            subject_id = _resolve_or_create_subject(cur, validated.subject_slug)
 
             topic_id = None
-            if normalized.topic_slug:
-                topic_id = _resolve_or_create_topic(cur, subject_id, normalized.topic_slug)
-            if normalized.course_slug:
-                _resolve_or_create_course(cur, variant_id, subject_id, normalized.course_slug)
+            if validated.topic_slug:
+                topic_id = _resolve_or_create_topic(cur, subject_id, validated.topic_slug)
+            if validated.course_slug:
+                _resolve_or_create_course(cur, variant_id, subject_id, validated.course_slug)
 
             question_set_id = _resolve_or_create_question_set(
-                cur, variant_id, session_id, subject_id, normalized
+                cur, variant_id, session_id, subject_id, validated
             )
 
-            stable_content_id = derive_stable_content_id(normalized)
+            try:
+                stable_content_id = derive_stable_content_id(validated)
+            except ValueError as exc:
+                raise PublishError(str(exc)) from exc
             question_id, question_created = _resolve_or_create_question(
-                cur, stable_content_id, normalized, topic_id
+                cur, stable_content_id, validated, topic_id
             )
 
             occurrence_created = _resolve_or_create_occurrence(
-                cur, question_id, question_set_id, normalized.number
+                cur, question_id, question_set_id, validated.number
             )
 
             conn.commit()

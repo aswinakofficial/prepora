@@ -135,6 +135,30 @@ describe("validateParsedQuestionSet", () => {
     expect(r.valid).toBe(false);
   });
 
+  it("quarantines a FLAG FOR HUMAN REVIEW question parsed end-to-end (docs/roadmap/engineering-roadmap.md item 19 regression test)", () => {
+    const parsed: ParsedQuestionSet = {
+      frontmatter: FRONTMATTER,
+      questions: [
+        {
+          number: 1,
+          questionText: "An ambiguous question.",
+          questionType: "descriptive",
+          needsReview: true,
+          reviewNote: "multiple plausible answers",
+        },
+      ],
+    };
+    const r = validateParsedQuestionSet(parsed, "test.md");
+    expect(r.valid).toBe(false);
+    expect(r.issues).toContainEqual(
+      expect.objectContaining({
+        code: "NEEDS_REVIEW",
+        severity: "error",
+        message: "multiple plausible answers",
+      }),
+    );
+  });
+
   it("never lets validQuestions go negative even with more errors than questions", () => {
     // A single question can trigger multiple error-severity issues at once.
     const r = report([validQuestion({ questionText: "", answer: undefined })]);

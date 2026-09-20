@@ -192,7 +192,7 @@ class TestBasicPublish:
         normalized.needs_review = True
         normalized.review_note = "answer was ambiguous"
 
-        with pytest.raises(PublishError, match="needs_review"):
+        with pytest.raises(PublishError, match="NEEDS_REVIEW"):
             publish_question(normalized)
 
     def test_rejects_an_unregistered_exam(self, test_subject):
@@ -201,6 +201,21 @@ class TestBasicPublish:
         )
 
         with pytest.raises(PublishError, match="not registered"):
+            publish_question(normalized)
+
+    def test_rejects_content_the_quality_gate_would_reject_docs_roadmap_item_19(
+        self, test_exam, test_subject
+    ):
+        # docs/roadmap/engineering-roadmap.md item 19's "Done when": no content publishes without
+        # passing the gate. Duplicate option keys were never checked by publish_question() itself
+        # before validate_question() was wired in — this would previously have published cleanly.
+        normalized = _normalized(test_exam, test_subject, question_text="Duplicated option keys")
+        normalized.options = [
+            NormalizedOption(key="A", text="first"),
+            NormalizedOption(key="A", text="duplicate key"),
+        ]
+
+        with pytest.raises(PublishError, match="DUPLICATE_OPTION_KEYS"):
             publish_question(normalized)
 
 
