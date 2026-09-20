@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgEnum, text, timestamp } from "drizzle-orm/pg-core";
+import { customType, pgEnum, text, timestamp } from "drizzle-orm/pg-core";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -9,6 +9,14 @@ export const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 };
+
+// docs/roadmap/engineering-roadmap.md item 23 — Postgres full-text search (ADR-006). Drizzle has
+// no built-in tsvector column type; this is the minimal custom type needed to declare one.
+export const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 

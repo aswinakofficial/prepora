@@ -71,6 +71,13 @@
       "when": 1789880556290,
       "tag": "0009_flaky_pepper_potts",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789898767636,
+      "tag": "0010_fair_forge",
+      "breakpoints": true
     }
   ]
 }

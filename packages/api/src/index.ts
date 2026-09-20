@@ -2,6 +2,7 @@ import { protectedProcedure, publicProcedure } from "./context.js";
 import { adminRouter } from "./routers/admin.router.js";
 import { examsRouter } from "./routers/exams.router.js";
 import { questionsRouter } from "./routers/questions.router.js";
+import { searchRouter } from "./routers/search.router.js";
 
 export { WIPE_DATABASE_CONFIRMATION_PHRASE } from "./routers/admin.router.js";
 
@@ -28,6 +29,7 @@ export const appRouter = {
 
   exams: examsRouter,
   questions: questionsRouter,
+  search: searchRouter,
   admin: adminRouter,
 };
 

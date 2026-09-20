@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { boolean, index, integer, pgTable, text, unique } from "drizzle-orm/pg-core";
 import { questionSets, topics } from "./catalog.ts";
 import {
@@ -8,6 +8,7 @@ import {
   publishingStatusEnum,
   questionTypeEnum,
   timestamps,
+  tsvector,
 } from "./shared.ts";
 
 // ─── Questions (canonical) ────────────────────────────────────────────────────
@@ -35,6 +36,14 @@ export const questions = pgTable(
     difficultySource: text("difficulty_source"), // 'official' | 'editorial' | 'community'
     topicId: text("topic_id").references(() => topics.id),
     status: publishingStatusEnum("status").notNull().default("draft"),
+    // docs/roadmap/engineering-roadmap.md item 23 — generated, not maintained by application code:
+    // Postgres recomputes it on every insert/update of question_text or explanation, so it can
+    // never silently drift out of sync the way a manually-updated column could. Question text is
+    // weighted 'A' (highest), explanation 'B' — a match in the question itself should always rank
+    // above a match that only appears in its explanation.
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(question_text, '')), 'A') || setweight(to_tsvector('english', coalesce(explanation, '')), 'B')`,
+    ),
     ...timestamps,
   },
   (t) => [
@@ -43,6 +52,7 @@ export const questions = pgTable(
     index("questions_content_hash_idx").on(t.contentHash),
     index("questions_topic_id_idx").on(t.topicId),
     index("questions_status_idx").on(t.status),
+    index("questions_search_vector_idx").using("gin", t.searchVector),
   ],
 );
 

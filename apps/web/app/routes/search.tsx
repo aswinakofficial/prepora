@@ -1,7 +1,9 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { zodValidator } from "@tanstack/zod-adapter";
 import type React from "react";
 import { z } from "zod";
+import { orpc } from "../../lib/orpc";
 
 const searchSchema = z.object({
   q: z.string().optional().default(""),
@@ -24,33 +26,18 @@ export const Route = createFileRoute("/search")({
   component: SearchPage,
 });
 
-// Demo results
-const demoResults = {
-  questions: [
-    {
-      id: "01",
-      slug: "q1",
-      text: "What is the unit of modulus of elasticity?",
-      exam: "Kerala PSC AE",
-      year: 2025,
-      subject: "Civil Engineering",
-    },
-    {
-      id: "02",
-      slug: "q2",
-      text: "How does Azure RBAC work?",
-      exam: "Microsoft AZ-104",
-      year: 2024,
-      subject: "Identity & Access",
-    },
-  ],
-  topics: [{ id: "01", slug: "strength-of-materials", name: "Strength of Materials" }],
-  exams: [{ id: "01", slug: "kerala-psc", name: "Kerala PSC" }],
-};
-
 function SearchPage() {
   const { q } = Route.useSearch();
   const navigate = useNavigate();
+  const hasQuery = q.trim().length > 0;
+
+  // docs/roadmap/engineering-roadmap.md item 23: real results from the database, behind the
+  // SearchProvider interface (packages/api/src/search/) — no hardcoded results remain.
+  const { data } = useQuery({
+    ...orpc.search.query.queryOptions({ input: { q } }),
+    enabled: hasQuery,
+  });
+  const { mutate: logClick } = useMutation(orpc.search.logClick.mutationOptions());
 
   const handleSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -61,7 +48,15 @@ function SearchPage() {
     }
   };
 
-  const hasQuery = q.trim().length > 0;
+  const handleResultClick = (resultId: string) => {
+    if (data?.searchQueryId) {
+      logClick({ searchQueryId: data.searchQueryId, resultId });
+    }
+  };
+
+  const questions = data?.questions ?? [];
+  const exams = data?.exams ?? [];
+  const topics = data?.topics ?? [];
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
@@ -115,76 +110,113 @@ function SearchPage() {
                 Search results for "{q}"
               </h1>
               <p className="font-mono text-xs text-slate-500 tracking-wider">
-                {demoResults.questions.length} QUESTIONS · {demoResults.exams.length} EXAMS ·{" "}
-                {demoResults.topics.length} TOPICS
+                {questions.length} QUESTIONS · {exams.length} EXAMS · {topics.length} TOPICS
               </p>
             </div>
 
-            {/* QUESTIONS */}
-            <section>
-              <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-12">
-                Questions
-              </h2>
-              <div className="flex flex-col">
-                {demoResults.questions.map((q) => (
-                  <div
-                    key={q.slug}
-                    className="group pb-12 mb-12 border-b border-slate-900/50 block"
-                  >
-                    <span className="block font-mono text-xs text-slate-600 mb-6">{q.id}</span>
-                    <h3 className="text-2xl text-slate-200 font-light mb-8 max-w-2xl leading-snug">
-                      {q.text}
-                    </h3>
-                    <div className="flex flex-col gap-1 font-mono text-xs text-slate-500">
-                      <span>{q.exam}</span>
-                      <span>{q.subject}</span>
-                      <span>{q.year}</span>
-                    </div>
-                  </div>
-                ))}
+            {questions.length === 0 && exams.length === 0 && topics.length === 0 && (
+              <div className="text-slate-500 font-mono text-sm">
+                No results. Try a different phrase.
               </div>
-            </section>
+            )}
+
+            {/* QUESTIONS */}
+            {questions.length > 0 && (
+              <section>
+                <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-12">
+                  Questions
+                </h2>
+                <div className="flex flex-col">
+                  {questions.map((question, i) => {
+                    const canLink =
+                      question.examSlug &&
+                      question.examVariantSlug &&
+                      question.year != null &&
+                      question.subjectSlug;
+                    const content = (
+                      <>
+                        <span className="block font-mono text-xs text-slate-600 mb-6">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <h3 className="text-2xl text-slate-200 font-light mb-8 max-w-2xl leading-snug">
+                          {question.questionText}
+                        </h3>
+                        <div className="flex flex-col gap-1 font-mono text-xs text-slate-500">
+                          {question.examSlug && <span>{question.examSlug}</span>}
+                          {question.subjectSlug && <span>{question.subjectSlug}</span>}
+                          {question.year != null && <span>{question.year}</span>}
+                        </div>
+                      </>
+                    );
+
+                    return canLink ? (
+                      <Link
+                        key={question.id}
+                        to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
+                        params={{
+                          examSlug: question.examSlug as string,
+                          variantSlug: question.examVariantSlug as string,
+                          year: String(question.year),
+                          subjectSlug: question.subjectSlug as string,
+                          questionSlug: question.slug,
+                        }}
+                        onClick={() => handleResultClick(question.id)}
+                        className="group pb-12 mb-12 border-b border-slate-900/50 block"
+                      >
+                        {content}
+                      </Link>
+                    ) : (
+                      <div key={question.id} className="pb-12 mb-12 border-b border-slate-900/50">
+                        {content}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* EXAMS & TOPICS in asymmetric split */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-16 md:gap-8">
-              <section>
-                <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-8 border-b border-slate-900 pb-4">
-                  Exams
-                </h2>
-                <div className="flex flex-col">
-                  {demoResults.exams.map((e) => (
-                    <Link
-                      key={e.slug}
-                      to="/exams/$examSlug"
-                      params={{ examSlug: e.slug }}
-                      className="py-4 border-b border-slate-900/40 text-slate-300 hover:text-white flex gap-4 transition-colors"
-                    >
-                      <span className="font-mono text-xs text-slate-700">{e.id}</span>
-                      <span>{e.name}</span>
-                    </Link>
-                  ))}
-                </div>
-              </section>
+            {(exams.length > 0 || topics.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-16 md:gap-8">
+                <section>
+                  <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-8 border-b border-slate-900 pb-4">
+                    Exams
+                  </h2>
+                  <div className="flex flex-col">
+                    {exams.map((e) => (
+                      <Link
+                        key={e.id}
+                        to="/exams/$examSlug"
+                        params={{ examSlug: e.slug }}
+                        onClick={() => handleResultClick(e.id)}
+                        className="py-4 border-b border-slate-900/40 text-slate-300 hover:text-white flex gap-4 transition-colors"
+                      >
+                        <span>{e.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
 
-              <section>
-                <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-8 border-b border-slate-900 pb-4">
-                  Topics
-                </h2>
-                <div className="flex flex-col">
-                  {demoResults.topics.map((t) => (
-                    <Link
-                      key={t.slug}
-                      to="/topics/$topicSlug"
-                      params={{ topicSlug: t.slug }}
-                      className="py-4 border-b border-slate-900/40 text-slate-300 hover:text-white flex gap-4 transition-colors"
-                    >
-                      <span className="font-mono text-xs text-slate-700">{t.id}</span>
-                      <span>{t.name}</span>
-                    </Link>
-                  ))}
-                </div>
-              </section>
-            </div>
+                <section>
+                  <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-8 border-b border-slate-900 pb-4">
+                    Topics
+                  </h2>
+                  <div className="flex flex-col">
+                    {topics.map((t) => (
+                      <Link
+                        key={t.id}
+                        to="/topics/$topicSlug"
+                        params={{ topicSlug: t.slug }}
+                        onClick={() => handleResultClick(t.id)}
+                        className="py-4 border-b border-slate-900/40 text-slate-300 hover:text-white flex gap-4 transition-colors"
+                      >
+                        <span>{t.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            )}
           </div>
         )}
       </main>

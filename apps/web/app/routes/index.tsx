@@ -5,7 +5,6 @@ import type React from "react";
 import { useState } from "react";
 import { authClient } from "../../lib/auth-client";
 import { orpc } from "../../lib/orpc";
-import { SearchCommandModal } from "../components/search/SearchCommandModal";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -28,7 +27,6 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
   const navigate = useNavigate();
 
   const { data: session } = authClient.useSession();
@@ -47,8 +45,6 @@ function HomePage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 selection:bg-slate-700 selection:text-white font-sans">
-      <SearchCommandModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
-
       <main className="max-w-[1400px] mx-auto px-6 pt-24 pb-32">
         {/* HERO / ASYMMETRIC SEARCH */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-12 mb-24">
