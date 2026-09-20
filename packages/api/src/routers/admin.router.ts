@@ -11,6 +11,7 @@ import {
   questions,
   questionTags,
   scrapedQuestions,
+  sources,
   users,
 } from "@prepora/db/schema";
 import { count, desc, eq, ilike, sql } from "drizzle-orm";
@@ -410,6 +411,21 @@ export const adminRouter = {
       });
 
       return { success: true, message: `Approved and published ${publishCount} questions.` };
+    }),
+
+  // Drives the site-selector cards in apps/web/app/routes/admin/scraping.tsx — replaces the
+  // hardcoded TARGET_WEBSITES constant. See docs/roadmap/engineering-roadmap.md item 14: sources
+  // are configuration, not code, so adding one is a source.yaml file plus a sync, never a
+  // frontend change.
+  listSources: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/sources",
+      summary: "List registered scrape sources",
+    })
+    .handler(async () => {
+      const db = getDb();
+      return db.select().from(sources).orderBy(sources.name);
     }),
 
   getScraperHealth: adminProcedure

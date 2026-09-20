@@ -1,0 +1,14 @@
+# Static definition for this source — see docs/roadmap/engineering-roadmap.md item 14. Mutable
+# operational state (enabled, last_crawl_at, last_successful_crawl_at, consecutive_failures) lives
+# only in the sources table and is never touched by a sync of this file.
+name: ms-learn
+base_url: https://learn.microsoft.com
+source_type: certification
+connector_name: mslearn
+requires_auth: true
+crawl_policy:
+  max_depth: 1
+  max_pages: 50
+rate_limit:
+  requests_per_minute: 10
+robots_review_status: not_reviewed

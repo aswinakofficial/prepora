@@ -1,0 +1,11 @@
+name: kerala-psc-gov
+base_url: https://keralapsc.gov.in
+source_type: government
+connector_name: generic
+requires_auth: false
+crawl_policy:
+  max_depth: 1
+  max_pages: 50
+rate_limit:
+  requests_per_minute: 10
+robots_review_status: not_reviewed

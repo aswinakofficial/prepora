@@ -1,23 +1,30 @@
 """
 Tests for the SSRF and auth guards in security.py — see
 docs/architecture/prepora-next-level-plan.md findings #4-#5 and
-docs/roadmap/engineering-roadmap.md items 3 and 9.
+docs/roadmap/engineering-roadmap.md items 3, 9, and 14.
 
 DNS-dependent cases use "localhost" (resolved via loopback, no network
 call) rather than a real external hostname, so these stay fast and
-deterministic in CI with no live network access.
+deterministic in CI with no live network access. The allowlist itself now derives from the source
+registry (item 14) rather than an env var, so these tests monkeypatch security.get_allowed_base_urls
+directly instead of an env var — that keeps them deterministic and DB-free, same as before.
 """
 import asyncio
 
 import pytest
 from fastapi import HTTPException
 
+import security
 from security import (
     _host_is_allowlisted,
     _ip_is_blocked,
     assert_safe_url,
     require_service_token,
 )
+
+
+def _allow(monkeypatch, *hosts):
+    monkeypatch.setattr(security, "get_allowed_base_urls", lambda: list(hosts))
 
 
 class TestIpIsBlocked:
@@ -40,49 +47,64 @@ class TestIpIsBlocked:
 
 class TestHostIsAllowlisted:
     def test_exact_match(self, monkeypatch):
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "example.com")
+        _allow(monkeypatch, "example.com")
         assert _host_is_allowlisted("example.com") is True
 
     def test_subdomain_match(self, monkeypatch):
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "example.com")
+        _allow(monkeypatch, "example.com")
         assert _host_is_allowlisted("learn.example.com") is True
 
     def test_rejects_unrelated_host(self, monkeypatch):
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "example.com")
+        _allow(monkeypatch, "example.com")
         assert _host_is_allowlisted("evil.com") is False
 
     def test_rejects_suffix_lookalike(self, monkeypatch):
         # "notexample.com" must not match an allowlisted "example.com".
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "example.com")
+        _allow(monkeypatch, "example.com")
         assert _host_is_allowlisted("notexample.com") is False
 
     def test_empty_allowlist_allows_nothing(self, monkeypatch):
-        monkeypatch.delenv("SCRAPER_ALLOWED_HOSTS", raising=False)
+        _allow(monkeypatch)
         assert _host_is_allowlisted("example.com") is False
 
 
 class TestAssertSafeUrl:
     def test_rejects_non_http_scheme(self, monkeypatch):
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "example.com")
+        _allow(monkeypatch, "example.com")
         with pytest.raises(HTTPException) as exc:
             assert_safe_url("file:///etc/passwd")
         assert exc.value.status_code == 400
 
     def test_rejects_host_not_on_allowlist(self, monkeypatch):
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "example.com")
+        _allow(monkeypatch, "example.com")
         with pytest.raises(HTTPException) as exc:
             assert_safe_url("https://evil.com/steal")
         assert exc.value.status_code == 400
 
+    def test_a_disabled_source_cannot_be_triggered(self, monkeypatch):
+        # get_allowed_base_urls() (docs/roadmap/engineering-roadmap.md item 14) already excludes
+        # disabled sources — a disabled source's host simply never appears in the list this
+        # returns, which is exactly what this simulates. Checked at the _host_is_allowlisted
+        # level (no DNS resolution) for the "still enabled" half, since assert_safe_url's
+        # resolution step needs a real, resolvable host this file otherwise avoids depending on.
+        _allow(monkeypatch, "example.com")
+        assert _host_is_allowlisted("example.com") is True
+
+        _allow(monkeypatch)  # the source is now disabled: excluded from the allowlist
+        assert _host_is_allowlisted("example.com") is False
+        with pytest.raises(HTTPException) as exc:
+            assert_safe_url("https://example.com/now-disabled")
+        assert exc.value.status_code == 400
+
     def test_rejects_allowlisted_host_resolving_to_loopback(self, monkeypatch):
         # localhost resolves via the system's loopback entry, not a network call.
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "localhost")
+        _allow(monkeypatch, "localhost")
         with pytest.raises(HTTPException) as exc:
             assert_safe_url("http://localhost/admin")
         assert exc.value.status_code == 400
 
     def test_rejects_malformed_url(self, monkeypatch):
-        monkeypatch.setenv("SCRAPER_ALLOWED_HOSTS", "example.com")
+        _allow(monkeypatch, "example.com")
         with pytest.raises(HTTPException) as exc:
             assert_safe_url("http://")
         assert exc.value.status_code == 400

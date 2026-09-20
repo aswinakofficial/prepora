@@ -25,8 +25,11 @@ export const Route = createFileRoute("/admin/scraping")({
   component: AdminScrapingPage,
 });
 
-export interface TargetWebsite {
-  id: string;
+// Site cards are driven by orpc.admin.listSources (the sources table) instead of a hardcoded
+// constant — see docs/roadmap/engineering-roadmap.md item 14. Adding a source is now a
+// source.yaml file plus a sync, never a change to this file.
+export interface SiteOption {
+  id: string; // the source's registry slug, e.g. "ms-learn"
   name: string;
   domain: string;
   badge: string;
@@ -37,90 +40,61 @@ export interface TargetWebsite {
   defaultSubject: string;
   defaultMode: string;
   engine: string;
+  connectorName: string;
 }
 
-const TARGET_WEBSITES: TargetWebsite[] = [
-  {
-    id: "mslearn",
-    name: "Microsoft Learn",
-    domain: "learn.microsoft.com",
-    badge: "PLAYWRIGHT AUTOMATION",
-    badgeColor: "text-sky-400 border-sky-900/80 bg-sky-950/40",
-    description:
-      "Dynamic assessment crawler for Microsoft Certification Practice Tests (AB-100, AZ-104, etc.)",
-    defaultUrl:
-      "https://learn.microsoft.com/en-us/credentials/certifications/exams/ab-100/practice/assessment?assessment-type=practice&assessmentId=1815645847",
-    defaultExam: "MS Learn AB-100",
-    defaultSubject: "Agentic AI Business Solutions",
+const EMPTY_SITE: SiteOption = {
+  id: "",
+  name: "Loading…",
+  domain: "",
+  badge: "",
+  badgeColor: "text-slate-500 border-slate-800 bg-slate-900/40",
+  description: "",
+  defaultUrl: "",
+  defaultExam: "Auto-detect",
+  defaultSubject: "Auto-detect",
+  defaultMode: "mcq",
+  engine: "",
+  connectorName: "",
+};
+
+function humanizeSlug(slug: string): string {
+  return slug
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function toSiteOption(source: {
+  name: string;
+  baseUrl: string;
+  sourceType: string | null;
+  connectorName: string;
+  requiresAuth: boolean;
+}): SiteOption {
+  let domain = source.baseUrl;
+  try {
+    domain = new URL(source.baseUrl).hostname;
+  } catch {
+    // baseUrl wasn't a parseable URL — fall back to showing it verbatim.
+  }
+  return {
+    id: source.name,
+    name: humanizeSlug(source.name),
+    domain,
+    badge: source.requiresAuth ? "AUTH REQUIRED" : "OPEN ACCESS",
+    badgeColor: source.requiresAuth
+      ? "text-sky-400 border-sky-900/80 bg-sky-950/40"
+      : "text-emerald-400 border-emerald-900/80 bg-emerald-950/40",
+    description: `${source.sourceType ? humanizeSlug(source.sourceType) : "External"} source, handled by the ${source.connectorName} connector.`,
+    defaultUrl: source.baseUrl,
+    defaultExam: "Auto-detect",
+    defaultSubject: "Auto-detect",
     defaultMode: "mcq",
-    engine: "Playwright Headless/Persistent Browser",
-  },
-  {
-    id: "sanfoundry",
-    name: "Sanfoundry",
-    domain: "sanfoundry.com",
-    badge: "MODULAR ADAPTER",
-    badgeColor: "text-emerald-400 border-emerald-900/80 bg-emerald-950/40",
-    description: "Engineering subject-wise MCQs with hidden answer collapse parsers",
-    defaultUrl: "https://www.sanfoundry.com/strength-materials-questions-answers/",
-    defaultExam: "Kerala PSC AE Civil",
-    defaultSubject: "Strength of Materials",
-    defaultMode: "mcq",
-    engine: "BeautifulSoup DOM Scraper",
-  },
-  {
-    id: "examtopics",
-    name: "ExamTopics",
-    domain: "examtopics.com",
-    badge: "MODULAR ADAPTER",
-    badgeColor: "text-amber-400 border-amber-900/80 bg-amber-950/40",
-    description: "Multi-choice exam question cards & certification portal extractor",
-    defaultUrl: "https://www.examtopics.com/exams/microsoft/az-900/view/",
-    defaultExam: "AZ-104 Azure Admin",
-    defaultSubject: "Cloud Architecture",
-    defaultMode: "mcq",
-    engine: "ExamTopics Card Handler",
-  },
-  {
-    id: "indiabix",
-    name: "IndiaBIX",
-    domain: "indiabix.com",
-    badge: "MODULAR ADAPTER",
-    badgeColor: "text-purple-400 border-purple-900/80 bg-purple-950/40",
-    description: "Civil & General Aptitude question paper archives with option extraction",
-    defaultUrl: "https://www.indiabix.com/civil-engineering/strength-of-materials/",
-    defaultExam: "SSC JE Civil",
-    defaultSubject: "Theory of Structures",
-    defaultMode: "mcq",
-    engine: "IndiaBIX DOM Handler",
-  },
-  {
-    id: "keralapsc",
-    name: "Kerala PSC Govt Portal",
-    domain: "keralapsc.gov.in",
-    badge: "GOVT ARCHIVE",
-    badgeColor: "text-rose-400 border-rose-900/80 bg-rose-950/40",
-    description: "Official previous question papers archive for Assistant Engineer civil exams",
-    defaultUrl: "https://keralapsc.gov.in/previous-question-papers",
-    defaultExam: "Kerala PSC AE Civil",
-    defaultSubject: "Civil Engineering",
-    defaultMode: "auto",
-    engine: "PDF / Heuristic Parser",
-  },
-  {
-    id: "custom",
-    name: "Custom Exam Web Portal",
-    domain: "Custom URL",
-    badge: "GENERIC HEURISTIC",
-    badgeColor: "text-slate-400 border-slate-800 bg-slate-900/40",
-    description: "Ingest any custom target URL using heuristic HTML & MCQ auto-detection",
-    defaultUrl: "",
-    defaultExam: "Kerala PSC AE Civil",
-    defaultSubject: "Strength of Materials",
-    defaultMode: "auto",
-    engine: "Auto-Detect Heuristic Parser",
-  },
-];
+    engine: source.connectorName,
+    connectorName: source.connectorName,
+  };
+}
 
 function AdminScrapingPage() {
   const { data: routeData, refetch } = useQuery(orpc.admin.getScrapedQuestions.queryOptions());
@@ -140,8 +114,14 @@ function AdminScrapingPage() {
   const initialQuestions = routeData || [];
   const [questions, setQuestions] = useState(initialQuestions);
 
+  // Registered sources — the site-selector cards, sourced from the sources table (item 14).
+  // Disabled sources are never offered: the allowlist and the UI derive from the same registry.
+  const { data: sourcesData } = useQuery(orpc.admin.listSources.queryOptions());
+  const sites: SiteOption[] = (sourcesData || []).filter((s) => s.enabled).map(toSiteOption);
+
   // Selected Target Website State
-  const [selectedWebsite, setSelectedWebsite] = useState<TargetWebsite>(TARGET_WEBSITES[0]);
+  const [selectedWebsiteId, setSelectedWebsiteId] = useState<string | null>(null);
+  const selectedWebsite = sites.find((s) => s.id === selectedWebsiteId) || sites[0] || EMPTY_SITE;
 
   // Microsoft Learn Catalog & Auth State
   const [msCatalog, setMsCatalog] = useState<any[]>([]);
@@ -152,13 +132,24 @@ function AdminScrapingPage() {
   const [scrapingProgress, setScrapingProgress] = useState<string | null>(null);
 
   // Form Config State
-  const [url, setUrl] = useState(TARGET_WEBSITES[0].defaultUrl);
+  const [url, setUrl] = useState("");
   const [targetExam, setTargetExam] = useState("Auto-detect");
   const [targetSubject, setTargetSubject] = useState("Auto-detect");
-  const [parserMode, setParserMode] = useState(TARGET_WEBSITES[0].defaultMode);
+  const [parserMode, setParserMode] = useState("mcq");
   const [maxQuestions, setMaxQuestions] = useState<number>(50);
   const [maxExamSets, setMaxExamSets] = useState<number>(msCatalog?.length || 10);
   const [isHeadless, setIsHeadless] = useState<boolean>(true);
+
+  // Prefill the form from the first registered source once the registry loads — mirrors what
+  // TARGET_WEBSITES[0] used to provide synchronously, now sourced from the database instead.
+  const firstSite = sites[0];
+  useEffect(() => {
+    if (!selectedWebsiteId && firstSite) {
+      setSelectedWebsiteId(firstSite.id);
+      setUrl(firstSite.defaultUrl);
+      setParserMode(firstSite.defaultMode);
+    }
+  }, [firstSite, selectedWebsiteId]);
 
   // Execution & Telemetry State
   const [isScraping, setIsScraping] = useState(false);
@@ -277,8 +268,8 @@ function AdminScrapingPage() {
     }
   }, [healthData]);
 
-  const handleSelectWebsite = (site: TargetWebsite) => {
-    setSelectedWebsite(site);
+  const handleSelectWebsite = (site: SiteOption) => {
+    setSelectedWebsiteId(site.id);
     setUrl(site.defaultUrl);
     setTargetExam("Auto-detect");
     setTargetSubject("Auto-detect");
@@ -322,7 +313,6 @@ function AdminScrapingPage() {
 
   const filteredQuestions = questions.filter((q: any) => {
     if (logFilter === "all") return true;
-    if (selectedWebsite.id === "custom") return true;
     return q.sourceUrl?.toLowerCase().includes(selectedWebsite.domain.toLowerCase());
   });
 
@@ -411,12 +401,12 @@ function AdminScrapingPage() {
               <span>01 / Select Target Website for Scraping</span>
             </h2>
             <span className="font-mono text-[10px] text-slate-500 uppercase">
-              {TARGET_WEBSITES.length} Registered Web Adapters
+              {sites.length} Registered Web Adapters
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {TARGET_WEBSITES.map((site) => {
+            {sites.map((site) => {
               const isSelected = selectedWebsite.id === site.id;
 
               return (
@@ -513,7 +503,7 @@ function AdminScrapingPage() {
                 </span>
               </div>
 
-              {selectedWebsite.id === "mslearn" && (
+              {selectedWebsite.connectorName === "mslearn" && (
                 <div className="p-5 border border-sky-900/60 bg-sky-950/20 mb-8 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -663,7 +653,7 @@ function AdminScrapingPage() {
               )}
 
               <form onSubmit={handleScrape} className="space-y-6">
-                {selectedWebsite.id !== "mslearn" && (
+                {selectedWebsite.connectorName !== "mslearn" && (
                   <div className="space-y-2">
                     <label
                       htmlFor="scraping-target-url"
@@ -680,7 +670,7 @@ function AdminScrapingPage() {
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       placeholder={`https://${selectedWebsite.domain}/questions/sample`}
-                      required={selectedWebsite.id !== "mslearn"}
+                      required={selectedWebsite.connectorName !== "mslearn"}
                       className="w-full bg-slate-900/90 border border-slate-800 focus:border-white outline-none font-mono text-sm text-white px-4 py-3 tracking-tight transition-colors placeholder:text-slate-700"
                     />
                   </div>
@@ -769,7 +759,7 @@ function AdminScrapingPage() {
                 </div>
 
                 <div className="pt-6 border-t border-slate-800 flex gap-4">
-                  {selectedWebsite.id === "mslearn" ? (
+                  {selectedWebsite.connectorName === "mslearn" ? (
                     <button
                       type="button"
                       disabled={
@@ -886,9 +876,9 @@ function AdminScrapingPage() {
                   <span>Adapter Guidelines</span>
                 </div>
                 <p className="leading-relaxed text-[11px]">
-                  {selectedWebsite.id === "mslearn"
+                  {selectedWebsite.connectorName === "mslearn"
                     ? "Microsoft Learn uses an interactive Playwright crawler to navigate practice tests, click check answer buttons, and harvest rationale explanations."
-                    : selectedWebsite.id === "sanfoundry"
+                    : selectedWebsite.connectorName === "sanfoundry"
                       ? "Sanfoundry adapter automatically extracts question prompts, multiple choices, and uncollapses hidden answers."
                       : `Target URL parser for ${selectedWebsite.name}. Ensure the link is publicly accessible for extraction.`}
                 </p>

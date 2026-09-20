@@ -43,6 +43,13 @@
       "when": 1789840929392,
       "tag": "0005_wise_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789862434593,
+      "tag": "0006_acoustic_vulcan",
+      "breakpoints": true
     }
   ]
 }

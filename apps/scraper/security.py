@@ -3,23 +3,28 @@ Security helpers for the scraper service: request authentication and
 outbound-URL SSRF protection.
 
 See docs/architecture/prepora-next-level-plan.md findings #4-#5 and
-docs/roadmap/engineering-roadmap.md item 3 for why these exist. The host
-allowlist here is an interim, environment-configured list — roadmap
-item 13 replaces it with a database-backed source registry, at which
-point `_allowed_hosts()` becomes a registry lookup instead of an env var
-split. Keep both concerns behind these two functions so that swap is
-localized.
+docs/roadmap/engineering-roadmap.md items 3 and 14 for why these exist. The host allowlist is
+derived from apps/pipeline's source registry (enabled sources' base_url) rather than a separate
+SCRAPER_ALLOWED_HOSTS env var, so the registry and the security boundary are one mechanism that
+can't silently disagree — see docs/roadmap/engineering-roadmap.md item 14.
 """
 import ipaddress
 import os
 import socket
+import sys
+from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 
 from fastapi import Header, HTTPException
 
+# See main.py's identical bridge and its comment for why: this is a deliberate, temporary path
+# import into apps/pipeline rather than a duplicated copy of get_allowed_base_urls(), until
+# apps/pipeline absorbs this service (docs/architecture/prepora-next-level-plan.md §17).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+from prepora_pipeline.core import get_allowed_base_urls  # noqa: E402
+
 SERVICE_TOKEN_ENV = "PIPELINE_SERVICE_TOKEN"
-ALLOWED_HOSTS_ENV = "SCRAPER_ALLOWED_HOSTS"
 
 # Bounded, and every hop is re-validated — this is not "trust the redirect
 # chain", it is "never fetch anywhere assert_safe_url wouldn't allow".
@@ -60,8 +65,7 @@ def cors_allowed_origins() -> List[str]:
 
 
 def _allowed_hosts() -> List[str]:
-    raw = os.getenv(ALLOWED_HOSTS_ENV, "")
-    return [h.strip().lower() for h in raw.split(",") if h.strip()]
+    return [h.lower() for h in get_allowed_base_urls() if h]
 
 
 def _host_is_allowlisted(hostname: str) -> bool:
@@ -119,8 +123,9 @@ def assert_safe_url(url: str) -> None:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Host '{hostname}' is not on the scraper's allowlist. "
-                f"Add it to {ALLOWED_HOSTS_ENV} before scraping this source."
+                f"Host '{hostname}' is not on the scraper's allowlist. Add an enabled source "
+                f"for it in the registry (apps/pipeline/prepora_pipeline/connectors/) before "
+                f"scraping this source."
             ),
         )
 

@@ -13,6 +13,16 @@ from .jobs import (
     stage_run,
     start_job,
 )
+from .registry import (
+    Source,
+    get_allowed_base_urls,
+    get_source,
+    is_source_enabled,
+    list_sources,
+    load_source_yaml_files,
+    record_crawl_attempt,
+    sync_sources_from_yaml,
+)
 from .reprocess import reprocess_source
 
 __all__ = [
@@ -32,4 +42,12 @@ __all__ = [
     "get_job",
     "list_jobs",
     "list_stages",
+    "Source",
+    "load_source_yaml_files",
+    "sync_sources_from_yaml",
+    "list_sources",
+    "get_source",
+    "is_source_enabled",
+    "get_allowed_base_urls",
+    "record_crawl_attempt",
 ]

@@ -85,3 +85,11 @@ export const pipelineJobStatusEnum = pgEnum("pipeline_job_status", [
   "failed",
   "cancelled",
 ]);
+
+// See docs/roadmap/engineering-roadmap.md item 14 — whether a source's robots.txt/terms have been
+// reviewed for scraping, tracked explicitly rather than assumed.
+export const robotsReviewStatusEnum = pgEnum("robots_review_status", [
+  "not_reviewed",
+  "reviewed_allowed",
+  "reviewed_disallowed",
+]);

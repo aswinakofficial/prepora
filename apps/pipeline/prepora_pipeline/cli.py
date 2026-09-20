@@ -4,10 +4,10 @@ prepora-pipeline — CLI-first per docs/architecture/prepora-next-level-plan.md 
 principle ("CLI-first, HTTP-second"): every stage is independently runnable from here, and a
 future thin FastAPI wrapper calls into the same functions rather than duplicating them.
 
-Currently implements only what docs/roadmap/engineering-roadmap.md item 12 needs:
-`reprocess` (replay stored artifacts through a parser, no network access) and `prune` (the
-retention policy). `run`/`--stage` (the full discover -> publish pipeline) is later roadmap work —
-no stages exist yet to run.
+Currently implements what items 12 and 14 need: `reprocess` (replay stored artifacts through a
+parser, no network access), `prune` (the retention policy), and `sync-sources` (load
+connectors/*/source.yaml into the sources table). `run`/`--stage` (the full discover -> publish
+pipeline) is later roadmap work — no stages exist yet to run.
 """
 import argparse
 import sys
@@ -15,7 +15,12 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
-from prepora_pipeline.core import FilesystemArtifactStore, reprocess_source
+from prepora_pipeline.core import (
+    FilesystemArtifactStore,
+    list_sources,
+    reprocess_source,
+    sync_sources_from_yaml,
+)
 
 
 def _parse_date(value: str) -> datetime:
@@ -51,6 +56,15 @@ def cmd_prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sync_sources(_args: argparse.Namespace) -> int:
+    count = sync_sources_from_yaml()
+    print(f"Synced {count} source definition(s).")
+    for source in list_sources():
+        flag = "enabled" if source.enabled else "DISABLED"
+        print(f"  {source.name:20s} {source.base_url:40s} [{flag}]")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
 
@@ -71,6 +85,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     prune_parser.add_argument("--older-than-days", type=int, required=True)
     prune_parser.set_defaults(func=cmd_prune)
+
+    sync_sources_parser = subparsers.add_parser(
+        "sync-sources", help="Load connectors/*/source.yaml into the sources table."
+    )
+    sync_sources_parser.set_defaults(func=cmd_sync_sources)
 
     args = parser.parse_args(argv)
     return args.func(args)
