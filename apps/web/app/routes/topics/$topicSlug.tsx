@@ -1,15 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  ArrowUpRight,
-  Award,
-  BarChart2,
-  BookOpen,
-  CheckCircle2,
-  Search,
-  Sparkles,
-  Zap,
-} from "lucide-react";
+import { ArrowUpRight, BookOpen, Search, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
+import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute("/topics/$topicSlug")({
   head: ({ params }) => {
@@ -19,187 +12,54 @@ export const Route = createFileRoute("/topics/$topicSlug")({
         { title: `${name} — Topic Knowledge Index | Prepora` },
         {
           name: "description",
-          content: `Master ${name} with previous-year exam questions, verified step-by-step explanations, key formulas, and topic analytics.`,
+          content: `Master ${name} with previous-year exam questions and verified step-by-step explanations.`,
         },
-        { property: "og:title", content: `${name} — Exam Questions & Formula Index | Prepora` },
+        { property: "og:title", content: `${name} — Exam Questions Index | Prepora` },
       ],
     };
   },
   component: TopicPage,
 });
 
-// ─── Data Types & Initial Mock Questions ──────────────────────────────────────
-
-interface QuestionItem {
-  id: string;
-  code: string;
-  slug: string;
-  text: string;
-  exam: string;
-  year: number;
-  difficulty: "Easy" | "Medium" | "Hard";
-  formulaRef?: string;
-  examSlug: string;
-  variantSlug: string;
-  subjectSlug: string;
-}
-
-const SOM_QUESTIONS: QuestionItem[] = [
-  {
-    id: "q-01",
-    code: "SOM-2025-001",
-    slug: "unit-modulus-elasticity",
-    text: "What is the SI unit of modulus of elasticity (Young's Modulus)?",
-    exam: "Kerala PSC AE Civil",
-    year: 2025,
-    difficulty: "Easy",
-    formulaRef: "E = σ / ε",
-    examSlug: "kerala-psc-ae-civil",
-    variantSlug: "paper-1",
-    subjectSlug: "civil-engineering",
-  },
-  {
-    id: "q-02",
-    code: "SOM-2024-002",
-    slug: "poissons-ratio-isotropic",
-    text: "The ratio of lateral strain to linear axial strain within the elastic limit for isotropic materials is defined as:",
-    exam: "SSC JE Civil",
-    year: 2024,
-    difficulty: "Easy",
-    formulaRef: "ν = -ε_lateral / ε_axial",
-    examSlug: "ssc-je-civil",
-    variantSlug: "morning-shift",
-    subjectSlug: "civil-engineering",
-  },
-  {
-    id: "q-03",
-    code: "SOM-2024-003",
-    slug: "max-bending-moment-udl",
-    text: "Maximum bending moment for a simply supported beam of span L carrying a uniform distributed load w throughout is:",
-    exam: "Kerala PSC AE Civil",
-    year: 2024,
-    difficulty: "Medium",
-    formulaRef: "M_max = (w · L²) / 8",
-    examSlug: "kerala-psc-ae-civil",
-    variantSlug: "paper-1",
-    subjectSlug: "civil-engineering",
-  },
-  {
-    id: "q-04",
-    code: "SOM-2024-004",
-    slug: "hookes-law-proportional-limit",
-    text: "Hooke's Law of linear elasticity holds strictly valid up to which characteristic point on the stress-strain curve?",
-    exam: "GATE Civil",
-    year: 2024,
-    difficulty: "Hard",
-    formulaRef: "σ ∝ ε (Proportional Limit)",
-    examSlug: "gate-civil",
-    variantSlug: "session-2",
-    subjectSlug: "civil-engineering",
-  },
-  {
-    id: "q-05",
-    code: "SOM-2023-005",
-    slug: "max-shear-stress-rectangular-beam",
-    text: "The ratio of maximum shear stress (τ_max) to average shear stress (τ_avg) for a rectangular beam cross-section under flexure is:",
-    exam: "Kerala PSC AE Civil",
-    year: 2023,
-    difficulty: "Medium",
-    formulaRef: "τ_max = 1.5 · τ_avg",
-    examSlug: "kerala-psc-ae-civil",
-    variantSlug: "paper-1",
-    subjectSlug: "civil-engineering",
-  },
-  {
-    id: "q-06",
-    code: "SOM-2023-006",
-    slug: "principal-plane-shear-orientation",
-    text: "What is the principal angle of orientation for planes of maximum shear stress relative to principal stress planes?",
-    exam: "SSC JE Civil",
-    year: 2023,
-    difficulty: "Hard",
-    formulaRef: "θ_s = θ_p ± 45°",
-    examSlug: "ssc-je-civil",
-    variantSlug: "afternoon-shift",
-    subjectSlug: "civil-engineering",
-  },
-  {
-    id: "q-07",
-    code: "SOM-2023-007",
-    slug: "torsion-strain-energy-shaft",
-    text: "The strain energy U stored in a solid circular shaft of length L and polar moment of inertia J subjected to torque T is:",
-    exam: "GATE Civil",
-    year: 2023,
-    difficulty: "Hard",
-    formulaRef: "U = (T² · L) / (2 · G · J)",
-    examSlug: "gate-civil",
-    variantSlug: "session-1",
-    subjectSlug: "civil-engineering",
-  },
-  {
-    id: "q-08",
-    code: "SOM-2024-008",
-    slug: "eulers-critical-load-both-fixed",
-    text: "Euler's critical crippling load P_cr for a column fixed at both ends with actual length L is given by:",
-    exam: "RRB JE Civil",
-    year: 2024,
-    difficulty: "Medium",
-    formulaRef: "P_cr = (4π² · E · I) / L²",
-    examSlug: "rrb-je-civil",
-    variantSlug: "paper-1",
-    subjectSlug: "civil-engineering",
-  },
-];
-
-const TOPIC_FORMULAS = [
-  { name: "Hooke's Law", formula: "σ = E · ε", note: "Valid up to Proportional Limit" },
-  { name: "Flexure Formula", formula: "M / I = σ / y = E / R", note: "Pure bending condition" },
-  {
-    name: "Torsion Equation",
-    formula: "T / J = τ / r = G · θ / L",
-    note: "Circular cross sections",
-  },
-  {
-    name: "Elongation of Tapered Bar",
-    formula: "δ = (4 · P · L) / (π · E · d₁ · d₂)",
-    note: "Axial force P",
-  },
-  {
-    name: "Mohr's Circle Radius",
-    formula: "R = √[((σ_x - σ_y)/2)² + τ_xy²]",
-    note: "Max shear stress τ_max",
-  },
-];
-
-const EXAM_DISTRIBUTION = [
-  { name: "Kerala PSC AE", percentage: 42, color: "bg-blue-500" },
-  { name: "SSC JE Civil", percentage: 35, color: "bg-emerald-500" },
-  { name: "GATE Civil", percentage: 23, color: "bg-amber-500" },
-];
+// docs/roadmap/engineering-roadmap.md item 24: this page used to render a fixed 8-question
+// Strength-of-Materials fixture (plus fabricated formula cards / exam-distribution percentages /
+// a "revision cycle" date with no backing model) regardless of the actual topicSlug in the URL.
+// It now queries topics.getBySlug for real questions scoped to the real topic, and the decorative
+// unbacked stats have been removed entirely rather than kept as placeholder or illustrative content.
 
 function TopicPage() {
   const { topicSlug } = Route.useParams();
-  const name = topicSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const fallbackName = topicSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const { data: topic, isLoading } = useQuery(
+    orpc.topics.getBySlug.queryOptions({ input: { topicSlug } }),
+  );
 
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("ALL");
   const [selectedExam, setSelectedExam] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // Filter questions based on controls
+  const questions = topic?.questions ?? [];
+  const name = topic?.name || fallbackName;
+
+  const examOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const q of questions) {
+      if (q.examSlug) seen.add(q.examSlug);
+    }
+    return [...seen];
+  }, [questions]);
+
   const filteredQuestions = useMemo(() => {
-    return SOM_QUESTIONS.filter((q) => {
+    return questions.filter((q) => {
       const matchDiff =
-        selectedDifficulty === "ALL" || q.difficulty.toUpperCase() === selectedDifficulty;
-      const matchExam =
-        selectedExam === "ALL" || q.exam.toUpperCase().includes(selectedExam.toUpperCase());
+        selectedDifficulty === "ALL" || (q.difficulty || "").toUpperCase() === selectedDifficulty;
+      const matchExam = selectedExam === "ALL" || q.examSlug === selectedExam;
       const matchSearch =
-        searchQuery.trim() === "" ||
-        q.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        q.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        q.exam.toLowerCase().includes(searchQuery.toLowerCase());
+        searchQuery.trim() === "" || q.text.toLowerCase().includes(searchQuery.toLowerCase());
       return matchDiff && matchExam && matchSearch;
     });
-  }, [selectedDifficulty, selectedExam, searchQuery]);
+  }, [questions, selectedDifficulty, selectedExam, searchQuery]);
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
@@ -230,14 +90,18 @@ function TopicPage() {
           <Link to="/subjects" className="hover:text-white transition-colors">
             SUBJECTS
           </Link>
-          <span className="mx-4 text-slate-700">/</span>
-          <Link
-            to="/subjects/$subjectSlug"
-            params={{ subjectSlug: "civil-engineering" }}
-            className="hover:text-white transition-colors"
-          >
-            CIVIL ENGINEERING
-          </Link>
+          {topic?.subjectSlug && (
+            <>
+              <span className="mx-4 text-slate-700">/</span>
+              <Link
+                to="/subjects/$subjectSlug"
+                params={{ subjectSlug: topic.subjectSlug }}
+                className="hover:text-white transition-colors"
+              >
+                {(topic.subjectName || topic.subjectSlug).toUpperCase()}
+              </Link>
+            </>
+          )}
           <span className="mx-4 text-slate-700">/</span>
           <span className="text-white">{name.toUpperCase()}</span>
         </div>
@@ -253,73 +117,22 @@ function TopicPage() {
               <h1 className="text-4xl md:text-6xl lg:text-7xl font-normal tracking-tighter text-white uppercase mb-6 leading-tight">
                 {name}
               </h1>
-              <p className="font-mono text-xs tracking-widest text-slate-400 uppercase leading-relaxed max-w-2xl">
-                Structural stress-strain relations, elastic constants, flexural and torsional
-                mechanics, and principal stress analysis.
-              </p>
+              {topic?.description && (
+                <p className="font-mono text-xs tracking-widest text-slate-400 uppercase leading-relaxed max-w-2xl">
+                  {topic.description}
+                </p>
+              )}
             </div>
 
             <div className="font-mono text-xs text-slate-500 tracking-widest uppercase text-left lg:text-right shrink-0 border-l lg:border-l-0 lg:border-r border-slate-900 pl-4 lg:pl-0 lg:pr-6 py-2">
               <div className="text-white text-lg font-light mb-1">
-                {SOM_QUESTIONS.length} VERIFIED QUESTIONS
+                {questions.length} VERIFIED QUESTIONS
               </div>
-              <div className="text-slate-500">28 FORMULA CARDS · 8 EXAM SOURCES</div>
             </div>
           </div>
         </div>
 
-        {/* Telemetry / Stat Cards Grid */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
-          <div className="p-5 border border-slate-900 bg-slate-950/40 rounded-none">
-            <div className="font-mono text-[10px] uppercase text-slate-600 tracking-widest mb-2 flex items-center justify-between">
-              <span>TOTAL VOLUME</span>
-              <BookOpen className="w-3.5 h-3.5 text-slate-600" />
-            </div>
-            <div className="text-2xl text-white font-light tracking-tight">
-              {SOM_QUESTIONS.length} Qs
-            </div>
-            <div className="font-mono text-[10px] text-emerald-400 mt-2 tracking-wider">
-              +12 Added this paper
-            </div>
-          </div>
-
-          <div className="p-5 border border-slate-900 bg-slate-950/40 rounded-none">
-            <div className="font-mono text-[10px] uppercase text-slate-600 tracking-widest mb-2 flex items-center justify-between">
-              <span>TOPIC WEIGHTAGE</span>
-              <Award className="w-3.5 h-3.5 text-slate-600" />
-            </div>
-            <div className="text-2xl text-amber-400 font-light tracking-tight">HIGH (18%)</div>
-            <div className="font-mono text-[10px] text-slate-500 mt-2 tracking-wider">
-              Top yield in Civil Papers
-            </div>
-          </div>
-
-          <div className="p-5 border border-slate-900 bg-slate-950/40 rounded-none">
-            <div className="font-mono text-[10px] uppercase text-slate-600 tracking-widest mb-2 flex items-center justify-between">
-              <span>FORMULA CARDS</span>
-              <Sparkles className="w-3.5 h-3.5 text-slate-600" />
-            </div>
-            <div className="text-2xl text-white font-light tracking-tight">
-              {TOPIC_FORMULAS.length} Key
-            </div>
-            <div className="font-mono text-[10px] text-blue-400 mt-2 tracking-wider">
-              Annotated equations
-            </div>
-          </div>
-
-          <div className="p-5 border border-slate-900 bg-slate-950/40 rounded-none">
-            <div className="font-mono text-[10px] uppercase text-slate-600 tracking-widest mb-2 flex items-center justify-between">
-              <span>VERIFIED ACCURACY</span>
-              <CheckCircle2 className="w-3.5 h-3.5 text-slate-600" />
-            </div>
-            <div className="text-2xl text-emerald-400 font-light tracking-tight">100%</div>
-            <div className="font-mono text-[10px] text-slate-500 mt-2 tracking-wider">
-              Peer-reviewed solutions
-            </div>
-          </div>
-        </section>
-
-        {/* Main Content Layout (Left Question Stream, Right Analytical Sidebar) */}
+        {/* Main Content Layout (Left Question Stream, Right Sidebar) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           {/* Left Column (Main Questions Stream) */}
           <div className="lg:col-span-8">
@@ -332,7 +145,7 @@ function TopicPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter by question text, code, or exam..."
+                  placeholder="Filter by question text..."
                   className="w-full bg-slate-950/80 border border-slate-800 focus:border-slate-500 outline-none text-sm text-slate-200 placeholder-slate-600 pl-11 pr-4 py-3 font-mono transition-colors"
                 />
               </div>
@@ -343,7 +156,7 @@ function TopicPage() {
                   <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mr-2">
                     DIFFICULTY:
                   </span>
-                  {["ALL", "EASY", "MEDIUM", "HARD"].map((diff) => (
+                  {["ALL", "EASY", "MEDIUM", "HARD", "EXPERT"].map((diff) => (
                     <button
                       type="button"
                       key={diff}
@@ -360,57 +173,67 @@ function TopicPage() {
                 </div>
 
                 {/* Exam Filter */}
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
-                    EXAM:
-                  </span>
-                  <select
-                    value={selectedExam}
-                    onChange={(e) => setSelectedExam(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 text-slate-400 font-mono text-[11px] uppercase px-3 py-1 outline-none focus:border-slate-600 transition-colors"
-                  >
-                    <option value="ALL">ALL EXAMS</option>
-                    <option value="KERALA PSC">KERALA PSC AE</option>
-                    <option value="SSC JE">SSC JE</option>
-                    <option value="GATE">GATE</option>
-                    <option value="RRB JE">RRB JE</option>
-                  </select>
-                </div>
+                {examOptions.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
+                      EXAM:
+                    </span>
+                    <select
+                      value={selectedExam}
+                      onChange={(e) => setSelectedExam(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 text-slate-400 font-mono text-[11px] uppercase px-3 py-1 outline-none focus:border-slate-600 transition-colors"
+                    >
+                      <option value="ALL">ALL EXAMS</option>
+                      {examOptions.map((slug) => (
+                        <option key={slug} value={slug}>
+                          {slug.replace(/-/g, " ").toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Questions Header */}
             <div className="flex justify-between items-center mb-6">
               <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-500">
-                {/* Question Archive ( */}
-                {filteredQuestions.length})
+                {filteredQuestions.length} QUESTIONS
               </h2>
               <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
-                Showing {filteredQuestions.length} of {SOM_QUESTIONS.length} entries
+                Showing {filteredQuestions.length} of {questions.length} entries
               </span>
             </div>
 
             {/* Questions Stream */}
             <div className="border-t-2 border-slate-900 border-b-2 divide-y divide-slate-900/60">
-              {filteredQuestions.length === 0 ? (
+              {isLoading ? (
+                <div className="py-16 text-center">
+                  <p className="font-mono text-sm text-slate-500">Loading questions…</p>
+                </div>
+              ) : filteredQuestions.length === 0 ? (
                 <div className="py-16 text-center">
                   <p className="font-mono text-sm text-slate-500 mb-2">
-                    No matching questions found.
+                    {questions.length === 0
+                      ? "No published questions for this topic yet."
+                      : "No matching questions found."}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedDifficulty("ALL");
-                      setSelectedExam("ALL");
-                      setSearchQuery("");
-                    }}
-                    className="font-mono text-xs text-blue-400 hover:underline uppercase tracking-wider"
-                  >
-                    Reset filters
-                  </button>
+                  {questions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDifficulty("ALL");
+                        setSelectedExam("ALL");
+                        setSearchQuery("");
+                      }}
+                      className="font-mono text-xs text-blue-400 hover:underline uppercase tracking-wider"
+                    >
+                      Reset filters
+                    </button>
+                  )}
                 </div>
               ) : (
-                filteredQuestions.map((q, _idx) => (
+                filteredQuestions.map((q) => (
                   <Link
                     key={q.id}
                     to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
@@ -418,35 +241,35 @@ function TopicPage() {
                       examSlug: q.examSlug,
                       variantSlug: q.variantSlug,
                       year: String(q.year),
-                      subjectSlug: q.subjectSlug,
-                      questionSlug: q.slug,
+                      subjectSlug: q.subjectSlug || "",
+                      questionSlug: q.questionSlug,
                     }}
                     className="group block p-6 hover:bg-slate-900/40 transition-colors"
                   >
-                    {/* Top Row: Code, Exam Tag, Year, Difficulty */}
+                    {/* Top Row: Exam Tag, Year, Difficulty */}
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-xs text-slate-600 group-hover:text-slate-400 transition-colors">
-                          {q.code}
-                        </span>
-                        <span className="text-slate-800">/</span>
                         <span className="font-mono text-[10px] uppercase tracking-widest px-2 py-0.5 border border-slate-800 text-slate-400">
-                          {q.exam}
+                          {q.examSlug.replace(/-/g, " ")}
                         </span>
-                        <span className="font-mono text-[10px] text-slate-600">{q.year}</span>
+                        {q.year && (
+                          <span className="font-mono text-[10px] text-slate-600">{q.year}</span>
+                        )}
                       </div>
 
-                      <span
-                        className={`font-mono text-[10px] uppercase tracking-widest px-2 py-0.5 border ${
-                          q.difficulty === "Easy"
-                            ? "border-emerald-900/60 text-emerald-400 bg-emerald-950/20"
-                            : q.difficulty === "Medium"
-                              ? "border-blue-900/60 text-blue-400 bg-blue-950/20"
-                              : "border-amber-900/60 text-amber-400 bg-amber-950/20"
-                        }`}
-                      >
-                        {q.difficulty}
-                      </span>
+                      {q.difficulty && (
+                        <span
+                          className={`font-mono text-[10px] uppercase tracking-widest px-2 py-0.5 border ${
+                            q.difficulty === "easy"
+                              ? "border-emerald-900/60 text-emerald-400 bg-emerald-950/20"
+                              : q.difficulty === "medium"
+                                ? "border-blue-900/60 text-blue-400 bg-blue-950/20"
+                                : "border-amber-900/60 text-amber-400 bg-amber-950/20"
+                          }`}
+                        >
+                          {q.difficulty}
+                        </span>
+                      )}
                     </div>
 
                     {/* Question Content */}
@@ -454,18 +277,9 @@ function TopicPage() {
                       {q.text}
                     </h3>
 
-                    {/* Footer Row: Formula Badge & Action Link */}
-                    <div className="flex items-center justify-between text-xs font-mono">
-                      {q.formulaRef ? (
-                        <div className="flex items-center gap-2 text-slate-500 bg-slate-950/60 border border-slate-900 px-2.5 py-1">
-                          <span className="text-slate-600">FORMULA:</span>
-                          <span className="text-slate-400">{q.formulaRef}</span>
-                        </div>
-                      ) : (
-                        <div></div>
-                      )}
-
-                      <div className="flex items-center gap-1 text-slate-500 group-hover:text-white transition-colors tracking-widest uppercase text-[11px] ml-auto">
+                    {/* Footer Row: Action Link */}
+                    <div className="flex items-center justify-end text-xs font-mono">
+                      <div className="flex items-center gap-1 text-slate-500 group-hover:text-white transition-colors tracking-widest uppercase text-[11px]">
                         <span>ACCESS QUESTION</span>
                         <ArrowUpRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                       </div>
@@ -476,7 +290,7 @@ function TopicPage() {
             </div>
           </div>
 
-          {/* Right Column (Analytical Sidebar) */}
+          {/* Right Column (Sidebar) */}
           <aside className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-slate-900 pt-12 lg:pt-0 lg:pl-12 space-y-12">
             {/* PRACTICE CTA CARD */}
             <div className="p-6 border border-slate-800 bg-slate-950/90 relative overflow-hidden">
@@ -489,8 +303,9 @@ function TopicPage() {
 
               <h3 className="text-xl text-white font-normal mb-3">Initiate Practice Mode</h3>
               <p className="text-xs text-slate-400 leading-relaxed font-mono mb-6">
-                Attempt all {SOM_QUESTIONS.length} strength of materials questions with real-time
-                feedback and step-by-step verified solutions.
+                {questions.length > 0
+                  ? `Attempt all ${questions.length} ${name.toLowerCase()} questions with real-time feedback.`
+                  : "No questions published for this topic yet."}
               </p>
 
               <Link
@@ -501,79 +316,20 @@ function TopicPage() {
               </Link>
             </div>
 
-            {/* TOPIC KEY FORMULAS */}
-            <div>
-              <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-500 mb-6 pb-2 border-b border-slate-900 flex items-center justify-between">
-                <span>{/* Key Formula Index */}</span>
-                <Sparkles className="w-3.5 h-3.5 text-slate-600" />
-              </h3>
-
-              <div className="space-y-4">
-                {TOPIC_FORMULAS.map((item, i) => (
-                  <div
-                    key={item.name}
-                    className="p-4 border border-slate-900 bg-slate-950/40 hover:border-slate-800 transition-colors"
-                  >
-                    <div className="font-mono text-[11px] text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                      <span>{item.name}</span>
-                      <span className="text-[10px] text-slate-600">0{i + 1}</span>
-                    </div>
-                    <div className="font-mono text-sm text-blue-400 mb-2 font-medium bg-slate-900/50 p-2 border border-slate-900">
-                      {item.formula}
-                    </div>
-                    <div className="font-mono text-[10px] text-slate-500 tracking-wide">
-                      {item.note}
-                    </div>
+            {topic?.subjectSlug && (
+              <div className="pt-6 border-t border-slate-900">
+                <h4 className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mb-4 flex items-center gap-2">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Taxonomy Context
+                </h4>
+                <dl className="space-y-3 font-mono text-xs">
+                  <div className="flex justify-between border-b border-slate-900/50 pb-2">
+                    <dt className="text-slate-600">SUBJECT</dt>
+                    <dd className="text-slate-300">{topic.subjectName || topic.subjectSlug}</dd>
                   </div>
-                ))}
+                </dl>
               </div>
-            </div>
-
-            {/* EXAM DISTRIBUTION */}
-            <div>
-              <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-500 mb-6 pb-2 border-b border-slate-900 flex items-center justify-between">
-                <span>{/* Exam Distribution */}</span>
-                <BarChart2 className="w-3.5 h-3.5 text-slate-600" />
-              </h3>
-
-              <div className="space-y-4 font-mono text-xs">
-                {EXAM_DISTRIBUTION.map((exam) => (
-                  <div key={exam.name} className="space-y-1.5">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>{exam.name}</span>
-                      <span className="text-slate-500">{exam.percentage}%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-900 overflow-hidden">
-                      <div
-                        className={`h-full ${exam.color}`}
-                        style={{ width: `${exam.percentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* TAXONOMY METADATA */}
-            <div className="pt-6 border-t border-slate-900">
-              <h4 className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mb-4">
-                Taxonomy Context
-              </h4>
-              <dl className="space-y-3 font-mono text-xs">
-                <div className="flex justify-between border-b border-slate-900/50 pb-2">
-                  <dt className="text-slate-600">DISCIPLINE</dt>
-                  <dd className="text-slate-300">Civil Engineering</dd>
-                </div>
-                <div className="flex justify-between border-b border-slate-900/50 pb-2">
-                  <dt className="text-slate-600">DIFFICULTY CURVE</dt>
-                  <dd className="text-amber-400">Moderate → Advanced</dd>
-                </div>
-                <div className="flex justify-between border-b border-slate-900/50 pb-2">
-                  <dt className="text-slate-600">REVISION CYCLE</dt>
-                  <dd className="text-slate-300">Q3 2026</dd>
-                </div>
-              </dl>
-            </div>
+            )}
           </aside>
         </div>
       </main>

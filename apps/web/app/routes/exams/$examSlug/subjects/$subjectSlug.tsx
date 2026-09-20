@@ -13,7 +13,7 @@ export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
         { title: `${subjectName} — ${examName} | Prepora` },
         {
           name: "description",
-          content: `Explore verified previous-year questions and topics for ${subjectName} in ${examName}.`,
+          content: `Explore verified previous-year questions for ${subjectName} in ${examName}.`,
         },
       ],
     };
@@ -21,26 +21,24 @@ export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
   component: ExamSubjectPage,
 });
 
+// docs/roadmap/engineering-roadmap.md item 24: this page used to render three fabricated
+// "Copilot Studio" / "Multi-Agent Orchestration" topic cards regardless of the actual exam or
+// subject, each linking only to /practice rather than any real question. It now lists the real
+// published questions for this exam scoped to this subject directly, sourced from the same
+// exams.getBySlug payload exams/$examSlug/index.tsx already uses.
+
 function ExamSubjectPage() {
   const { examSlug, subjectSlug } = Route.useParams();
 
-  const { data: realExam } = useQuery(orpc.exams.getBySlug.queryOptions({ input: { examSlug } }));
+  const { data: realExam, isLoading } = useQuery(
+    orpc.exams.getBySlug.queryOptions({ input: { examSlug } }),
+  );
 
   const examName =
     realExam?.name || examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const subjectName = subjectSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const questionsList = realExam?.questions || [];
-
-  const topics = [
-    {
-      slug: "agentic-ai-foundations",
-      name: `${subjectName} Core Principles`,
-      count: Math.max(questionsList.length, 5),
-    },
-    { slug: "copilot-studio-workflows", name: "Copilot Studio & Custom Agents", count: 5 },
-    { slug: "multi-agent-orchestration", name: "Autonomous Multi-Agent Systems", count: 5 },
-  ];
+  const questions = (realExam?.questions || []).filter((q: any) => q.subjectSlug === subjectSlug);
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
@@ -89,67 +87,51 @@ function ExamSubjectPage() {
             </p>
           </div>
           <div className="font-mono text-[10px] text-slate-600 tracking-widest uppercase text-right shrink-0">
-            {topics.length} TOPIC CLUSTERS <br />
-            TOTAL VOLUME: {questionsList.length || 5} Qs
+            TOTAL VOLUME: {questions.length} Qs
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-16">
-          {/* Main Content */}
-          <div className="lg:col-span-3">
-            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-600 mb-8 border-b border-slate-900 pb-2">
-              {/* Topic Clusters & Ingested Sets */}
-            </h2>
-
-            <div className="border-t-2 border-slate-900 border-b-2">
-              {topics.map((t, idx) => (
-                <Link
-                  key={t.slug}
-                  to="/practice"
-                  className="flex flex-col md:flex-row md:items-center justify-between p-6 border-b border-slate-900/50 hover:bg-slate-900/40 transition-colors group"
-                >
-                  <div className="flex items-center gap-6">
-                    <span className="font-mono text-sm text-slate-600 w-8">
-                      {String(idx + 1).padStart(2, "0")}
-                    </span>
-                    <h3 className="text-xl text-slate-300 group-hover:text-white transition-colors font-light">
-                      {t.name}
-                    </h3>
-                  </div>
-                  <div className="font-mono text-[10px] uppercase text-slate-500 tracking-widest mt-4 md:mt-0 flex items-center gap-4">
-                    <span>{t.count} VOL</span>
-                    <span className="text-slate-800">/</span>
-                    <span className="text-slate-600 group-hover:text-slate-400 transition-colors">
-                      PRACTICE NOW →
-                    </span>
-                  </div>
-                </Link>
-              ))}
+        <div className="border-t-2 border-slate-900 border-b-2">
+          {isLoading ? (
+            <div className="py-16 text-center">
+              <p className="font-mono text-sm text-slate-500">Loading questions…</p>
             </div>
-          </div>
-
-          {/* Analytical Sidebar */}
-          <aside className="lg:col-span-1 border-t lg:border-t-0 lg:border-l border-slate-900 pt-12 lg:pt-0 lg:pl-12">
-            <h3 className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mb-8 pb-2 border-b border-slate-900">
-              Module Summary
-            </h3>
-            <div className="space-y-6">
-              <div className="border-b border-slate-900/50 pb-4">
-                <div className="font-mono text-[10px] text-slate-600 uppercase tracking-widest mb-1">
-                  Exam Scope
-                </div>
-                <div className="text-sm text-slate-200 font-light">{examName}</div>
-              </div>
-              <div className="border-b border-slate-900/50 pb-4">
-                <div className="font-mono text-[10px] text-slate-600 uppercase tracking-widest mb-1">
-                  Ingested Questions
-                </div>
-                <div className="text-xl text-slate-200 font-light">
-                  {questionsList.length || 5} Qs
-                </div>
-              </div>
+          ) : questions.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="font-mono text-sm text-slate-500">
+                No published questions for this subject in {examName} yet.
+              </p>
             </div>
-          </aside>
+          ) : (
+            questions.map((q: any, idx: number) => (
+              <Link
+                key={q.id}
+                to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
+                params={{
+                  examSlug: q.examSlug,
+                  variantSlug: q.variantSlug,
+                  year: String(q.year),
+                  subjectSlug: q.subjectSlug || subjectSlug,
+                  questionSlug: q.questionSlug,
+                }}
+                className="flex flex-col md:flex-row md:items-center justify-between p-6 border-b border-slate-900/50 hover:bg-slate-900/40 transition-colors group"
+              >
+                <div className="flex items-center gap-6 min-w-0">
+                  <span className="font-mono text-sm text-slate-600 w-8 shrink-0">
+                    {String(idx + 1).padStart(2, "0")}
+                  </span>
+                  <h3 className="text-lg text-slate-300 group-hover:text-white transition-colors font-light truncate">
+                    {q.text}
+                  </h3>
+                </div>
+                <div className="font-mono text-[10px] uppercase text-slate-500 tracking-widest mt-4 md:mt-0 flex items-center gap-4 shrink-0">
+                  <span className="text-slate-600 group-hover:text-slate-400 transition-colors">
+                    ACCESS →
+                  </span>
+                </div>
+              </Link>
+            ))
+          )}
         </div>
       </main>
     </div>

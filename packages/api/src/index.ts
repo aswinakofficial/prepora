@@ -1,8 +1,12 @@
 import { protectedProcedure, publicProcedure } from "./context.js";
 import { adminRouter } from "./routers/admin.router.js";
+import { contributionsRouter } from "./routers/contributions.router.js";
 import { examsRouter } from "./routers/exams.router.js";
+import { questionSetsRouter } from "./routers/question-sets.router.js";
 import { questionsRouter } from "./routers/questions.router.js";
 import { searchRouter } from "./routers/search.router.js";
+import { subjectsRouter } from "./routers/subjects.router.js";
+import { topicsRouter } from "./routers/topics.router.js";
 
 export { WIPE_DATABASE_CONFIRMATION_PHRASE } from "./routers/admin.router.js";
 
@@ -31,6 +35,10 @@ export const appRouter = {
   questions: questionsRouter,
   search: searchRouter,
   admin: adminRouter,
+  topics: topicsRouter,
+  subjects: subjectsRouter,
+  questionSets: questionSetsRouter,
+  contributions: contributionsRouter,
 };
 
 export type AppRouter = typeof appRouter;

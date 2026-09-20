@@ -1,4 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute("/question-sets/$slug")({
   head: ({ params }) => ({
@@ -15,47 +17,22 @@ export const Route = createFileRoute("/question-sets/$slug")({
   component: QuestionSetPage,
 });
 
+// docs/roadmap/engineering-roadmap.md item 24: this page used to render a fixed 5-question
+// fixture, and every question link hardcoded examSlug/variantSlug/year/subjectSlug to
+// "kerala-psc-ae-civil"/"paper-1"/"2025"/"strength-of-materials" regardless of the actual set slug
+// in the URL — every question-set page linked to the same wrong question URLs. It now queries
+// questionSets.getBySlug for the real set and links each question to its real occurrence.
+
 function QuestionSetPage() {
   const { slug } = Route.useParams();
-  const title = slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const fallbackTitle = slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const questions = [
-    {
-      number: 1,
-      text: "What is the SI unit of modulus of elasticity (Young's Modulus)?",
-      slug: "unit-modulus-elasticity",
-      topic: "Elasticity",
-      difficulty: "Medium",
-    },
-    {
-      number: 2,
-      text: "What is the theoretical range of Poisson's ratio for isotropic materials?",
-      slug: "poissons-ratio",
-      topic: "Elasticity",
-      difficulty: "Easy",
-    },
-    {
-      number: 3,
-      text: "Calculate the maximum bending moment for a simply supported beam with UDL w over length L.",
-      slug: "max-bm-udl",
-      topic: "Bending Moments",
-      difficulty: "Medium",
-    },
-    {
-      number: 4,
-      text: "What is the characteristic compressive strength test duration for concrete cubes?",
-      slug: "concrete-compressive-unit",
-      topic: "Concrete Tech",
-      difficulty: "Easy",
-    },
-    {
-      number: 5,
-      text: "Hooke's Law holds valid up to which characteristic point on the stress-strain curve?",
-      slug: "hookes-law",
-      topic: "Elasticity",
-      difficulty: "Hard",
-    },
-  ];
+  const { data: set, isLoading } = useQuery(
+    orpc.questionSets.getBySlug.queryOptions({ input: { slug } }),
+  );
+
+  const questions = set?.questions ?? [];
+  const title = set?.title || fallbackTitle;
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
@@ -88,8 +65,7 @@ function QuestionSetPage() {
               {title}
             </h1>
             <p className="font-mono text-xs tracking-widest text-slate-500">
-              {questions.length} QUESTIONS <span className="mx-4 text-slate-700">|</span> ESTIMATED
-              ~15 MIN
+              {questions.length} QUESTIONS
             </p>
           </div>
 
@@ -103,35 +79,49 @@ function QuestionSetPage() {
 
         {/* Questions List Stream */}
         <div className="space-y-0 border-t-2 border-slate-900 border-b-2">
-          {questions.map((q) => (
-            <Link
-              key={q.slug}
-              to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
-              params={{
-                examSlug: "kerala-psc-ae-civil",
-                variantSlug: "paper-1",
-                year: "2025",
-                subjectSlug: "strength-of-materials",
-                questionSlug: q.slug,
-              }}
-              className="group flex flex-col md:flex-row md:items-center justify-between gap-4 py-8 border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors px-4 -mx-4"
-            >
-              <div className="flex gap-6 items-baseline min-w-0">
-                <span className="font-mono text-sm tracking-widest text-slate-600 group-hover:text-slate-300 transition-colors shrink-0 w-8">
-                  {String(q.number).padStart(2, "0")}
-                </span>
-                <span className="text-lg text-slate-300 group-hover:text-white transition-colors truncate max-w-2xl font-light">
-                  {q.text}
-                </span>
-              </div>
-              <div className="flex items-center gap-6 shrink-0 pl-14 md:pl-0">
-                <span className="text-xs font-mono text-slate-600">{q.topic.toUpperCase()}</span>
-                <span className="text-xs font-mono text-slate-500 border border-slate-800 px-2 py-1">
-                  {q.difficulty.toUpperCase()}
-                </span>
-              </div>
-            </Link>
-          ))}
+          {isLoading ? (
+            <div className="py-16 text-center">
+              <p className="font-mono text-sm text-slate-500">Loading questions…</p>
+            </div>
+          ) : questions.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="font-mono text-sm text-slate-500">
+                No published questions in this set yet.
+              </p>
+            </div>
+          ) : (
+            questions.map((q) => (
+              <Link
+                key={q.slug}
+                to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
+                params={{
+                  examSlug: q.examSlug,
+                  variantSlug: q.variantSlug,
+                  year: String(q.year),
+                  subjectSlug: q.subjectSlug || "",
+                  questionSlug: q.slug,
+                }}
+                className="group flex flex-col md:flex-row md:items-center justify-between gap-4 py-8 border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors px-4 -mx-4"
+              >
+                <div className="flex gap-6 items-baseline min-w-0">
+                  <span className="font-mono text-sm tracking-widest text-slate-600 group-hover:text-slate-300 transition-colors shrink-0 w-8">
+                    {String(q.number).padStart(2, "0")}
+                  </span>
+                  <span className="text-lg text-slate-300 group-hover:text-white transition-colors truncate max-w-2xl font-light">
+                    {q.text}
+                  </span>
+                </div>
+                <div className="flex items-center gap-6 shrink-0 pl-14 md:pl-0">
+                  <span className="text-xs font-mono text-slate-600">{q.topic.toUpperCase()}</span>
+                  {q.difficulty && (
+                    <span className="text-xs font-mono text-slate-500 border border-slate-800 px-2 py-1">
+                      {q.difficulty.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              </Link>
+            ))
+          )}
         </div>
       </main>
     </div>

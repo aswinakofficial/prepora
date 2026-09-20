@@ -151,51 +151,6 @@ function AdditionalReadingResources({ resources }: { resources: AdditionalReadin
   );
 }
 
-const DEMO_QUESTIONS: Question[] = [
-  {
-    id: "q1",
-    text: "What is the SI unit of modulus of elasticity (Young's Modulus)?",
-    options: [
-      { key: "A", text: "Newton (N)" },
-      { key: "B", text: "N/mm² (or Pascal, Pa)" },
-      { key: "C", text: "mm / N" },
-      { key: "D", text: "N · mm" },
-    ],
-    correctKey: "B",
-    explanation:
-      "Modulus of elasticity (E) = Stress / Strain. Stress is measured in N/mm² and strain is dimensionless. Therefore E is measured in N/mm².",
-    topic: "Elasticity",
-  },
-  {
-    id: "q2",
-    text: "The ratio of lateral strain to linear (longitudinal) strain within elastic limit is known as?",
-    options: [
-      { key: "A", text: "Poisson's ratio" },
-      { key: "B", text: "Young's modulus" },
-      { key: "C", text: "Bulk modulus" },
-      { key: "D", text: "Modulus of rigidity" },
-    ],
-    correctKey: "A",
-    explanation:
-      "Poisson's ratio (ν) = Lateral Strain / Longitudinal Strain. For isotropic materials, its value typically ranges between 0.25 and 0.35.",
-    topic: "Elasticity",
-  },
-  {
-    id: "q3",
-    text: "For a simply supported beam of span L subjected to a uniform distributed load (UDL) of intensity w, the maximum bending moment is?",
-    options: [
-      { key: "A", text: "wL / 4" },
-      { key: "B", text: "wL² / 8" },
-      { key: "C", text: "wL² / 12" },
-      { key: "D", text: "wL² / 2" },
-    ],
-    correctKey: "B",
-    explanation:
-      "The maximum bending moment occurs at the mid-span of a simply supported beam under UDL and equals M_max = (w · L²) / 8.",
-    topic: "Bending Moments",
-  },
-];
-
 function PracticePage() {
   const search = Route.useSearch();
   const examSlug = search?.examSlug;
@@ -221,10 +176,7 @@ function PracticePage() {
     orpc.exams.getBySlug.queryOptions({ input: { examSlug: examSlug || "" } }),
   );
 
-  const activeQuestions: Question[] =
-    realExamData?.questions && realExamData.questions.length > 0
-      ? (realExamData.questions as any)
-      : DEMO_QUESTIONS;
+  const activeQuestions: Question[] = (realExamData?.questions as any) ?? [];
 
   useEffect(() => {
     if (examSlug) {
@@ -428,6 +380,27 @@ function PracticePage() {
 
   // ── 2. Active Session Stage ──
   if (stage === "active") {
+    if (activeQuestions.length === 0) {
+      return (
+        <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white flex flex-col items-center justify-center px-6 text-center">
+          <p className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-4">
+            No published questions yet
+          </p>
+          <h1 className="text-2xl md:text-3xl text-white font-light tracking-tight mb-8 max-w-lg">
+            {examSlug
+              ? `${realExamData?.name || examSlug} doesn't have any published questions yet.`
+              : "Select an exam to begin practicing."}
+          </h1>
+          <Link
+            to="/exams"
+            className="font-mono text-xs uppercase tracking-widest text-black bg-white hover:bg-slate-200 px-6 py-3 font-semibold transition-colors"
+          >
+            Browse exams
+          </Link>
+        </div>
+      );
+    }
+
     const isAnsSubmitted = mode === "practice" ? submitted[currentQ.id] : false;
     const selectedKey = answers[currentQ.id];
     const isLastQuestion = currentIndex === activeQuestions.length - 1;

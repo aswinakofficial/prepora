@@ -1,5 +1,8 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { authClient } from "../../../lib/auth-client";
+import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute(
   "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug",
@@ -20,65 +23,71 @@ export const Route = createFileRoute(
   component: QuestionPage,
 });
 
-const DEMO_QUESTION = {
-  text: "What is the SI unit of Modulus of Elasticity (Young's Modulus)?",
-  options: [
-    { key: "A", text: "Newton (N)" },
-    { key: "B", text: "N/mm² (or Pascal, Pa)" },
-    { key: "C", text: "mm / N" },
-    { key: "D", text: "N · mm" },
-  ],
-  correctKey: "B",
-  explanation: {
-    summary:
-      "Modulus of elasticity is defined as the ratio of tensile stress to tensile strain within the elastic limit.",
-    derivation: [
-      "Stress (σ) has dimensions of Force / Area, measured in N/m² or N/mm² (Pascal).",
-      "Strain (ε) is the ratio of change in length to original length (ΔL / L), making it dimensionless.",
-      "Therefore, E shares the exact same unit as Stress, which is N/mm² or Pa.",
-    ],
-  },
-  topic: "Elasticity & Hooke's Law",
-  subject: "Strength of Materials",
-  additionalReadingLinks: [
-    { text: "Young's Modulus - Wikipedia", url: "https://en.wikipedia.org/wiki/Young%27s_modulus" },
-    {
-      text: "Elastic Modulus - GeeksforGeeks",
-      url: "https://www.geeksforgeeks.org/elastic-modulus/",
-    },
-    {
-      text: "Hooke's Law - Khan Academy",
-      url: "https://www.khanacademy.org/science/physics/work-and-energy/hookes-law",
-    },
-  ],
-  relatedQuestions: [
-    {
-      slug: "poissons-ratio-definition",
-      text: "What is the theoretical range of Poisson's ratio for isotropic materials?",
-    },
-    {
-      slug: "shear-modulus-relationship",
-      text: "Which formula relates Young's Modulus (E) and Shear Modulus (G)?",
-    },
-  ],
-};
+// docs/roadmap/engineering-roadmap.md item 24: this page used to render a fixed Strength-of-
+// Materials fixture (DEMO_QUESTION) for every URL, with "related questions" and "additional
+// reading" sections that never had a real backing model. It now resolves the real question via
+// questions.getByPath and reveals the answer through the existing, server-verified submitAnswer
+// mutation; the unbacked sections have been removed rather than kept as placeholder content.
 
 function QuestionPage() {
-  const { examSlug, variantSlug, year, subjectSlug } = Route.useParams();
+  const { examSlug, variantSlug, year, subjectSlug, questionSlug } = Route.useParams();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [isRevealed, setIsRevealed] = useState(false);
+  const { data: session } = authClient.useSession();
 
   const examName = examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+  const { data: question, isLoading } = useQuery(
+    orpc.questions.getByPath.queryOptions({
+      input: { examSlug, variantSlug, year: Number(year), subjectSlug, questionSlug },
+    }),
+  );
+
+  const {
+    mutate: submitAnswer,
+    data: result,
+    isPending,
+    error,
+  } = useMutation(orpc.questions.submitAnswer.mutationOptions());
+
   const handleReveal = () => {
-    if (selectedKey) setIsRevealed(true);
+    if (selectedKey && question) {
+      submitAnswer({ id: question.id, selectedOptionId: selectedKey });
+    }
   };
 
-  const correctOption = DEMO_QUESTION.options.find((o) => o.key === DEMO_QUESTION.correctKey);
+  const isRevealed = !!result;
+  const correctOption = question?.options.find((o) => o.key === result?.correctOptionId);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans flex items-center justify-center">
+        <p className="font-mono text-sm text-slate-500">Loading question…</p>
+      </div>
+    );
+  }
+
+  if (!question) {
+    return (
+      <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans flex flex-col items-center justify-center px-6 text-center">
+        <p className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-4">
+          Question not found
+        </p>
+        <h1 className="text-2xl text-white font-light tracking-tight mb-8 max-w-lg">
+          This question either isn't published yet or the URL is wrong.
+        </h1>
+        <Link
+          to="/exams/$examSlug"
+          params={{ examSlug }}
+          className="font-mono text-xs uppercase tracking-widest text-black bg-white hover:bg-slate-200 px-6 py-3 font-semibold transition-colors"
+        >
+          Back to {examName}
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-      {/* Back Spacer */}
       <div className="px-6 pt-12 max-w-[800px] mx-auto mb-16"></div>
 
       <main className="max-w-[800px] mx-auto px-6">
@@ -92,21 +101,19 @@ function QuestionPage() {
             {examName}
           </Link>
           <span className="mx-2">/</span>
-          <span>{DEMO_QUESTION.subject}</span>
+          <span>{subjectSlug.replace(/-/g, " ")}</span>
           <span className="mx-2">/</span>
           <span>{year}</span>
         </div>
 
         {/* Question Reading Area */}
         <section className="mb-24">
-          <h1 className="font-mono text-lg tracking-widest text-slate-500 mb-12">QUESTION 015</h1>
-
           <p className="text-3xl md:text-4xl text-white font-light leading-snug mb-16 max-w-2xl">
-            {DEMO_QUESTION.text}
+            {question.text}
           </p>
 
           <div className="flex flex-col space-y-6 mb-16 text-xl">
-            {DEMO_QUESTION.options.map((opt) => (
+            {question.options.map((opt) => (
               <button
                 type="button"
                 key={opt.key}
@@ -138,18 +145,25 @@ function QuestionPage() {
             ))}
           </div>
 
-          {!isRevealed ? (
+          {!session?.user ? (
+            <Link
+              to="/auth/signin"
+              className="font-mono text-sm tracking-widest uppercase border-b pb-1 text-slate-300 border-slate-500 hover:text-white hover:border-white transition-colors"
+            >
+              Sign in to reveal answer
+            </Link>
+          ) : !isRevealed ? (
             <button
               type="button"
               onClick={handleReveal}
-              disabled={!selectedKey}
+              disabled={!selectedKey || isPending}
               className={`font-mono text-sm tracking-widest uppercase border-b pb-1 transition-colors ${
-                selectedKey
+                selectedKey && !isPending
                   ? "text-slate-300 border-slate-500 hover:text-white hover:border-white"
                   : "text-slate-700 border-slate-900 cursor-not-allowed"
               }`}
             >
-              Reveal answer
+              {isPending ? "Checking…" : "Reveal answer"}
             </button>
           ) : (
             <div className="animate-fade-up">
@@ -160,85 +174,35 @@ function QuestionPage() {
                   Answer
                 </h2>
                 <p className="text-xl text-white">
-                  {correctOption?.key} · {correctOption?.text}
+                  {result.isCorrect ? "Correct" : "Incorrect"}
+                  {correctOption && (
+                    <>
+                      {" "}
+                      · {correctOption.key} · {correctOption.text}
+                    </>
+                  )}
                 </p>
               </div>
 
-              <div className="mb-24 border-l border-slate-800 pl-6">
-                <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
-                  Why
-                </h2>
-                <div className="text-lg text-slate-400 leading-relaxed space-y-4 max-w-2xl">
-                  <p>{DEMO_QUESTION.explanation.summary}</p>
-                  <ul className="space-y-4 list-decimal list-outside ml-4 mt-6 text-slate-500">
-                    {DEMO_QUESTION.explanation.derivation.map((step, idx) => (
-                      <li key={idx} className="pl-2">
-                        {step}
-                      </li>
-                    ))}
-                  </ul>
+              {result.explanation && (
+                <div className="mb-24 border-l border-slate-800 pl-6">
+                  <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
+                    Why
+                  </h2>
+                  <p className="text-lg text-slate-400 leading-relaxed max-w-2xl whitespace-pre-line">
+                    {result.explanation}
+                  </p>
                 </div>
-              </div>
+              )}
             </div>
           )}
+
+          {error && (
+            <p className="font-mono text-xs text-rose-400 mt-6">
+              Couldn't check your answer. Please try again.
+            </p>
+          )}
         </section>
-
-        {/* Continuation */}
-        {isRevealed && (
-          <section className="border-t border-slate-900 pt-16">
-            <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-8">
-              Continue
-            </h2>
-
-            <div className="flex flex-col space-y-6">
-              <div className="flex flex-col">
-                <span className="text-sm text-slate-600 mb-2">Related questions</span>
-                {DEMO_QUESTION.relatedQuestions.map((rq) => (
-                  <Link
-                    key={rq.slug}
-                    to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
-                    params={{ examSlug, variantSlug, year, subjectSlug, questionSlug: rq.slug }}
-                    className="text-slate-300 hover:text-white transition-colors py-2 flex items-center gap-4"
-                  >
-                    <span className="text-slate-600">→</span> {rq.text}
-                  </Link>
-                ))}
-              </div>
-
-              {DEMO_QUESTION.additionalReadingLinks &&
-                DEMO_QUESTION.additionalReadingLinks.length > 0 && (
-                  <div className="border-t border-slate-800 pt-8">
-                    <span className="text-sm text-slate-600 mb-4 block">
-                      Additional reading resources
-                    </span>
-                    <div className="flex flex-col space-y-2">
-                      {DEMO_QUESTION.additionalReadingLinks.map((link) => (
-                        <a
-                          key={link.url}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 transition-colors py-2 flex items-center gap-4 text-sm hover:underline"
-                        >
-                          <span className="text-slate-600">📖</span> {link.text}
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              <div className="pt-8">
-                <Link
-                  to="/search"
-                  search={{ q: DEMO_QUESTION.topic }}
-                  className="text-slate-300 hover:text-white transition-colors flex items-center gap-4"
-                >
-                  <span className="text-slate-600">→</span> Practice more on {DEMO_QUESTION.topic}
-                </Link>
-              </div>
-            </div>
-          </section>
-        )}
       </main>
     </div>
   );
