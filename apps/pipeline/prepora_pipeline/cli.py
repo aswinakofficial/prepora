@@ -4,11 +4,13 @@ prepora-pipeline — CLI-first per docs/architecture/prepora-next-level-plan.md 
 principle ("CLI-first, HTTP-second"): every stage is independently runnable from here, and a
 future thin FastAPI wrapper calls into the same functions rather than duplicating them.
 
-Currently implements what items 12, 14, and 18 need: `reprocess` (replay stored artifacts through a
-parser, no network access), `prune` (the retention policy), `sync-sources` (load
-connectors/*/source.yaml into the sources table), and `publish` (idempotent, occurrence-aware
-publishing of a single NormalizedQuestion). `run`/`--stage` (the full discover -> publish pipeline)
-is later roadmap work — no discover/extract/normalize stages exist yet to chain together.
+Currently implements what items 12, 14, 18, and 20 need: `reprocess` (replay stored artifacts
+through a parser, no network access), `prune` (the retention policy), `sync-sources` (load
+connectors/*/source.yaml into the sources table), `publish` (idempotent, occurrence-aware
+publishing of a single NormalizedQuestion), and `dedupe-check` (report whether a NormalizedQuestion
+is a duplicate, near-duplicate, or unique, without publishing it). `run`/`--stage` (the full
+discover -> publish pipeline) is later roadmap work — no discover/extract/normalize stages exist
+yet to chain together.
 """
 import argparse
 import dataclasses
@@ -25,6 +27,7 @@ from prepora_pipeline.core import (
     reprocess_source,
     sync_sources_from_yaml,
 )
+from prepora_pipeline.stages.dedupe import check_duplicate
 from prepora_pipeline.stages.publish import PublishError, publish_question
 
 
@@ -84,6 +87,14 @@ def cmd_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dedupe_check(args: argparse.Namespace) -> int:
+    raw = sys.stdin.read() if args.file in (None, "-") else open(args.file, encoding="utf-8").read()
+    normalized = NormalizedQuestion.model_validate_json(raw)
+    decision = check_duplicate(normalized)
+    print(json.dumps(dataclasses.asdict(decision), indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
 
@@ -117,6 +128,15 @@ def main(argv: list[str] | None = None) -> int:
         "--file", default="-", help="Path to a NormalizedQuestion JSON file, or '-' for stdin."
     )
     publish_parser.set_defaults(func=cmd_publish)
+
+    dedupe_check_parser = subparsers.add_parser(
+        "dedupe-check",
+        help="Report whether a NormalizedQuestion (JSON) is a duplicate, without publishing it.",
+    )
+    dedupe_check_parser.add_argument(
+        "--file", default="-", help="Path to a NormalizedQuestion JSON file, or '-' for stdin."
+    )
+    dedupe_check_parser.set_defaults(func=cmd_dedupe_check)
 
     args = parser.parse_args(argv)
     return args.func(args)

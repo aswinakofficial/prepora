@@ -14,7 +14,7 @@ import {
   sources,
   users,
 } from "@prepora/db/schema";
-import { count, desc, eq, ilike, sql } from "drizzle-orm";
+import { count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure } from "../context.js";
 
@@ -330,30 +330,39 @@ export const adminRouter = {
         .orderBy(desc(scrapedQuestions.createdAt))
         .limit(30);
 
+      // docs/roadmap/engineering-roadmap.md item 20: delegates to apps/pipeline's dedupe stage —
+      // the one deduplication implementation — instead of this route's own ilike-based check,
+      // which only ever compared a scraped item's first 30 characters against questions.questionText
+      // with no exam/year context, so it couldn't tell a real duplicate from the same question
+      // legitimately reappearing in a different exam or year.
       const items = await Promise.all(
         pending.map(async (row) => {
-          let duplicates = 0;
           let parsedData: any = row.parsedData;
           if (typeof parsedData === "string") {
             try {
               parsedData = JSON.parse(parsedData);
             } catch (_e) {}
           }
+          const meta = parsedData?.metadata || {};
           const elements = parsedData?.extractedElements || [];
-          if (elements.length > 0) {
-            const first = elements[0];
-            if (first?.questionText) {
-              const similar = await db
-                .select({ id: questions.id })
-                .from(questions)
-                .where(ilike(questions.questionText, `%${first.questionText.substring(0, 30)}%`))
-                .limit(1);
-              if (similar.length > 0) duplicates++;
+          const first = elements[0];
+
+          let hasCollision = false;
+          if (first?.questionText && first?.options && first?.answer) {
+            const normalized = reviewElementToNormalizedQuestion(first, meta, 1);
+            const res = await fetchPipeline("/dedupe/check", {
+              method: "POST",
+              body: JSON.stringify(normalized),
+            });
+            if (res.ok) {
+              const decision = (await res.json()) as { outcome: string };
+              hasCollision = decision.outcome !== "unique";
             }
           }
+
           return {
             ...row,
-            hasCollision: duplicates > 0,
+            hasCollision,
           };
         }),
       );

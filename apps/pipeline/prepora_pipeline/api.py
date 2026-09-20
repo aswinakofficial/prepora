@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException
 
 from .contracts import NormalizedQuestion
 from .core.security import require_service_token
+from .stages.dedupe import check_duplicate
 from .stages.publish import PublishError, publish_question
 
 load_dotenv()
@@ -36,3 +37,14 @@ async def publish(normalized: NormalizedQuestion):
     except PublishError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return dataclasses.asdict(result)
+
+
+@app.post("/dedupe/check")
+async def dedupe_check(normalized: NormalizedQuestion):
+    """
+    docs/roadmap/engineering-roadmap.md item 20: the one deduplication implementation, reachable
+    over HTTP for callers (packages/api's admin.router.ts) that used to run their own, weaker
+    ilike-based check directly against the database instead.
+    """
+    decision = check_duplicate(normalized)
+    return dataclasses.asdict(decision)

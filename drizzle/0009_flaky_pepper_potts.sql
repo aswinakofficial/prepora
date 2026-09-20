@@ -1,0 +1,1 @@
+CREATE INDEX "question_sets_subject_id_idx" ON "question_sets" USING btree ("subject_id");

@@ -19,11 +19,10 @@ lower-risk, generic taxonomy and are created on demand if missing.
 Reusing an existing canonical question when the *same content* reappears under a different
 stable_content_id (a different exam year, e.g.) is exact-match only here, via
 `questions.content_hash` — the same normalize+hash algorithm as
-packages/content/src/duplicates.ts's contentHash(). Real near-duplicate detection across
-genuinely different phrasings of the same question is
-docs/roadmap/engineering-roadmap.md item 20's job, not this one's — this stage's own tests only
-require exact-text reuse, which is what "the same question in two exam years produces one question
-and two occurrences" actually needs.
+packages/content/src/duplicates.ts's contentHash(). Deciding *whether* a match should be reused,
+absorbed as an in-paper repeat, or refused as an unconfirmed near-duplicate is
+docs/roadmap/engineering-roadmap.md item 20's job (stages/dedupe.py) — this stage calls
+check_duplicate() and trusts its answer rather than re-deciding on its own.
 """
 from dataclasses import dataclass
 
@@ -36,6 +35,8 @@ from prepora_pipeline.contracts import (
 )
 
 from ..core.db import get_db_connection
+from .content_hash import content_hash
+from .dedupe import check_duplicate
 from .stable_id import derive_question_set_slug, derive_stable_content_id
 from .validate import validate_question
 
@@ -51,41 +52,7 @@ class PublishResult:
     question_set_id: str
     question_created: bool
     occurrence_created: bool
-
-
-def content_hash(question_text: str) -> str:
-    """
-    Port of packages/content/src/duplicates.ts's contentHash(): lowercase, collapse whitespace,
-    strip punctuation, then a djb2 hash rendered in base36 — deliberately the exact same algorithm
-    so "identical content" means the same thing in both languages. Verified against the TS
-    implementation for plain-ASCII input, which is what both are actually exercised against today.
-
-    Known divergence: JS's `\\w` in `[^\\w\\s]` is ASCII-only, so it strips accented/non-Latin
-    letters entirely; Python's str.isalnum() is Unicode-aware and keeps them. "café" normalizes to
-    "caf" in TS but "café" in Python, producing different hashes for identical non-ASCII text. Not
-    fixed here — no content in either pipeline is non-ASCII yet, and picking a single correct
-    Unicode-normalization behavior for both is a real design decision, not a one-line fix.
-    """
-    normalized = " ".join(question_text.lower().split())
-    normalized = "".join(ch for ch in normalized if ch.isalnum() or ch.isspace())
-    normalized = normalized.strip()
-
-    h = 5381
-    for ch in normalized:
-        h = ((h << 5) + h) ^ ord(ch)
-        h &= 0xFFFFFFFF
-    return _to_base36(h)
-
-
-def _to_base36(n: int) -> str:
-    if n == 0:
-        return "0"
-    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-    out = []
-    while n:
-        n, rem = divmod(n, 36)
-        out.append(digits[rem])
-    return "".join(reversed(out))
+    dedupe_outcome: str
 
 
 def _humanize(slug: str) -> str:
@@ -105,6 +72,16 @@ def publish_question(normalized: NormalizedQuestion) -> PublishResult:
         raise PublishError(f"Question failed the quality gate ({reasons}).")
     validated = report.validated
     assert validated is not None  # guaranteed whenever report.valid is True
+
+    # docs/roadmap/engineering-roadmap.md item 20: a near-duplicate is never auto-published, no
+    # matter how confident validate_question was — "never merge silently" applies here too.
+    # Exact duplicates (in or across question sets) are allowed through: publish_question's own
+    # content_hash lookup below is what actually reuses the canonical question or absorbs an
+    # in-set repeat as a no-op occurrence; this decision is what makes that reuse an intentional,
+    # reportable outcome rather than an unexamined side effect.
+    dedupe_decision = check_duplicate(validated)
+    if dedupe_decision.outcome == "near_duplicate":
+        raise PublishError(f"Question failed the deduplication gate ({dedupe_decision.reason})")
 
     conn = get_db_connection()
     try:
@@ -151,6 +128,7 @@ def publish_question(normalized: NormalizedQuestion) -> PublishResult:
         question_set_id=question_set_id,
         question_created=question_created,
         occurrence_created=occurrence_created,
+        dedupe_outcome=dedupe_decision.outcome,
     )
 
 

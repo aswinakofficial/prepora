@@ -212,6 +212,10 @@ export const questionSets = pgTable(
     index("question_sets_slug_idx").on(t.slug),
     index("question_sets_exam_variant_id_idx").on(t.examVariantId),
     index("question_sets_exam_session_id_idx").on(t.examSessionId),
+    // Backs the near-duplicate scan in apps/pipeline/prepora_pipeline/stages/dedupe.py
+    // (docs/roadmap/engineering-roadmap.md item 20), which buckets candidates by subject before
+    // running Levenshtein so it never has to compare against the whole corpus.
+    index("question_sets_subject_id_idx").on(t.subjectId),
   ],
 );
 

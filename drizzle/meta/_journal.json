@@ -64,6 +64,13 @@
       "when": 1789872717091,
       "tag": "0008_chief_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789880556290,
+      "tag": "0009_flaky_pepper_potts",
+      "breakpoints": true
     }
   ]
 }
