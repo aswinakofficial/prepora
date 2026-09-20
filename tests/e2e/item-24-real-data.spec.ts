@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { getDb } from "@prepora/db";
 import {
+  attempts,
   contributions,
   examSessions,
   exams,
@@ -149,8 +150,10 @@ test.describe("subjects/$subjectSlug — real data, honest empty state", () => {
   });
 });
 
-test.describe("question detail page — real data, auth-gated reveal", () => {
-  test("a real published question renders and prompts sign-in to reveal", async ({ page }) => {
+test.describe("question detail page — real data, anonymous reveal", () => {
+  test("a real published question renders and an anonymous visitor can reveal the answer", async ({
+    page,
+  }) => {
     const db = getDb();
     const marker = randomUUID().slice(0, 8);
 
@@ -221,12 +224,25 @@ test.describe("question detail page — real data, auth-gated reveal", () => {
       );
       await expect(page.getByText(questionText)).toBeVisible();
       await expect(page.getByText("Correct answer")).toBeVisible();
-      await expect(page.getByText(/sign in to reveal answer/i)).toBeVisible();
+
+      // docs/roadmap/engineering-roadmap.md item 25: submitAnswer is public now, so an anonymous
+      // visitor can reveal the answer directly — no sign-in gate.
+      await page.getByText("Correct answer").click();
+      await page.getByRole("button", { name: /reveal answer/i }).click();
+      await expect(page.getByText(/^Correct/)).toBeVisible({ timeout: 10_000 });
     } finally {
-      await db.delete(questionOccurrences).where(eq(questionOccurrences.questionId, question.id));
-      await db.delete(questionAnswers).where(eq(questionAnswers.questionId, question.id));
-      await db.delete(questionOptions).where(eq(questionOptions.questionId, question.id));
-      await db.delete(questions).where(eq(questions.id, question.id));
+      // docs/roadmap/engineering-roadmap.md item 25: revealing an answer now writes a real
+      // attempts row (questions.submitAnswer), which must be cleared before the question it
+      // references can be deleted (attempts.question_id has a FK to questions.id). Retried: under
+      // parallel test load the attempts insert (fired by the browser's mutation, on a separate
+      // connection from this cleanup) can land a beat after the UI already shows the result.
+      await expect(async () => {
+        await db.delete(attempts).where(eq(attempts.questionId, question.id));
+        await db.delete(questionOccurrences).where(eq(questionOccurrences.questionId, question.id));
+        await db.delete(questionAnswers).where(eq(questionAnswers.questionId, question.id));
+        await db.delete(questionOptions).where(eq(questionOptions.questionId, question.id));
+        await db.delete(questions).where(eq(questions.id, question.id));
+      }).toPass({ timeout: 10_000 });
       await db.delete(questionSets).where(eq(questionSets.id, set.id));
       await db.delete(subjects).where(eq(subjects.id, subject.id));
       await db.delete(examSessions).where(eq(examSessions.id, session.id));
@@ -300,11 +316,22 @@ test.describe("admin contributions — real submit and real admin review", () =>
     try {
       // Real public submission through contribute.tsx.
       await page.goto("/contribute");
-      await page.getByPlaceholder("e.g. Kerala PSC").fill(`E2E Authority ${marker}`);
-      await page
-        .getByPlaceholder(/Question 1/)
-        .fill(`# ${title}\n\nWhat is the e2e marker?\n\nA) ${marker}\n\n**Answer:** A`);
-      await page.getByRole("button", { name: /execute upload/i }).click();
+
+      // The dev server compiles this route's client bundle on first visit, which can take longer
+      // than a single fill-then-click allows for — filling before hydration attaches React's
+      // onChange sets the DOM value but not component state, leaving the submit button disabled
+      // forever (same class of race documented in tests/e2e/search.spec.ts). Retry the whole
+      // fill sequence until the button actually becomes enabled.
+      const executeUploadButton = page.getByRole("button", { name: /execute upload/i });
+      await expect(async () => {
+        await page.getByPlaceholder("e.g. Kerala PSC").fill(`E2E Authority ${marker}`);
+        await page
+          .getByPlaceholder(/Question 1/)
+          .fill(`# ${title}\n\nWhat is the e2e marker?\n\nA) ${marker}\n\n**Answer:** A`);
+        await expect(executeUploadButton).toBeEnabled({ timeout: 2000 });
+      }).toPass({ timeout: 20_000 });
+
+      await executeUploadButton.click();
       await expect(page.getByText(/submission received/i)).toBeVisible({ timeout: 10_000 });
 
       // Real admin review of that same real row.

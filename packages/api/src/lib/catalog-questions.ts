@@ -168,7 +168,7 @@ export interface QuestionWithAnswer {
   explanation: string | null;
   difficulty: string | null;
   topicName: string | null;
-  options: { key: string; text: string }[];
+  options: { id: string; key: string; text: string }[];
   correctKey: string | null;
 }
 
@@ -210,7 +210,9 @@ export async function loadQuestionsWithAnswers(
       explanation: row.explanation,
       difficulty: row.difficulty,
       topicName: row.topic?.name ?? null,
-      options: sortedOptions.map((o) => ({ key: o.optionKey, text: o.optionText })),
+      // docs/roadmap/engineering-roadmap.md item 25: `id` is included so callers can pass a real
+      // selectedOptionId straight into questions.submitAnswer instead of only having the display key.
+      options: sortedOptions.map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
       correctKey: correctOption?.optionKey ?? null,
     });
   }

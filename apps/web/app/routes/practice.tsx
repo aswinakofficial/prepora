@@ -1,13 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen, Clock, ExternalLink, Flag, Sparkles, Zap } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import {
   type AdditionalReadingResource,
   extractLabeledSection,
   mergeReadingResources,
 } from "../../lib/additional-reading";
+import { getAnonymousSessionId } from "../../lib/anonymous-session";
 import { orpc } from "../../lib/orpc";
 
 const practiceSearchSchema = z.object({
@@ -37,7 +38,7 @@ type Stage = "setup" | "active" | "results";
 interface Question {
   id: string;
   text: string;
-  options: { key: string; text: string }[];
+  options: { id: string; key: string; text: string }[];
   correctKey: string;
   explanation: string;
   topic: string;
@@ -78,7 +79,12 @@ function getQuestionResolution(question: Question) {
   });
 
   return {
-    explanation: extracted.explanation || question.explanation,
+    // docs/roadmap/engineering-roadmap.md item 25: a real published question can genuinely have
+    // no explanation (the column is nullable) — this used to fall through to
+    // `question.explanation` (null) whenever `extracted.explanation` was also falsy, and
+    // ResolutionText's `text.split(...)` crashed on a null prop. Fixture data always had a
+    // non-empty explanation, so this never surfaced before real data flowed through here.
+    explanation: extracted.explanation || question.explanation || "",
     additionalReadings,
   };
 }
@@ -178,6 +184,24 @@ function PracticePage() {
 
   const activeQuestions: Question[] = (realExamData?.questions as any) ?? [];
 
+  // docs/roadmap/engineering-roadmap.md item 25: results now persist server-side instead of
+  // living only in this component's React state. `correctKey` on each question is still sent by
+  // exams.getBySlug and still drives this page's *immediate* UI feedback (unchanged from item 24,
+  // deliberately — see catalog-questions.ts's loadQuestionsWithAnswers docstring), but the
+  // authoritative, persisted record of what happened comes from the server-verified
+  // questions.submitAnswer call fired alongside it. An anonymous sessionId (persisted in
+  // localStorage) stands in for a signed-in userId so practice works signed-out and accumulates
+  // across visits from the same browser.
+  const anonymousSessionId = useMemo(() => getAnonymousSessionId(), []);
+  const [practiceSessionId, setPracticeSessionId] = useState<string | null>(null);
+  const { mutate: startPracticeSession } = useMutation(
+    orpc.questions.startPracticeSession.mutationOptions(),
+  );
+  const { mutate: submitAnswer } = useMutation(orpc.questions.submitAnswer.mutationOptions());
+  const { mutate: completePracticeSession } = useMutation(
+    orpc.questions.completePracticeSession.mutationOptions(),
+  );
+
   useEffect(() => {
     if (examSlug) {
       setStage("active");
@@ -197,16 +221,54 @@ function PracticePage() {
     return () => clearInterval(interval);
   }, [stage]);
 
+  // Created once real questions are known, so totalQuestions is accurate — not on the setup
+  // screen's "INITIALIZE SEQUENCE" click, which fires before the exam query has necessarily
+  // resolved.
+  useEffect(() => {
+    if (stage === "active" && activeQuestions.length > 0 && !practiceSessionId) {
+      startPracticeSession(
+        { mode, totalQuestions: activeQuestions.length, sessionId: anonymousSessionId },
+        { onSuccess: (res) => setPracticeSessionId(res.id) },
+      );
+    }
+  }, [
+    stage,
+    activeQuestions.length,
+    practiceSessionId,
+    mode,
+    anonymousSessionId,
+    startPracticeSession,
+  ]);
+
   const currentQ = activeQuestions[currentIndex] || activeQuestions[0];
+
+  // Fire-and-forget: keeps the interaction optimistic (the UI never waits on this) while still
+  // giving every answer a real, server-verified attempts row.
+  const recordAttempt = (question: Question, optionKey: string) => {
+    const option = question.options.find((o) => o.key === optionKey);
+    if (!option) return;
+    submitAnswer({
+      id: question.id,
+      selectedOptionId: option.id,
+      sessionId: anonymousSessionId,
+      practiceSessionId: practiceSessionId ?? undefined,
+    });
+  };
 
   const handleSelectOption = (key: string) => {
     if (mode === "practice" && submitted[currentQ.id]) return;
     setAnswers((prev) => ({ ...prev, [currentQ.id]: key }));
+    // Mock mode has no separate "check" step (correctness is withheld until the results screen —
+    // see the mode description on the setup screen), so selecting an option IS the commit moment;
+    // practice mode instead records the attempt from handleCheckAnswer, once the user has actually
+    // asked to see whether they were right.
+    if (mode === "mock") recordAttempt(currentQ, key);
   };
 
   const handleCheckAnswer = () => {
     if (answers[currentQ.id]) {
       setSubmitted((prev) => ({ ...prev, [currentQ.id]: true }));
+      recordAttempt(currentQ, answers[currentQ.id]);
     }
   };
 
@@ -224,6 +286,20 @@ function PracticePage() {
       }
     });
     return { correct, attempted, total: activeQuestions.length };
+  };
+
+  const handleFinishSession = () => {
+    if (practiceSessionId) {
+      const { correct, attempted, total } = calculateScore();
+      completePracticeSession({
+        id: practiceSessionId,
+        correct,
+        incorrect: attempted - correct,
+        skipped: total - attempted,
+        timeTakenSeconds: timerSeconds,
+      });
+    }
+    setStage("results");
   };
 
   const formatTime = (secs: number) => {
@@ -471,7 +547,7 @@ function PracticePage() {
 
             <button
               type="button"
-              onClick={() => setStage("results")}
+              onClick={handleFinishSession}
               className="px-4 py-1.5 border border-slate-700 hover:border-white text-xs font-mono uppercase tracking-widest text-slate-300 hover:text-black hover:bg-white transition-colors"
             >
               TERMINATE
@@ -592,9 +668,10 @@ function PracticePage() {
                             <button
                               type="button"
                               key={opt.key}
-                              onClick={() =>
-                                setLearnAnswers((prev) => ({ ...prev, [q.id]: opt.key }))
-                              }
+                              onClick={() => {
+                                setLearnAnswers((prev) => ({ ...prev, [q.id]: opt.key }));
+                                recordAttempt(q, opt.key);
+                              }}
                               className={`w-full p-4 sm:p-5 border flex items-center justify-between text-left transition-all group ${borderStyle}`}
                             >
                               <div className="flex items-center gap-4">
@@ -803,7 +880,7 @@ function PracticePage() {
                 ) : isLastQuestion ? (
                   <button
                     type="button"
-                    onClick={() => setStage("results")}
+                    onClick={handleFinishSession}
                     className="px-8 py-3 border border-emerald-500 bg-emerald-950/40 text-emerald-200 text-[10px] uppercase tracking-widest transition-colors hover:bg-emerald-400 hover:text-black hover:border-emerald-400 font-mono flex items-center gap-2"
                   >
                     SUBMIT SIMULATION →
@@ -972,6 +1049,7 @@ function PracticePage() {
                   setAnswers({});
                   setSubmitted({});
                   setFlagged({});
+                  setPracticeSessionId(null);
                 }}
                 className="w-full p-6 text-left border border-slate-700 hover:border-white transition-colors group flex items-center justify-between"
               >

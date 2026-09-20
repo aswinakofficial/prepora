@@ -3,7 +3,8 @@ import { getDb } from "@prepora/db";
 import { questions } from "@prepora/db/schema";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, publicProcedure } from "../context.js";
+import { publicProcedure } from "../context.js";
+import { createPracticeSession, finalizePracticeSession, recordAttempt } from "../lib/attempts.js";
 import { findPublishedQuestionByPath } from "../lib/catalog-questions.js";
 
 export const questionsRouter = {
@@ -49,7 +50,7 @@ export const questionsRouter = {
         text: q.questionText,
         options: [...q.options]
           .sort((a, b) => a.sequence - b.sequence)
-          .map((o) => ({ key: o.optionKey, text: o.optionText })),
+          .map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
         topic: match.topicName,
       };
     }),
@@ -88,7 +89,14 @@ export const questionsRouter = {
       return results;
     }),
 
-  submitAnswer: protectedProcedure
+  // docs/roadmap/engineering-roadmap.md item 25: scoring is server-authoritative and every
+  // submission now writes a real `attempts` row — previously this procedure computed isCorrect
+  // and returned it without persisting anything (see its own prior comment: "Here you would
+  // typically log the attempt... For now we just return the result"). Downgraded from
+  // protectedProcedure to publicProcedure so signed-out practice works: an anonymous caller sends
+  // `sessionId` (a client-generated id persisted in localStorage) instead of relying on
+  // context.user, so the attempt can still be attributed and later claimed on sign-in.
+  submitAnswer: publicProcedure
     .route({
       method: "POST",
       path: "/questions/{id}/submit",
@@ -98,30 +106,69 @@ export const questionsRouter = {
       z.object({
         id: z.string(),
         selectedOptionId: z.string(),
+        sessionId: z.string().optional(),
+        practiceSessionId: z.string().optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const db = getDb();
+      const result = await recordAttempt(db, {
+        questionId: input.id,
+        selectedOptionId: input.selectedOptionId,
+        userId: context.user?.id,
+        sessionId: input.sessionId,
+        practiceSessionId: input.practiceSessionId,
+      });
+      if (!result) throw new ORPCError("NOT_FOUND", { message: "Question not found" });
+      return result;
+    }),
+
+  // A practiceSessions row created when a real practice/mock run starts, so attempts can be
+  // grouped into a session (`attempts.practiceSessionId`) and the run's own tallies persist past a
+  // refresh instead of living only in practice.tsx's React state.
+  startPracticeSession: publicProcedure
+    .route({
+      method: "POST",
+      path: "/practice-sessions",
+      summary: "Start a practice or mock session",
+    })
+    .input(
+      z.object({
+        mode: z.enum(["practice", "mock"]),
+        questionSetId: z.string().optional(),
+        totalQuestions: z.number(),
+        sessionId: z.string().optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const db = getDb();
+      return createPracticeSession(db, {
+        mode: input.mode,
+        questionSetId: input.questionSetId,
+        totalQuestions: input.totalQuestions,
+        userId: context.user?.id,
+        sessionId: input.sessionId,
+      });
+    }),
+
+  completePracticeSession: publicProcedure
+    .route({
+      method: "POST",
+      path: "/practice-sessions/{id}/complete",
+      summary: "Finalize a practice or mock session",
+    })
+    .input(
+      z.object({
+        id: z.string(),
+        correct: z.number(),
+        incorrect: z.number(),
+        skipped: z.number(),
+        timeTakenSeconds: z.number(),
       }),
     )
     .handler(async ({ input }) => {
       const db = getDb();
-
-      const q = await db.query.questions.findFirst({
-        where: eq(questions.id, input.id),
-        with: {
-          answers: true,
-        },
-      });
-
-      if (!q) throw new ORPCError("NOT_FOUND", { message: "Question not found" });
-
-      const correctAnswer = q.answers.find((a) => a.isCorrect);
-      const isCorrect = correctAnswer?.correctOptionId === input.selectedOptionId;
-
-      // Here you would typically log the attempt into userAnalytics or progression tables
-      // For now we just return the result
-      return {
-        questionId: q.id,
-        isCorrect,
-        correctOptionId: correctAnswer?.correctOptionId,
-        explanation: q.explanation,
-      };
+      await finalizePracticeSession(db, input);
+      return { id: input.id };
     }),
 };

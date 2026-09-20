@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient } from "../../../lib/auth-client";
+import { getAnonymousSessionId } from "../../../lib/anonymous-session";
 import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute(
@@ -28,11 +28,17 @@ export const Route = createFileRoute(
 // reading" sections that never had a real backing model. It now resolves the real question via
 // questions.getByPath and reveals the answer through the existing, server-verified submitAnswer
 // mutation; the unbacked sections have been removed rather than kept as placeholder content.
+//
+// docs/roadmap/engineering-roadmap.md item 25: submitAnswer is public now (it persists a real
+// `attempts` row via userId or an anonymous sessionId), so the "sign in to reveal" gate this page
+// had is gone — anonymous visitors can reveal answers too. This also fixes a real bug: selection
+// and the correct-answer lookup were comparing option *keys* ("A") against `selectedOptionId`/
+// `correctOptionId`, which are option *ids* — they could never have matched. Options only gained a
+// real `id` field in this item; before that there was nothing correct to compare against.
 
 function QuestionPage() {
   const { examSlug, variantSlug, year, subjectSlug, questionSlug } = Route.useParams();
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const { data: session } = authClient.useSession();
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
 
   const examName = examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -50,13 +56,17 @@ function QuestionPage() {
   } = useMutation(orpc.questions.submitAnswer.mutationOptions());
 
   const handleReveal = () => {
-    if (selectedKey && question) {
-      submitAnswer({ id: question.id, selectedOptionId: selectedKey });
+    if (selectedOptionId && question) {
+      submitAnswer({
+        id: question.id,
+        selectedOptionId,
+        sessionId: getAnonymousSessionId(),
+      });
     }
   };
 
   const isRevealed = !!result;
-  const correctOption = question?.options.find((o) => o.key === result?.correctOptionId);
+  const correctOption = question?.options.find((o) => o.id === result?.correctOptionId);
 
   if (isLoading) {
     return (
@@ -116,8 +126,8 @@ function QuestionPage() {
             {question.options.map((opt) => (
               <button
                 type="button"
-                key={opt.key}
-                onClick={() => !isRevealed && setSelectedKey(opt.key)}
+                key={opt.id}
+                onClick={() => !isRevealed && setSelectedOptionId(opt.id)}
                 disabled={isRevealed}
                 className={`flex text-left transition-colors group ${
                   isRevealed ? "cursor-default" : "cursor-pointer"
@@ -125,7 +135,7 @@ function QuestionPage() {
               >
                 <span
                   className={`font-mono w-12 shrink-0 ${
-                    selectedKey === opt.key
+                    selectedOptionId === opt.id
                       ? "text-white"
                       : "text-slate-600 group-hover:text-slate-400"
                   }`}
@@ -134,7 +144,7 @@ function QuestionPage() {
                 </span>
                 <span
                   className={`${
-                    selectedKey === opt.key
+                    selectedOptionId === opt.id
                       ? "text-white"
                       : "text-slate-400 group-hover:text-slate-300"
                   }`}
@@ -145,20 +155,13 @@ function QuestionPage() {
             ))}
           </div>
 
-          {!session?.user ? (
-            <Link
-              to="/auth/signin"
-              className="font-mono text-sm tracking-widest uppercase border-b pb-1 text-slate-300 border-slate-500 hover:text-white hover:border-white transition-colors"
-            >
-              Sign in to reveal answer
-            </Link>
-          ) : !isRevealed ? (
+          {!isRevealed ? (
             <button
               type="button"
               onClick={handleReveal}
-              disabled={!selectedKey || isPending}
+              disabled={!selectedOptionId || isPending}
               className={`font-mono text-sm tracking-widest uppercase border-b pb-1 transition-colors ${
-                selectedKey && !isPending
+                selectedOptionId && !isPending
                   ? "text-slate-300 border-slate-500 hover:text-white hover:border-white"
                   : "text-slate-700 border-slate-900 cursor-not-allowed"
               }`}
