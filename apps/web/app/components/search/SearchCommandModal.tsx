@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type React from "react";
 import { useEffect, useState } from "react";
+import { trackEvent } from "../../../lib/analytics";
 import { orpc } from "../../../lib/orpc";
 
 interface SearchCommandModalProps {
@@ -23,6 +24,15 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
     const timer = setTimeout(() => setDebouncedQuery(query.trim()), DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [query]);
+
+  // docs/roadmap/engineering-roadmap.md item 27: fires once per debounced query, alongside (not
+  // instead of) search_queries logging (item 23) — analyticsEvents is the unified product-events
+  // stream the admin dashboard reads; search_queries stays the richer, search-specific record.
+  useEffect(() => {
+    if (debouncedQuery.length > 0) {
+      trackEvent("search", { meta: { q: debouncedQuery } });
+    }
+  }, [debouncedQuery]);
 
   const { data } = useQuery({
     ...orpc.search.query.queryOptions({ input: { q: debouncedQuery, limit: 5 } }),
@@ -57,14 +67,15 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
     }
   };
 
-  const handleResultClick = (resultId: string) => {
+  const handleResultClick = (resultId: string, entityType: "exam" | "topic" | "question") => {
     if (data?.searchQueryId) {
       logClick({ searchQueryId: data.searchQueryId, resultId });
     }
+    trackEvent("result_click", { entityType, entityId: resultId });
   };
 
   const handleSelectExam = (slug: string, resultId: string) => {
-    handleResultClick(resultId);
+    handleResultClick(resultId, "exam");
     navigate({ to: `/exams/${slug}` as any });
     onClose();
   };
@@ -146,7 +157,7 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
                     type="button"
                     key={topic.id}
                     onClick={() => {
-                      handleResultClick(topic.id);
+                      handleResultClick(topic.id, "topic");
                       navigate({ to: "/topics/$topicSlug", params: { topicSlug: topic.slug } });
                       onClose();
                     }}
@@ -177,7 +188,7 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
                       type="button"
                       key={q.id}
                       onClick={() => {
-                        handleResultClick(q.id);
+                        handleResultClick(q.id, "question");
                         if (canLink) {
                           navigate({
                             to: "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug",

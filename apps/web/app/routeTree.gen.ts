@@ -28,6 +28,7 @@ import { Route as AdminSettingsImport } from './routes/admin/settings'
 import { Route as AdminScrapingImport } from './routes/admin/scraping'
 import { Route as AdminReviewImport } from './routes/admin/review'
 import { Route as AdminContributionsImport } from './routes/admin/contributions'
+import { Route as AdminAnalyticsImport } from './routes/admin/analytics'
 import { Route as ExamsExamSlugIndexImport } from './routes/exams/$examSlug/index'
 import { Route as ExamsExamSlugSubjectsSubjectSlugImport } from './routes/exams/$examSlug/subjects/$subjectSlug'
 import { Route as QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugImport } from './routes/questions/$examSlug.$variantSlug.$year.$subjectSlug.$questionSlug'
@@ -136,6 +137,12 @@ const AdminContributionsRoute = AdminContributionsImport.update({
   getParentRoute: () => AdminRoute,
 } as any)
 
+const AdminAnalyticsRoute = AdminAnalyticsImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AdminRoute,
+} as any)
+
 const ExamsExamSlugIndexRoute = ExamsExamSlugIndexImport.update({
   id: '/exams/$examSlug/',
   path: '/exams/$examSlug/',
@@ -201,6 +208,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsImport
       parentRoute: typeof rootRoute
+    }
+    '/admin/analytics': {
+      id: '/admin/analytics'
+      path: '/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsImport
+      parentRoute: typeof AdminImport
     }
     '/admin/contributions': {
       id: '/admin/contributions'
@@ -306,6 +320,7 @@ declare module '@tanstack/react-router' {
 // Create and export the route tree
 
 interface AdminRouteChildren {
+  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   AdminContributionsRoute: typeof AdminContributionsRoute
   AdminReviewRoute: typeof AdminReviewRoute
   AdminScrapingRoute: typeof AdminScrapingRoute
@@ -314,6 +329,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAnalyticsRoute: AdminAnalyticsRoute,
   AdminContributionsRoute: AdminContributionsRoute,
   AdminReviewRoute: AdminReviewRoute,
   AdminScrapingRoute: AdminScrapingRoute,
@@ -330,6 +346,7 @@ export interface FileRoutesByFullPath {
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
   '/admin/review': typeof AdminReviewRoute
   '/admin/scraping': typeof AdminScrapingRoute
@@ -352,6 +369,7 @@ export interface FileRoutesByTo {
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
   '/admin/review': typeof AdminReviewRoute
   '/admin/scraping': typeof AdminScrapingRoute
@@ -376,6 +394,7 @@ export interface FileRoutesById {
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
   '/admin/review': typeof AdminReviewRoute
   '/admin/scraping': typeof AdminScrapingRoute
@@ -401,6 +420,7 @@ export interface FileRouteTypes {
     | '/practice'
     | '/search'
     | '/settings'
+    | '/admin/analytics'
     | '/admin/contributions'
     | '/admin/review'
     | '/admin/scraping'
@@ -422,6 +442,7 @@ export interface FileRouteTypes {
     | '/practice'
     | '/search'
     | '/settings'
+    | '/admin/analytics'
     | '/admin/contributions'
     | '/admin/review'
     | '/admin/scraping'
@@ -444,6 +465,7 @@ export interface FileRouteTypes {
     | '/practice'
     | '/search'
     | '/settings'
+    | '/admin/analytics'
     | '/admin/contributions'
     | '/admin/review'
     | '/admin/scraping'
@@ -531,6 +553,7 @@ export const routeTree = rootRoute
     "/admin": {
       "filePath": "admin.tsx",
       "children": [
+        "/admin/analytics",
         "/admin/contributions",
         "/admin/review",
         "/admin/scraping",
@@ -549,6 +572,10 @@ export const routeTree = rootRoute
     },
     "/settings": {
       "filePath": "settings.tsx"
+    },
+    "/admin/analytics": {
+      "filePath": "admin/analytics.tsx",
+      "parent": "/admin"
     },
     "/admin/contributions": {
       "filePath": "admin/contributions.tsx",

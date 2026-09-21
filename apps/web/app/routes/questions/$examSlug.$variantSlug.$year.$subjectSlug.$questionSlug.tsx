@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { trackEvent } from "../../../lib/analytics";
 import { getAnonymousSessionId } from "../../../lib/anonymous-session";
 import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
@@ -68,6 +69,12 @@ function QuestionPage() {
     error,
   } = useMutation(orpc.questions.submitAnswer.mutationOptions());
 
+  useEffect(() => {
+    if (question) {
+      trackEvent("question_view", { entityType: "question", entityId: question.id });
+    }
+  }, [question]);
+
   const handleReveal = () => {
     if (selectedOptionId && question) {
       submitAnswer({
@@ -75,6 +82,7 @@ function QuestionPage() {
         selectedOptionId,
         sessionId: getAnonymousSessionId(),
       });
+      trackEvent("answer_reveal", { entityType: "question", entityId: question.id });
     }
   };
 

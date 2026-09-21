@@ -8,6 +8,7 @@ import {
   extractLabeledSection,
   mergeReadingResources,
 } from "../../lib/additional-reading";
+import { trackEvent } from "../../lib/analytics";
 import { getAnonymousSessionId } from "../../lib/anonymous-session";
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
@@ -232,7 +233,12 @@ function PracticePage() {
     if (stage === "active" && activeQuestions.length > 0 && !practiceSessionId) {
       startPracticeSession(
         { mode, totalQuestions: activeQuestions.length, sessionId: anonymousSessionId },
-        { onSuccess: (res) => setPracticeSessionId(res.id) },
+        {
+          onSuccess: (res) => {
+            setPracticeSessionId(res.id);
+            trackEvent("practice_start", { entityType: "practice_session", entityId: res.id });
+          },
+        },
       );
     }
   }, [
@@ -257,6 +263,7 @@ function PracticePage() {
       sessionId: anonymousSessionId,
       practiceSessionId: practiceSessionId ?? undefined,
     });
+    trackEvent("answer_reveal", { entityType: "question", entityId: question.id });
   };
 
   const handleSelectOption = (key: string) => {
@@ -301,6 +308,11 @@ function PracticePage() {
         incorrect: attempted - correct,
         skipped: total - attempted,
         timeTakenSeconds: timerSeconds,
+      });
+      trackEvent("practice_complete", {
+        entityType: "practice_session",
+        entityId: practiceSessionId,
+        meta: { correct, attempted, total, timeTakenSeconds: timerSeconds },
       });
     }
     setStage("results");

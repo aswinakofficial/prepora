@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import { useState } from "react";
+import { trackEvent } from "../../lib/analytics";
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
 
@@ -113,13 +114,20 @@ function ContributePage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 if (tab !== "markdown" || !markdownText.trim()) return;
-                submitContribution({
-                  examSlug: originAuthority || undefined,
-                  examVariantSlug: classification || undefined,
-                  year: year ? Number(year) : undefined,
-                  subjectSlug: domainSector || undefined,
-                  markdownContent: markdownText,
-                });
+                submitContribution(
+                  {
+                    examSlug: originAuthority || undefined,
+                    examVariantSlug: classification || undefined,
+                    year: year ? Number(year) : undefined,
+                    subjectSlug: domainSector || undefined,
+                    markdownContent: markdownText,
+                  },
+                  {
+                    onSuccess: (res) => {
+                      trackEvent("contribution", { entityType: "contribution", entityId: res.id });
+                    },
+                  },
+                );
               }}
               className="space-y-24 max-w-4xl"
             >

@@ -2,7 +2,9 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { zodValidator } from "@tanstack/zod-adapter";
 import type React from "react";
+import { useEffect } from "react";
 import { z } from "zod";
+import { trackEvent } from "../../lib/analytics";
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
 
@@ -43,6 +45,11 @@ function SearchPage() {
   });
   const { mutate: logClick } = useMutation(orpc.search.logClick.mutationOptions());
 
+  // docs/roadmap/engineering-roadmap.md item 27 — see SearchCommandModal.tsx's identical note.
+  useEffect(() => {
+    if (hasQuery) trackEvent("search", { meta: { q } });
+  }, [hasQuery, q]);
+
   const handleSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -52,10 +59,11 @@ function SearchPage() {
     }
   };
 
-  const handleResultClick = (resultId: string) => {
+  const handleResultClick = (resultId: string, entityType: "exam" | "topic" | "question") => {
     if (data?.searchQueryId) {
       logClick({ searchQueryId: data.searchQueryId, resultId });
     }
+    trackEvent("result_click", { entityType, entityId: resultId });
   };
 
   const questions = data?.questions ?? [];
@@ -164,7 +172,7 @@ function SearchPage() {
                           subjectSlug: question.subjectSlug as string,
                           questionSlug: question.slug,
                         }}
-                        onClick={() => handleResultClick(question.id)}
+                        onClick={() => handleResultClick(question.id, "question")}
                         className="group pb-12 mb-12 border-b border-slate-900/50 block"
                       >
                         {content}
@@ -192,7 +200,7 @@ function SearchPage() {
                         key={e.id}
                         to="/exams/$examSlug"
                         params={{ examSlug: e.slug }}
-                        onClick={() => handleResultClick(e.id)}
+                        onClick={() => handleResultClick(e.id, "exam")}
                         className="py-4 border-b border-slate-900/40 text-slate-300 hover:text-white flex gap-4 transition-colors"
                       >
                         <span>{e.name}</span>
@@ -211,7 +219,7 @@ function SearchPage() {
                         key={t.id}
                         to="/topics/$topicSlug"
                         params={{ topicSlug: t.slug }}
-                        onClick={() => handleResultClick(t.id)}
+                        onClick={() => handleResultClick(t.id, "topic")}
                         className="py-4 border-b border-slate-900/40 text-slate-300 hover:text-white flex gap-4 transition-colors"
                       >
                         <span>{t.name}</span>

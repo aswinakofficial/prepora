@@ -1,4 +1,13 @@
-import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  HeadContent,
+  Link,
+  Outlet,
+  Scripts,
+  useRouterState,
+} from "@tanstack/react-router";
+import { useEffect } from "react";
+import { trackEvent } from "../../lib/analytics";
 import { SiteHeader } from "../components/layout/SiteHeader";
 import globalsCss from "../styles/globals.css?url";
 
@@ -30,6 +39,19 @@ import { i18n } from "../../lib/i18n";
 // Ideally queryClient is instantiated per request in SSR, but simplified here for SPA/Client Hydration
 const queryClient = new QueryClient();
 
+// docs/roadmap/engineering-roadmap.md item 27: fires one page_view per route change. Lives in its
+// own component (rather than inline in RootLayout) so the pathname selector only re-renders this
+// tiny tracker, not the whole layout, on every navigation.
+function PageViewTracker() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => {
+    trackEvent("page_view", { entityType: "route", entityId: pathname });
+  }, [pathname]);
+
+  return null;
+}
+
 function RootLayout() {
   return (
     <html lang="en">
@@ -39,6 +61,7 @@ function RootLayout() {
       <body className="bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white">
         <I18nProvider i18n={i18n}>
           <QueryClientProvider client={queryClient}>
+            <PageViewTracker />
             <SiteHeader />
             <main id="main-content">
               <Outlet />

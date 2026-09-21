@@ -1,7 +1,15 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import type { LucideIcon } from "lucide-react";
-import { CheckSquare, ChevronRight, Globe, LayoutDashboard, Settings, Users } from "lucide-react";
+import {
+  BarChart2,
+  CheckSquare,
+  ChevronRight,
+  Globe,
+  LayoutDashboard,
+  Settings,
+  Users,
+} from "lucide-react";
 import { getWebRequest } from "vinxi/http";
 import { requireAdmin } from "../../lib/auth";
 
@@ -80,8 +88,8 @@ const dashboardItem: NavItem = {
 // docs/roadmap/engineering-roadmap.md item 21: grouped into Content/Pipeline/Review, matching the
 // documented admin information architecture — replaces a flat list of eleven destinations, six of
 // which had no route at all. Only real, working routes are listed; a section with no working
-// destination yet (e.g. Analytics) is omitted rather than shown with dead links, until its own
-// roadmap item builds it.
+// destination yet is omitted rather than shown with dead links, until its own roadmap item builds
+// it — Insights/Analytics was the one deferred this way, and now has a real route (item 27).
 const navSections: { label: string; items: NavItem[] }[] = [
   {
     label: "Content",
@@ -94,6 +102,10 @@ const navSections: { label: string; items: NavItem[] }[] = [
   {
     label: "Review",
     items: [{ to: "/admin/review", label: "Scrape Review Queue", icon: CheckSquare }],
+  },
+  {
+    label: "Insights",
+    items: [{ to: "/admin/analytics", label: "Product Analytics", icon: BarChart2 }],
   },
 ];
 

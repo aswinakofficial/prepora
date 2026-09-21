@@ -1,5 +1,6 @@
 import { protectedProcedure, publicProcedure } from "./context.js";
 import { adminRouter } from "./routers/admin.router.js";
+import { analyticsRouter } from "./routers/analytics.router.js";
 import { contributionsRouter } from "./routers/contributions.router.js";
 import { examsRouter } from "./routers/exams.router.js";
 import { questionSetsRouter } from "./routers/question-sets.router.js";
@@ -39,6 +40,7 @@ export const appRouter = {
   subjects: subjectsRouter,
   questionSets: questionSetsRouter,
   contributions: contributionsRouter,
+  analytics: analyticsRouter,
 };
 
 export type AppRouter = typeof appRouter;
