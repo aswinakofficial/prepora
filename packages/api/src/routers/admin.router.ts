@@ -576,7 +576,12 @@ export const adminRouter = {
         const res = await fetchScraper("/health");
         if (res.ok) {
           const body = await res.json().catch(() => ({}));
-          return { status: "online" as const, ...body };
+          // `body` is the scraper's own /health response, which has its own `status` field
+          // (e.g. "healthy") — spreading it after the literal would silently overwrite "online"
+          // with that value, so the frontend's `status === "online"` check (admin/scraping.tsx)
+          // always failed and disabled the scrape buttons even when the scraper was reachable and
+          // fine. `status: "online"` must be applied last so the normalized value always wins.
+          return { ...body, status: "online" as const };
         }
         return { status: "offline" as const, reason: `Scraper returned HTTP ${res.status}` };
       } catch (err: any) {
