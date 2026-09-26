@@ -26,8 +26,10 @@ export const Route = createFileRoute("/exams/$examSlug/")({
 });
 
 import { useQuery } from "@tanstack/react-query";
+import { type CSSProperties, useRef } from "react";
 import { orpc } from "../../../../lib/orpc";
 import { CANONICAL_ORIGIN } from "../../../../lib/site-config";
+import { titleMeasureCh, useThreeLineTitle } from "../../../hooks/useThreeLineTitle";
 
 function ExamPage() {
   const { examSlug } = Route.useParams();
@@ -39,6 +41,9 @@ function ExamPage() {
   const rawName =
     realExam?.name || examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const examName = rawName.replace(/^Exam\s+/i, "");
+  const titleText = examName.toUpperCase();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useThreeLineTitle(titleRef, isLoading ? "" : titleText);
   const _organization = realExam?.organization || "Microsoft Learn";
 
   const sets =
@@ -115,7 +120,7 @@ function ExamPage() {
               <SkeletonRegion label="Loading exam…" className="space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
                   <Skeleton className="w-14 h-14 sm:w-16 sm:h-16 shrink-0" />
-                  <Skeleton className="h-9 sm:h-10 lg:h-12 rounded-md w-3/4 max-w-3xl" />
+                  <Skeleton className="h-9 sm:h-10 lg:h-14 rounded-md w-3/4 max-w-2xl" />
                 </div>
                 <div className="space-y-3">
                   <Skeleton className="h-4 w-full max-w-2xl" />
@@ -134,8 +139,14 @@ function ExamPage() {
                       className="w-14 h-14 sm:w-16 sm:h-16 object-contain shrink-0"
                     />
                   )}
-                  <h1 className="text-3xl sm:text-4xl lg:text-5xl font-normal tracking-tighter text-white leading-[1.1] break-words">
-                    {examName.toUpperCase()}
+                  {/* On large screens the title settles into three balanced lines rather than two
+                      wide, mechanical ones — see hooks/useThreeLineTitle.ts. */}
+                  <h1
+                    ref={titleRef}
+                    style={{ "--title-measure": `${titleMeasureCh(titleText)}ch` } as CSSProperties}
+                    className="lg:max-w-(--title-measure) text-3xl sm:text-4xl lg:text-[3.5rem] font-normal tracking-tighter text-white leading-[1.05] text-balance break-words"
+                  >
+                    {titleText}
                   </h1>
                 </div>
                 {realExam?.description && (
