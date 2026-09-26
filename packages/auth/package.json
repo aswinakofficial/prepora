@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "scripts": {
     "lint": "biome check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@prepora/db": "workspace:*",
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@prepora/config": "workspace:*",
     "@types/node": "^20.0.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }
