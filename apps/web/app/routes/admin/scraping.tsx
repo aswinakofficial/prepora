@@ -165,6 +165,9 @@ function AdminScrapingPage() {
     ...orpc.admin.getScraperHealth.queryOptions(),
     refetchInterval: 15000,
   });
+  // Set outside local development: the whole scraping engine is locked there, and the API never
+  // calls the scraper (packages/api/src/lib/scraping-lock.ts).
+  const scrapingLockedReason = healthData?.status === "locked" ? healthData.reason : null;
   const initialQuestions = routeData || [];
   const [questions, setQuestions] = useState(initialQuestions);
 
@@ -461,24 +464,51 @@ function AdminScrapingPage() {
                         : "text-amber-400"
                   }`}
                 >
-                  <span
-                    className={`w-2 h-2 rounded-full ${healthData?.status === "online" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`}
-                  ></span>
+                  {scrapingLockedReason ? (
+                    <Lock className="w-3 h-3" />
+                  ) : (
+                    <span
+                      className={`w-2 h-2 rounded-full ${healthData?.status === "online" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`}
+                    ></span>
+                  )}
                   {healthData?.status === "online"
                     ? "ONLINE"
                     : healthData?.status === "misconfigured"
                       ? "MISCONFIGURED"
-                      : "OFFLINE"}
+                      : scrapingLockedReason
+                        ? "LOCKED · LOCAL ONLY"
+                        : "OFFLINE"}
                 </span>
               </div>
               <div className="text-[10px] text-slate-600 truncate max-w-[280px]">
                 {healthData?.status === "misconfigured" || healthData?.status === "offline"
                   ? healthData.reason
-                  : "Address and credential are configured server-side (SCRAPER_SERVICE_URL)."}
+                  : scrapingLockedReason
+                    ? "Not called from this environment."
+                    : "Address and credential are configured server-side (SCRAPER_SERVICE_URL)."}
               </div>
             </div>
           </div>
         </div>
+
+        {scrapingLockedReason && (
+          <div
+            role="status"
+            className="mb-12 flex items-start gap-3 border border-amber-900/60 bg-amber-950/30 p-5 font-mono text-xs text-amber-200"
+          >
+            <Lock className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+            <div className="space-y-1.5 leading-relaxed">
+              <p className="uppercase tracking-widest text-amber-300">
+                Scraping is locked in this environment
+              </p>
+              <p>{scrapingLockedReason}</p>
+              <p className="text-amber-200/70">
+                Run scrapes from a local development setup (pnpm dev). Scraped batches reach the
+                review queue there, and published questions appear here. Past runs are listed below.
+              </p>
+            </div>
+          </div>
+        )}
 
         <section className="mb-16">
           <div className="flex justify-between items-center mb-6">
@@ -514,10 +544,8 @@ function AdminScrapingPage() {
                   {isLocked && (
                     <div className="mb-4 flex items-start gap-2 font-mono text-[10px] text-amber-300 border border-amber-900/60 bg-amber-950/30 px-2.5 py-2">
                       <Lock className="w-3.5 h-3.5 shrink-0 mt-px" />
-                      <span>
-                        <span className="uppercase tracking-widest block mb-0.5">Local only</span>
-                        {site.lockedReason}
-                      </span>
+                      {/* The banner above explains why; each card just carries the marker. */}
+                      <span className="uppercase tracking-widest">Local only</span>
                     </div>
                   )}
                   <div>
@@ -588,515 +616,520 @@ function AdminScrapingPage() {
           </div>
         </section>
 
-        <section className="mb-20">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span>
-                02 / Configure Scraper for:{" "}
-                <span className="text-white font-semibold">{selectedWebsite.name}</span>
-              </span>
-            </h2>
-            <span className="font-mono text-[10px] text-slate-500 uppercase">
-              Engine: {selectedWebsite.engine}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-8 p-8 border border-slate-800 bg-slate-950/90 relative">
-              <div className="flex items-center justify-between border-b border-slate-900 pb-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-medium text-white tracking-tight">
-                    {selectedWebsite.name} Ingestion Settings
-                  </h3>
-                  <p className="font-mono text-xs text-slate-500">
-                    Customize target URL, exam discipline, and extraction strategy for{" "}
-                    {selectedWebsite.domain}
-                  </p>
-                </div>
-                <span
-                  className={`font-mono text-[10px] uppercase tracking-widest px-2.5 py-1 border ${selectedWebsite.badgeColor}`}
-                >
-                  {selectedWebsite.badge}
+        {/* Configuration and triggers exist only where scraping can actually run. */}
+        {!scrapingLockedReason && (
+          <section className="mb-20">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>
+                  02 / Configure Scraper for:{" "}
+                  <span className="text-white font-semibold">{selectedWebsite.name}</span>
                 </span>
-              </div>
+              </h2>
+              <span className="font-mono text-[10px] text-slate-500 uppercase">
+                Engine: {selectedWebsite.engine}
+              </span>
+            </div>
 
-              {selectedWebsite.connectorName === "mslearn" && (
-                <div className="p-5 border border-sky-900/60 bg-sky-950/20 mb-8 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-semibold text-sky-400 uppercase tracking-wider flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-sky-400" />
-                        Microsoft Learn Session & Catalog Manager
-                      </h4>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Microsoft Learn practice tests require an active authenticated Microsoft
-                        account session.
-                      </p>
-                    </div>
-                    {msAuthStatusData?.authenticated ? (
-                      <div className="flex items-center gap-2">
-                        <span className="px-3 py-2 bg-emerald-950 border border-emerald-800 text-emerald-400 font-mono text-xs uppercase tracking-wider flex items-center gap-2">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Already Authenticated
-                        </span>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="lg:col-span-8 p-8 border border-slate-800 bg-slate-950/90 relative">
+                <div className="flex items-center justify-between border-b border-slate-900 pb-4 mb-6">
+                  <div>
+                    <h3 className="text-lg font-medium text-white tracking-tight">
+                      {selectedWebsite.name} Ingestion Settings
+                    </h3>
+                    <p className="font-mono text-xs text-slate-500">
+                      Customize target URL, exam discipline, and extraction strategy for{" "}
+                      {selectedWebsite.domain}
+                    </p>
+                  </div>
+                  <span
+                    className={`font-mono text-[10px] uppercase tracking-widest px-2.5 py-1 border ${selectedWebsite.badgeColor}`}
+                  >
+                    {selectedWebsite.badge}
+                  </span>
+                </div>
+
+                {selectedWebsite.connectorName === "mslearn" && (
+                  <div className="p-5 border border-sky-900/60 bg-sky-950/20 mb-8 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-sky-400 uppercase tracking-wider flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-sky-400" />
+                          Microsoft Learn Session & Catalog Manager
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Microsoft Learn practice tests require an active authenticated Microsoft
+                          account session.
+                        </p>
+                      </div>
+                      {msAuthStatusData?.authenticated ? (
+                        <div className="flex items-center gap-2">
+                          <span className="px-3 py-2 bg-emerald-950 border border-emerald-800 text-emerald-400 font-mono text-xs uppercase tracking-wider flex items-center gap-2">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Already Authenticated
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleSignOutMs}
+                            disabled={isSigningOutMs}
+                            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs uppercase tracking-wider border border-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            Sign Out
+                          </button>
+                        </div>
+                      ) : (
                         <button
                           type="button"
-                          onClick={handleSignOutMs}
-                          disabled={isSigningOutMs}
-                          className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs uppercase tracking-wider border border-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                          onClick={handleLaunchMsAuth}
+                          disabled={isAuthenticatingMs}
+                          className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center gap-2"
                         >
-                          <LogOut className="w-3.5 h-3.5" />
-                          Sign Out
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 ${isAuthenticatingMs ? "animate-spin" : ""}`}
+                          />
+                          {isAuthenticatingMs
+                            ? "Authenticating..."
+                            : "Authenticate Microsoft Account"}
                         </button>
+                      )}
+                    </div>
+
+                    {msAuthStatus && (
+                      <div className="p-3 bg-slate-900 border border-slate-800 text-xs font-mono text-sky-300">
+                        {msAuthStatus}
                       </div>
-                    ) : (
+                    )}
+
+                    {msAuthStatusError && (
+                      <div className="p-3 bg-red-950/40 border border-red-900 text-xs font-mono text-red-300">
+                        Could not check Microsoft Learn session status: {msAuthStatusError.message}
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-mono">
+                        Discover practice tests from official Microsoft Learn catalog
+                      </span>
                       <button
                         type="button"
-                        onClick={handleLaunchMsAuth}
-                        disabled={isAuthenticatingMs}
-                        className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center gap-2"
+                        onClick={handleFetchMsCatalog}
+                        disabled={isFetchingCatalog}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs uppercase tracking-wider border border-slate-700 transition-colors flex items-center gap-1.5"
                       >
-                        <RefreshCw
-                          className={`w-3.5 h-3.5 ${isAuthenticatingMs ? "animate-spin" : ""}`}
-                        />
-                        {isAuthenticatingMs
-                          ? "Authenticating..."
-                          : "Authenticate Microsoft Account"}
+                        <Search className="w-3 h-3 text-slate-400" />
+                        {isFetchingCatalog ? "Scanning Catalog..." : "Scan Practice Catalog"}
                       </button>
-                    )}
-                  </div>
-
-                  {msAuthStatus && (
-                    <div className="p-3 bg-slate-900 border border-slate-800 text-xs font-mono text-sky-300">
-                      {msAuthStatus}
                     </div>
-                  )}
 
-                  {msAuthStatusError && (
-                    <div className="p-3 bg-red-950/40 border border-red-900 text-xs font-mono text-red-300">
-                      Could not check Microsoft Learn session status: {msAuthStatusError.message}
-                    </div>
-                  )}
+                    {msCatalog.length > 0 && (
+                      <div className="mt-4 space-y-3 pt-3 border-t border-slate-800">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-3">
+                            <p className="text-[11px] font-mono text-slate-300 uppercase tracking-widest font-semibold">
+                              Discovered Assessments ({msCatalog.length}):
+                            </p>
+                            <span className="px-2.5 py-0.5 bg-sky-900/60 text-sky-300 border border-sky-700/60 font-mono text-[10px] uppercase tracking-wider rounded-full">
+                              {selectedCatalogUrls.length} of {msCatalog.length} Selected
+                            </span>
+                          </div>
 
-                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-mono">
-                      Discover practice tests from official Microsoft Learn catalog
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleFetchMsCatalog}
-                      disabled={isFetchingCatalog}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs uppercase tracking-wider border border-slate-700 transition-colors flex items-center gap-1.5"
-                    >
-                      <Search className="w-3 h-3 text-slate-400" />
-                      {isFetchingCatalog ? "Scanning Catalog..." : "Scan Practice Catalog"}
-                    </button>
-                  </div>
-
-                  {msCatalog.length > 0 && (
-                    <div className="mt-4 space-y-3 pt-3 border-t border-slate-800">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-3">
-                          <p className="text-[11px] font-mono text-slate-300 uppercase tracking-widest font-semibold">
-                            Discovered Assessments ({msCatalog.length}):
-                          </p>
-                          <span className="px-2.5 py-0.5 bg-sky-900/60 text-sky-300 border border-sky-700/60 font-mono text-[10px] uppercase tracking-wider rounded-full">
-                            {selectedCatalogUrls.length} of {msCatalog.length} Selected
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedCatalogUrls.length === msCatalog.length) {
+                                setSelectedCatalogUrls([]);
+                              } else {
+                                setSelectedCatalogUrls(msCatalog.map((item) => item.url));
+                              }
+                            }}
+                            className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                          >
+                            <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
+                            {selectedCatalogUrls.length === msCatalog.length
+                              ? "Deselect All"
+                              : "Select All"}
+                          </button>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (selectedCatalogUrls.length === msCatalog.length) {
-                              setSelectedCatalogUrls([]);
-                            } else {
-                              setSelectedCatalogUrls(msCatalog.map((item) => item.url));
-                            }
-                          }}
-                          className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] uppercase tracking-wider transition-colors flex items-center gap-1.5"
-                        >
-                          <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
-                          {selectedCatalogUrls.length === msCatalog.length
-                            ? "Deselect All"
-                            : "Select All"}
-                        </button>
-                      </div>
-
-                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                        {msCatalog.map((item) => {
-                          const isChecked = selectedCatalogUrls.includes(item.url);
-                          return (
-                            <div
-                              key={item.url}
-                              className={`p-3 bg-slate-900 border flex items-center justify-between gap-4 transition-all ${
-                                isChecked
-                                  ? "border-sky-500/80 bg-sky-950/40 ring-1 ring-sky-500/30"
-                                  : "border-slate-800 hover:border-slate-700 opacity-70"
-                              }`}
-                            >
-                              <label className="flex items-center gap-3 min-w-0 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => {
-                                    setSelectedCatalogUrls((prev) =>
-                                      isChecked
-                                        ? prev.filter((u) => u !== item.url)
-                                        : [...prev, item.url],
-                                    );
-                                  }}
-                                  className="w-4 h-4 rounded border-slate-700 text-sky-500 focus:ring-sky-500/20 bg-slate-950 shrink-0 cursor-pointer"
-                                />
-                                <div className="min-w-0">
-                                  <p className="text-xs text-slate-200 font-medium truncate">
-                                    {item.title}
-                                  </p>
-                                  <p className="text-[10px] font-mono text-slate-400 truncate">
-                                    {item.url}
-                                  </p>
-                                </div>
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setUrl(item.url);
-                                  setTargetExam(`Exam ${item.exam}`);
-                                  setTargetSubject("Microsoft Certification");
-                                }}
-                                className="shrink-0 px-2.5 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 text-[10px] font-mono uppercase tracking-wider transition-colors"
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                          {msCatalog.map((item) => {
+                            const isChecked = selectedCatalogUrls.includes(item.url);
+                            return (
+                              <div
+                                key={item.url}
+                                className={`p-3 bg-slate-900 border flex items-center justify-between gap-4 transition-all ${
+                                  isChecked
+                                    ? "border-sky-500/80 bg-sky-950/40 ring-1 ring-sky-500/30"
+                                    : "border-slate-800 hover:border-slate-700 opacity-70"
+                                }`}
                               >
-                                Target Single
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
+                                <label className="flex items-center gap-3 min-w-0 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      setSelectedCatalogUrls((prev) =>
+                                        isChecked
+                                          ? prev.filter((u) => u !== item.url)
+                                          : [...prev, item.url],
+                                      );
+                                    }}
+                                    className="w-4 h-4 rounded border-slate-700 text-sky-500 focus:ring-sky-500/20 bg-slate-950 shrink-0 cursor-pointer"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-xs text-slate-200 font-medium truncate">
+                                      {item.title}
+                                    </p>
+                                    <p className="text-[10px] font-mono text-slate-400 truncate">
+                                      {item.url}
+                                    </p>
+                                  </div>
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUrl(item.url);
+                                    setTargetExam(`Exam ${item.exam}`);
+                                    setTargetSubject("Microsoft Certification");
+                                  }}
+                                  className="shrink-0 px-2.5 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 text-[10px] font-mono uppercase tracking-wider transition-colors"
+                                >
+                                  Target Single
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
 
-                      <div className="pt-2">
-                        <button
-                          type="button"
-                          disabled={
-                            isScraping ||
-                            selectedCatalogUrls.length === 0 ||
-                            backendStatus === "offline"
-                          }
-                          onClick={handleBulkScrapeSelected}
-                          className="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center justify-center gap-2 border border-sky-400/30 shadow-lg shadow-sky-950/50"
-                        >
-                          <Layers className="w-4 h-4" />
-                          {isScraping
-                            ? scrapingProgress || "Scraping Catalog Exam Sets..."
-                            : `Scrape Selected Catalog Exam Sets (${selectedCatalogUrls.length} Selected)`}
-                        </button>
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            disabled={
+                              isScraping ||
+                              selectedCatalogUrls.length === 0 ||
+                              backendStatus === "offline"
+                            }
+                            onClick={handleBulkScrapeSelected}
+                            className="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center justify-center gap-2 border border-sky-400/30 shadow-lg shadow-sky-950/50"
+                          >
+                            <Layers className="w-4 h-4" />
+                            {isScraping
+                              ? scrapingProgress || "Scraping Catalog Exam Sets..."
+                              : `Scrape Selected Catalog Exam Sets (${selectedCatalogUrls.length} Selected)`}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <form onSubmit={handleScrape} className="space-y-6">
-                {selectedWebsite.connectorName !== "mslearn" && (
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="scraping-target-url"
-                      className="font-mono text-xs uppercase tracking-widest text-slate-400 flex items-center justify-between"
-                    >
-                      <span>
-                        TARGET PAGE / EXAM URL <span className="text-rose-400">*</span>
-                      </span>
-                      <Globe className="w-3.5 h-3.5 text-slate-600" />
-                    </label>
-                    <input
-                      id="scraping-target-url"
-                      type="url"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder={`https://${selectedWebsite.domain}/questions/sample`}
-                      required={selectedWebsite.connectorName !== "mslearn"}
-                      className="w-full bg-slate-900/90 border border-slate-800 focus:border-white outline-none font-mono text-sm text-white px-4 py-3 tracking-tight transition-colors placeholder:text-slate-700"
-                    />
+                    )}
                   </div>
                 )}
 
-                {/* Form fields: TARGET EXAM & SUBJECT auto-detected by scraper engine */}
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 pt-2">
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="scraping-parser-mode"
-                      className="font-mono text-xs uppercase tracking-widest text-slate-400"
-                    >
-                      EXTRACTION STRATEGY
-                    </label>
-                    <select
-                      id="scraping-parser-mode"
-                      value={parserMode}
-                      onChange={(e) => setParserMode(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-200 px-3 py-3 outline-none uppercase transition-colors"
-                    >
-                      <option value="mcq">Structured MCQ</option>
-                      <option value="paragraph">Paragraph Q&A</option>
-                      <option value="auto">Auto-Detect Heuristics</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="scraping-max-sets"
-                      className="font-mono text-xs uppercase tracking-widest text-slate-400"
-                    >
-                      BATCH: MAX SETS
-                    </label>
-                    <input
-                      id="scraping-max-sets"
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={maxExamSets}
-                      placeholder="All selected"
-                      onChange={(e) => setMaxExamSets(parseLimit(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-300 px-3 py-3 outline-none transition-colors"
-                    />
-                    <p className="font-mono text-[10px] text-slate-500">
-                      Leave empty to scrape every selected set.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="scraping-max-questions"
-                      className="font-mono text-xs uppercase tracking-widest text-slate-400"
-                    >
-                      BATCH: MAX Qs
-                    </label>
-                    <input
-                      id="scraping-max-questions"
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={maxQuestions}
-                      placeholder="All"
-                      onChange={(e) => setMaxQuestions(parseLimit(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-300 px-3 py-3 outline-none transition-colors"
-                    />
-                    <p className="font-mono text-[10px] text-slate-500">
-                      Leave empty for every question in the assessment.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="font-mono text-xs uppercase tracking-widest text-slate-400 block">
-                      BROWSER HEADLESS MODE
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsHeadless(!isHeadless)}
-                      className={`w-full py-3 px-3 border font-mono text-xs uppercase tracking-wider flex items-center justify-between transition-all ${
-                        isHeadless
-                          ? "bg-emerald-950/40 border-emerald-500/80 text-emerald-300"
-                          : "bg-amber-950/40 border-amber-500/80 text-amber-300"
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span
-                          className={`w-2 h-2 rounded-full ${isHeadless ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`}
-                        />
-                        {isHeadless ? "Headless (Background)" : "GUI Browser (Visible)"}
-                      </span>
-                      <span className="text-[10px] opacity-75">{isHeadless ? "ON" : "OFF"}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t border-slate-800 flex gap-4">
-                  {selectedWebsite.connectorName === "mslearn" ? (
-                    <button
-                      type="button"
-                      disabled={
-                        isScraping ||
-                        selectedCatalogUrls.length === 0 ||
-                        backendStatus === "offline"
-                      }
-                      onClick={handleBulkScrapeSelected}
-                      className="w-full bg-sky-600 text-white hover:bg-sky-500 font-semibold tracking-tight px-6 py-4 flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase"
-                    >
-                      {isScraping ? (
-                        <RefreshCw className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Layers className="w-5 h-5" />
-                      )}
-                      {isScraping
-                        ? scrapingProgress || "Ingesting Selected Catalog Sets..."
-                        : `Scrape Selected Catalog Sets (${selectedCatalogUrls.length} Selected)`}
-                    </button>
-                  ) : (
-                    <button
-                      type="submit"
-                      disabled={isScraping || backendStatus === "offline"}
-                      className="w-full bg-white text-black hover:bg-slate-200 font-semibold tracking-tight px-6 py-4 flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase"
-                    >
-                      {isScraping ? (
-                        <RefreshCw className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Layers className="w-5 h-5" />
-                      )}
-                      {isScraping ? "Initiating Payload..." : "Commence Data Ingestion"}
-                    </button>
-                  )}
-                </div>
-              </form>
-
-              {errorMsg && (
-                <div className="mt-6 p-4 border border-rose-900/60 bg-rose-950/40 font-mono text-xs text-rose-300 flex items-center justify-between">
-                  <span>ERROR: {errorMsg}</span>
-                  <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                </div>
-              )}
-
-              {successMsg && lastExtractionResult && (
-                <div className="mt-6 p-6 border border-emerald-900/60 bg-emerald-950/30 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 font-mono text-xs text-emerald-400 uppercase tracking-widest">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>{selectedWebsite.name} Job Completed</span>
+                <form onSubmit={handleScrape} className="space-y-6">
+                  {selectedWebsite.connectorName !== "mslearn" && (
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="scraping-target-url"
+                        className="font-mono text-xs uppercase tracking-widest text-slate-400 flex items-center justify-between"
+                      >
+                        <span>
+                          TARGET PAGE / EXAM URL <span className="text-rose-400">*</span>
+                        </span>
+                        <Globe className="w-3.5 h-3.5 text-slate-600" />
+                      </label>
+                      <input
+                        id="scraping-target-url"
+                        type="url"
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        placeholder={`https://${selectedWebsite.domain}/questions/sample`}
+                        required={selectedWebsite.connectorName !== "mslearn"}
+                        className="w-full bg-slate-900/90 border border-slate-800 focus:border-white outline-none font-mono text-sm text-white px-4 py-3 tracking-tight transition-colors placeholder:text-slate-700"
+                      />
                     </div>
-                    <span className="font-mono text-[10px] text-emerald-500 uppercase border border-emerald-900 px-2 py-0.5">
-                      {lastExtractionResult.engine ||
-                        lastExtractionResult.mode ||
-                        "Ingestion Success"}
-                    </span>
+                  )}
+
+                  {/* Form fields: TARGET EXAM & SUBJECT auto-detected by scraper engine */}
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 pt-2">
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="scraping-parser-mode"
+                        className="font-mono text-xs uppercase tracking-widest text-slate-400"
+                      >
+                        EXTRACTION STRATEGY
+                      </label>
+                      <select
+                        id="scraping-parser-mode"
+                        value={parserMode}
+                        onChange={(e) => setParserMode(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-200 px-3 py-3 outline-none uppercase transition-colors"
+                      >
+                        <option value="mcq">Structured MCQ</option>
+                        <option value="paragraph">Paragraph Q&A</option>
+                        <option value="auto">Auto-Detect Heuristics</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="scraping-max-sets"
+                        className="font-mono text-xs uppercase tracking-widest text-slate-400"
+                      >
+                        BATCH: MAX SETS
+                      </label>
+                      <input
+                        id="scraping-max-sets"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={maxExamSets}
+                        placeholder="All selected"
+                        onChange={(e) => setMaxExamSets(parseLimit(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-300 px-3 py-3 outline-none transition-colors"
+                      />
+                      <p className="font-mono text-[10px] text-slate-500">
+                        Leave empty to scrape every selected set.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="scraping-max-questions"
+                        className="font-mono text-xs uppercase tracking-widest text-slate-400"
+                      >
+                        BATCH: MAX Qs
+                      </label>
+                      <input
+                        id="scraping-max-questions"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={maxQuestions}
+                        placeholder="All"
+                        onChange={(e) => setMaxQuestions(parseLimit(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-300 px-3 py-3 outline-none transition-colors"
+                      />
+                      <p className="font-mono text-[10px] text-slate-500">
+                        Leave empty for every question in the assessment.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="font-mono text-xs uppercase tracking-widest text-slate-400 block">
+                        BROWSER HEADLESS MODE
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsHeadless(!isHeadless)}
+                        className={`w-full py-3 px-3 border font-mono text-xs uppercase tracking-wider flex items-center justify-between transition-all ${
+                          isHeadless
+                            ? "bg-emerald-950/40 border-emerald-500/80 text-emerald-300"
+                            : "bg-amber-950/40 border-amber-500/80 text-amber-300"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={`w-2 h-2 rounded-full ${isHeadless ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`}
+                          />
+                          {isHeadless ? "Headless (Background)" : "GUI Browser (Visible)"}
+                        </span>
+                        <span className="text-[10px] opacity-75">{isHeadless ? "ON" : "OFF"}</span>
+                      </button>
+                    </div>
                   </div>
 
-                  <p className="font-mono text-sm text-slate-200">{successMsg}</p>
+                  <div className="pt-6 border-t border-slate-800 flex gap-4">
+                    {selectedWebsite.connectorName === "mslearn" ? (
+                      <button
+                        type="button"
+                        disabled={
+                          isScraping ||
+                          selectedCatalogUrls.length === 0 ||
+                          backendStatus === "offline"
+                        }
+                        onClick={handleBulkScrapeSelected}
+                        className="w-full bg-sky-600 text-white hover:bg-sky-500 font-semibold tracking-tight px-6 py-4 flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase"
+                      >
+                        {isScraping ? (
+                          <RefreshCw className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Layers className="w-5 h-5" />
+                        )}
+                        {isScraping
+                          ? scrapingProgress || "Ingesting Selected Catalog Sets..."
+                          : `Scrape Selected Catalog Sets (${selectedCatalogUrls.length} Selected)`}
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={isScraping || backendStatus === "offline"}
+                        className="w-full bg-white text-black hover:bg-slate-200 font-semibold tracking-tight px-6 py-4 flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase"
+                      >
+                        {isScraping ? (
+                          <RefreshCw className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Layers className="w-5 h-5" />
+                        )}
+                        {isScraping ? "Initiating Payload..." : "Commence Data Ingestion"}
+                      </button>
+                    )}
+                  </div>
+                </form>
 
-                  <div className="pt-2 flex items-center justify-between">
-                    <span className="font-mono text-xs text-slate-500">
-                      Record ID: #{lastExtractionResult.dbRecordId || "Saved"}
-                    </span>
+                {errorMsg && (
+                  <div className="mt-6 p-4 border border-rose-900/60 bg-rose-950/40 font-mono text-xs text-rose-300 flex items-center justify-between">
+                    <span>ERROR: {errorMsg}</span>
+                    <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  </div>
+                )}
 
-                    <Link
-                      to="/admin/review"
-                      className="font-mono text-xs uppercase tracking-widest text-emerald-400 hover:text-white border-b border-emerald-500 pb-0.5 transition-colors flex items-center gap-1"
-                    >
-                      <span>GO TO REVIEW QUEUE TO APPROVE</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+                {successMsg && lastExtractionResult && (
+                  <div className="mt-6 p-6 border border-emerald-900/60 bg-emerald-950/30 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-mono text-xs text-emerald-400 uppercase tracking-widest">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>{selectedWebsite.name} Job Completed</span>
+                      </div>
+                      <span className="font-mono text-[10px] text-emerald-500 uppercase border border-emerald-900 px-2 py-0.5">
+                        {lastExtractionResult.engine ||
+                          lastExtractionResult.mode ||
+                          "Ingestion Success"}
+                      </span>
+                    </div>
 
-            <div className="lg:col-span-4 space-y-6">
-              <div className="p-6 border border-slate-900 bg-slate-950/60 space-y-6">
-                <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 border-b border-slate-900 pb-3 flex items-center justify-between">
-                  <span>{/* Site Adapter Specs */}</span>
-                  <Sliders className="w-3.5 h-3.5 text-slate-600" />
-                </h3>
+                    <p className="font-mono text-sm text-slate-200">{successMsg}</p>
 
-                <div className="space-y-4 font-mono text-xs">
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">PORTAL NAME</span>
-                    <span className="text-white font-medium">{selectedWebsite.name}</span>
+                    <div className="pt-2 flex items-center justify-between">
+                      <span className="font-mono text-xs text-slate-500">
+                        Record ID: #{lastExtractionResult.dbRecordId || "Saved"}
+                      </span>
+
+                      <Link
+                        to="/admin/review"
+                        className="font-mono text-xs uppercase tracking-widest text-emerald-400 hover:text-white border-b border-emerald-500 pb-0.5 transition-colors flex items-center gap-1"
+                      >
+                        <span>GO TO REVIEW QUEUE TO APPROVE</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">TARGET DOMAIN</span>
-                    <span className="text-blue-400">{selectedWebsite.domain}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">SCRAPE ENGINE</span>
-                    <span className="text-emerald-400">{selectedWebsite.engine}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">DB INGESTIONS</span>
-                    <span className="text-amber-400">
-                      {
-                        questions.filter((q: any) =>
-                          q.sourceUrl?.toLowerCase().includes(selectedWebsite.domain.toLowerCase()),
-                        ).length
-                      }{" "}
-                      Batches
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* docs/roadmap/engineering-roadmap.md item 21: source health, drawn from
+              <div className="lg:col-span-4 space-y-6">
+                <div className="p-6 border border-slate-900 bg-slate-950/60 space-y-6">
+                  <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 border-b border-slate-900 pb-3 flex items-center justify-between">
+                    <span>{/* Site Adapter Specs */}</span>
+                    <Sliders className="w-3.5 h-3.5 text-slate-600" />
+                  </h3>
+
+                  <div className="space-y-4 font-mono text-xs">
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">PORTAL NAME</span>
+                      <span className="text-white font-medium">{selectedWebsite.name}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">TARGET DOMAIN</span>
+                      <span className="text-blue-400">{selectedWebsite.domain}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">SCRAPE ENGINE</span>
+                      <span className="text-emerald-400">{selectedWebsite.engine}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">DB INGESTIONS</span>
+                      <span className="text-amber-400">
+                        {
+                          questions.filter((q: any) =>
+                            q.sourceUrl
+                              ?.toLowerCase()
+                              .includes(selectedWebsite.domain.toLowerCase()),
+                          ).length
+                        }{" "}
+                        Batches
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* docs/roadmap/engineering-roadmap.md item 21: source health, drawn from
                   sources + pipeline_jobs (packages/api/src/lib/pipeline-health.ts). */}
-              <div className="p-6 border border-slate-900 bg-slate-950/60 space-y-4">
-                <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 border-b border-slate-900 pb-3">
-                  Source Health
-                </h3>
-                <div className="space-y-4 font-mono text-xs">
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">STATUS</span>
-                    <span
-                      className={
-                        selectedWebsite.health.degraded ? "text-rose-400" : "text-emerald-400"
-                      }
-                    >
-                      {selectedWebsite.health.degraded ? "DEGRADED" : "HEALTHY"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">LAST SUCCESSFUL CRAWL</span>
-                    <span className="text-slate-300" suppressHydrationWarning>
-                      {selectedWebsite.lastSuccessfulCrawlAt
-                        ? new Date(selectedWebsite.lastSuccessfulCrawlAt)
-                            .toISOString()
-                            .replace("T", " ")
-                            .slice(0, 19)
-                        : "Never"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">CONSECUTIVE FAILURES</span>
-                    <span
-                      className={
-                        selectedWebsite.consecutiveFailures > 0
-                          ? "text-amber-400"
-                          : "text-slate-300"
-                      }
-                    >
-                      {selectedWebsite.consecutiveFailures}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                    <span className="text-slate-600">ERROR RATE (30D)</span>
-                    <span className="text-slate-300">
-                      {selectedWebsite.health.errorRate == null
-                        ? "No recent runs"
-                        : `${Math.round(selectedWebsite.health.errorRate * 100)}%`}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">AVG RUNTIME</span>
-                    <span className="text-slate-300">
-                      {selectedWebsite.health.averageRuntimeMs == null
-                        ? "—"
-                        : `${(selectedWebsite.health.averageRuntimeMs / 1000).toFixed(1)}s`}
-                    </span>
+                <div className="p-6 border border-slate-900 bg-slate-950/60 space-y-4">
+                  <h3 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 border-b border-slate-900 pb-3">
+                    Source Health
+                  </h3>
+                  <div className="space-y-4 font-mono text-xs">
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">STATUS</span>
+                      <span
+                        className={
+                          selectedWebsite.health.degraded ? "text-rose-400" : "text-emerald-400"
+                        }
+                      >
+                        {selectedWebsite.health.degraded ? "DEGRADED" : "HEALTHY"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">LAST SUCCESSFUL CRAWL</span>
+                      <span className="text-slate-300" suppressHydrationWarning>
+                        {selectedWebsite.lastSuccessfulCrawlAt
+                          ? new Date(selectedWebsite.lastSuccessfulCrawlAt)
+                              .toISOString()
+                              .replace("T", " ")
+                              .slice(0, 19)
+                          : "Never"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">CONSECUTIVE FAILURES</span>
+                      <span
+                        className={
+                          selectedWebsite.consecutiveFailures > 0
+                            ? "text-amber-400"
+                            : "text-slate-300"
+                        }
+                      >
+                        {selectedWebsite.consecutiveFailures}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
+                      <span className="text-slate-600">ERROR RATE (30D)</span>
+                      <span className="text-slate-300">
+                        {selectedWebsite.health.errorRate == null
+                          ? "No recent runs"
+                          : `${Math.round(selectedWebsite.health.errorRate * 100)}%`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">AVG RUNTIME</span>
+                      <span className="text-slate-300">
+                        {selectedWebsite.health.averageRuntimeMs == null
+                          ? "—"
+                          : `${(selectedWebsite.health.averageRuntimeMs / 1000).toFixed(1)}s`}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="p-6 border border-slate-900 bg-slate-950/40 space-y-3 font-mono text-xs text-slate-500">
-                <div className="text-slate-300 font-medium uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Adapter Guidelines</span>
+                <div className="p-6 border border-slate-900 bg-slate-950/40 space-y-3 font-mono text-xs text-slate-500">
+                  <div className="text-slate-300 font-medium uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Adapter Guidelines</span>
+                  </div>
+                  <p className="leading-relaxed text-[11px]">
+                    {selectedWebsite.connectorName === "mslearn"
+                      ? "Microsoft Learn uses an interactive Playwright crawler to navigate practice tests, click check answer buttons, and harvest rationale explanations."
+                      : selectedWebsite.connectorName === "sanfoundry"
+                        ? "Sanfoundry adapter automatically extracts question prompts, multiple choices, and uncollapses hidden answers."
+                        : `Target URL parser for ${selectedWebsite.name}. Ensure the link is publicly accessible for extraction.`}
+                  </p>
                 </div>
-                <p className="leading-relaxed text-[11px]">
-                  {selectedWebsite.connectorName === "mslearn"
-                    ? "Microsoft Learn uses an interactive Playwright crawler to navigate practice tests, click check answer buttons, and harvest rationale explanations."
-                    : selectedWebsite.connectorName === "sanfoundry"
-                      ? "Sanfoundry adapter automatically extracts question prompts, multiple choices, and uncollapses hidden answers."
-                      : `Target URL parser for ${selectedWebsite.name}. Ensure the link is publicly accessible for extraction.`}
-                </p>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* SECTION 3: SCRAPE RUNS — replaces three panels (a text log, a job table and a batch
             table) that each showed one slice of the same runs. */}

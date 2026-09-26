@@ -27,11 +27,6 @@ import {
   isFeatureFlagKey,
 } from "../lib/feature-flags.js";
 import {
-  assertConnectorAvailable,
-  connectorForUrl,
-  localOnlyLockReason,
-} from "../lib/local-only-connectors.js";
-import {
   computeSourceHealthStats,
   EMPTY_SOURCE_HEALTH_STATS,
   isSourceDegraded,
@@ -40,6 +35,7 @@ import { explanationWithReadingLinks } from "../lib/reading-links.js";
 import { answerKeysForReviewElement } from "../lib/review-answers.js";
 import { countNewQuestions, loadExamQuestionTexts } from "../lib/review-dedupe.js";
 import { reviewQualityIssues } from "../lib/review-quality.js";
+import { assertScrapingAvailable, scrapingLockReason } from "../lib/scraping-lock.js";
 import { WIPE_DATABASE_CONFIRMATION_PHRASE, WIPE_DATABASE_KEEP_TABLES } from "../shared.js";
 
 // The one write path into auditLogs — see docs/architecture/prepora-next-level-plan.md finding #17.
@@ -106,6 +102,9 @@ function getScraperAuthHeaders(): Record<string, string> {
 }
 
 async function fetchScraper(path: string, init: RequestInit = {}): Promise<Response> {
+  // The one gateway to apps/scraper, so the local-only lock lives here: outside local development
+  // no request to the scraper ever leaves this server (lib/scraping-lock.ts).
+  assertScrapingAvailable();
   const headers = {
     ...getScraperAuthHeaders(),
     ...(init.headers as Record<string, string> | undefined),
@@ -1016,9 +1015,9 @@ export const adminRouter = {
       ]);
       return rows.map((source) => ({
         ...source,
-        // Set where this source's connector can't run (MS Learn in production); the scraping
-        // page shows the source as locked.
-        lockedReason: localOnlyLockReason(source.connectorName),
+        // Set wherever scraping is locked (everywhere but local development); the scraping page
+        // shows the source as locked.
+        lockedReason: scrapingLockReason(),
         health: {
           ...(healthBySource.get(source.name) ?? EMPTY_SOURCE_HEALTH_STATS),
           degraded: isSourceDegraded(source.consecutiveFailures),
@@ -1103,6 +1102,9 @@ export const adminRouter = {
       summary: "Check scraper service health and configuration",
     })
     .handler(async () => {
+      // Polled by the scraping page — where scraping is locked, say so instead of probing.
+      const lockedReason = scrapingLockReason();
+      if (lockedReason) return { status: "locked" as const, reason: lockedReason };
       try {
         const res = await fetchScraper("/health");
         if (res.ok) {
@@ -1135,7 +1137,6 @@ export const adminRouter = {
       summary: "Discover available Microsoft Learn practice assessments",
     })
     .handler(async () => {
-      assertConnectorAvailable("mslearn");
       const res = await fetchScraper("/scrape/ms-learn/catalog");
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
@@ -1153,7 +1154,6 @@ export const adminRouter = {
       summary: "Launch the interactive Microsoft Learn authentication flow",
     })
     .handler(async () => {
-      assertConnectorAvailable("mslearn");
       const res = await fetchScraper("/scrape/ms-learn/auth", { method: "POST" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1173,9 +1173,9 @@ export const adminRouter = {
       summary: "Check whether an authenticated MS Learn session is currently open",
     })
     .handler(async () => {
-      // Polled by the scraping page even when MS Learn isn't selected — where MS Learn is locked
-      // (production), report "not signed in" rather than an error on every poll.
-      if (localOnlyLockReason("mslearn")) return { authenticated: false };
+      // Polled by the scraping page even when MS Learn isn't selected — where scraping is locked,
+      // report "not signed in" rather than an error on every poll.
+      if (scrapingLockReason()) return { authenticated: false };
       const res = await fetchScraper("/scrape/ms-learn/auth/status");
       if (!res.ok) {
         // Surfaced, not swallowed: mapping every failure to "not authenticated" hid a scraper
@@ -1194,7 +1194,6 @@ export const adminRouter = {
       summary: "Discard the currently open authenticated MS Learn session",
     })
     .handler(async () => {
-      assertConnectorAvailable("mslearn");
       const res = await fetchScraper("/scrape/ms-learn/auth/signout", { method: "POST" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1232,11 +1231,6 @@ export const adminRouter = {
         maxQuestions,
         headless = true,
       } = input;
-
-      // Local-only connectors (MS Learn) are refused where they can't run — see
-      // lib/local-only-connectors.ts.
-      const connector = connectorForUrl(url);
-      if (connector) assertConnectorAvailable(connector);
 
       // Proxy to the Python scraper service. There is no fallback: a scrape
       // that cannot reach the extraction engine is a failure, not an
