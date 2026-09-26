@@ -2,6 +2,9 @@ fastapi
 uvicorn
 beautifulsoup4
 requests
+# Drives the browser for Microsoft Learn scraping (ms_learn_catalog_crawler.py). The browser itself
+# is a separate download: `venv/bin/python -m playwright install chromium` (pnpm bootstrap --with-browsers).
+playwright
 psycopg2-binary
 pydantic
 pydantic-settings

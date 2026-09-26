@@ -5,7 +5,10 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "bootstrap": "bash scripts/setup.sh",
+    "bootstrap:check": "bash scripts/setup.sh --check",
     "dev": "concurrently -c \"blue,green,magenta\" -n \"WEB,PYTHON,PIPELINE\" \"pnpm --filter @prepora/web dev\" \"cd apps/scraper && ./venv/bin/uvicorn main:app --reload --port 8000\" \"cd apps/pipeline && ./venv/bin/uvicorn prepora_pipeline.api:app --reload --port 8001\"",
+    "dev:web": "pnpm --filter @prepora/web dev",
     "build": "pnpm content:sitemap && pnpm content:rss && pnpm --filter @prepora/web build",
     "start": "pnpm --filter @prepora/web start",
     "lint": "biome check . && tsx scripts/check-no-fixture-imports.ts && tsx scripts/check-canonical-domain.ts",
@@ -16,6 +19,8 @@
     "db:migrate": "pnpm --filter @prepora/db db:migrate",
     "db:check": "pnpm --filter @prepora/db db:check",
     "db:reset": "pnpm --filter @prepora/db db:reset",
+    "db:seed:dev": "node --env-file=.env --import tsx scripts/seed-dev.ts",
+    "db:local": "bash scripts/dev-db.sh",
     "db:studio": "pnpm --filter @prepora/db db:studio",
     "content:validate": "tsx scripts/validate-content.ts",
     "content:import": "cd apps/pipeline && ./venv/bin/python -m prepora_pipeline.cli import-markdown --content-dir ../../content",
@@ -29,6 +34,7 @@
     "@cloudflare/workers-types": "^5.20260901.1",
     "@playwright/test": "^1.49.0",
     "@prepora/api": "workspace:*",
+    "@prepora/auth": "workspace:*",
     "@prepora/content": "workspace:*",
     "@prepora/db": "workspace:*",
     "concurrently": "^10.0.5",
@@ -40,7 +46,7 @@
     "wrangler": "^4.128.0"
   },
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=20.11.0",
     "pnpm": ">=9.0.0"
   },
   "pnpm": {
@@ -79,5 +85,6 @@
         "zod"
       ]
     }
-  }
+  },
+  "packageManager": "pnpm@9.15.9"
 }
