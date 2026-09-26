@@ -4,7 +4,10 @@ publish.py (item 18) and validate.py (item 19), which both need to derive the sa
 stable_content_id without importing each other (validate must be able to check a batch for
 duplicate ids *before* publish ever runs).
 """
+import hashlib
+
 from ..contracts import NormalizedQuestion
+from .content_hash import normalize_question_text
 
 
 def _slug_component(value: str) -> str:
@@ -17,20 +20,35 @@ def _year_or_session(normalized: NormalizedQuestion):
 
 def derive_stable_content_id(normalized: NormalizedQuestion) -> str:
     """
-    {EXAM}-{VARIANT}-{YEAR-or-SESSION}-{SUBJECT}-Q{number}, following the convention documented in
-    agents/content/schema.md's "Stable IDs" section (e.g. KPSC-AE-2025-CIVIL-Q001), built from the
-    slugs a NormalizedQuestion already carries rather than a separate "code" field no table has.
+    Position identity (the default): {EXAM}-{VARIANT}-{YEAR-or-SESSION}-{SUBJECT}-Q{number},
+    following agents/content/schema.md's "Stable IDs" convention (e.g. KPSC-AE-2025-CIVIL-Q001) —
+    right for exam papers, where "question 7 of the 2025 paper" is a fixed thing.
+
+    Content identity (identity="content"): ...-C{sha256 of the normalized text}. For sources that
+    draw questions at random from a pool (MS Learn practice assessments), a position means nothing:
+    a new question that happened to appear 7th used to take the existing Q007's identity and be
+    silently dropped as "already published". Hashing the content gives the same question the same
+    id in every scrape, and a new question a new one. SHA-256 rather than content_hash()'s 32-bit
+    djb2, because this is an identity — a collision would merge two different questions.
     """
+    if normalized.identity == "content":
+        digest = hashlib.sha256(
+            normalize_question_text(normalized.question_text).encode("utf-8")
+        ).hexdigest()
+        return f"{_stable_base(normalized)}-C{digest[:16].upper()}"
     if normalized.number is None:
         raise ValueError("Cannot derive a stable_content_id without a question number.")
+    return f"{_stable_base(normalized)}-Q{normalized.number:03d}"
+
+
+def _stable_base(normalized: NormalizedQuestion) -> str:
     parts = [
         normalized.exam_slug,
         normalized.exam_variant_slug,
         str(_year_or_session(normalized)),
         normalized.subject_slug,
     ]
-    base = "-".join(_slug_component(p) for p in parts)
-    return f"{base}-Q{normalized.number:03d}"
+    return "-".join(_slug_component(p) for p in parts)
 
 
 def derive_question_set_slug(normalized: NormalizedQuestion) -> str:

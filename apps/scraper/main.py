@@ -28,6 +28,7 @@ from prepora_pipeline.core import (  # noqa: E402
     create_job,
     finalize_job,
     get_job,
+    record_stage,
     stage_run,
     start_job,
 )
@@ -57,7 +58,8 @@ class ScrapeRequest(BaseModel):
     parser_mode: Optional[str] = "mcq" # "mcq" | "paragraph" | "auto"
     target_exam: Optional[str] = "Kerala PSC AE Civil"
     target_subject: Optional[str] = "Strength of Materials"
-    max_questions: Optional[int] = 50
+    # None = no cap: scrape the whole assessment (the default).
+    max_questions: Optional[int] = None
     job_id: Optional[str] = None
     headless: Optional[bool] = True
 
@@ -101,9 +103,27 @@ async def ms_learn_auth_endpoint():
     from ms_learn_catalog_crawler import launch_interactive_auth_session
     try:
         res = await launch_interactive_auth_session()
-        return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to launch Microsoft Auth session: {str(e)}")
+    if res.get("status") == "already_in_progress":
+        raise HTTPException(
+            status_code=409,
+            detail="A Microsoft sign-in window is already open — finish signing in there.",
+        )
+    return res
+
+@app.get("/scrape/ms-learn/auth/status")
+async def ms_learn_auth_status_endpoint():
+    """Whether an authenticated MS Learn tab from a previous login is still open and reusable."""
+    from ms_learn_catalog_crawler import get_auth_status
+    return await get_auth_status()
+
+@app.post("/scrape/ms-learn/auth/signout")
+async def ms_learn_auth_signout_endpoint():
+    """Closes the currently open authenticated MS Learn tab, discarding the session."""
+    from ms_learn_catalog_crawler import sign_out
+    await sign_out()
+    return {"status": "signed_out"}
 
 @app.post("/scrape")
 async def scrape_endpoint(req: ScrapeRequest):
@@ -158,12 +178,33 @@ async def scrape_endpoint(req: ScrapeRequest):
         try:
             with stage_run(job_id, "scrape") as counts:
                 from ms_learn_catalog_crawler import crawl_ms_learn_assessment
+
+                # A single crawl can take several minutes (up to 50 questions, each a real
+                # browser interaction) — without this, the stage row sits at all-zero "running"
+                # for the whole duration and only reflects real progress once the entire crawl
+                # finishes. record_stage's upsert is safe to call repeatedly mid-flight, so the
+                # admin UI's existing 1.5s poll picks up live counts for free.
+                # Replaced by the assessment's real length ("Question 1 of N") once the crawler
+                # has read it.
+                counts.discovered = req.max_questions or 0
+
+                def report_progress(processed: int) -> None:
+                    counts.processed = processed
+                    record_stage(job_id, "scrape", "running", counts=counts)
+
+                def report_total(total: int) -> None:
+                    counts.discovered = total
+                    record_stage(job_id, "scrape", "running", counts=counts)
+
                 unique_questions = await crawl_ms_learn_assessment(
                     assessment_url=req.url,
                     exam=req.target_exam or "MS Learn AB-100",
                     subject=req.target_subject or "Agentic AI Business Solutions Architect",
-                    max_questions=req.max_questions or 50,
-                    headless=is_headless
+                    max_questions=req.max_questions,
+                    headless=is_headless,
+                    on_progress=report_progress,
+                    on_total=report_total,
+                    job_id=job_id,
                 )
                 counts.processed = len(unique_questions)
             finalize_job(job_id)
@@ -223,7 +264,8 @@ async def scrape_endpoint(req: ScrapeRequest):
                     "exam": req.target_exam,
                     "subject": req.target_subject,
                     "parserMode": req.parser_mode,
-                    "count": len(unique_questions)
+                    "count": len(unique_questions),
+                    "jobId": job_id,
                 }
             },
         )

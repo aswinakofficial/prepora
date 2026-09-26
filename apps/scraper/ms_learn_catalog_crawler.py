@@ -1,21 +1,61 @@
 import asyncio
+import json
 import os
 import re
 import sys
+from pathlib import Path
+from typing import Callable, Optional
 
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
-from db import insert_scraped_question
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+from prepora_pipeline.core.media_store import FilesystemMediaStore  # noqa: E402
+
+from db import insert_scraped_question  # noqa: E402
+from ms_learn_media import MediaFetchError, store_question_images  # noqa: E402
+from ms_learn_parser import MsLearnParseError, parse_question_fieldset  # noqa: E402
 
 load_dotenv("../../.env")
 load_dotenv()
 
 CATALOG_URL = "https://learn.microsoft.com/en-us/credentials/certifications/practice-assessments-for-microsoft-certifications"
 USER_DATA_DIR = os.path.expanduser("~/.cache/ms_learn_scraper_profile")
+STORAGE_STATE_PATH = os.path.join(USER_DATA_DIR, "storage_state.json")
 LOG_FILE_PATH = "/tmp/ms_learn_scraper.log"
+
+
+async def get_auth_status() -> dict:
+    """
+    Whether a saved MS Learn session exists that a later scrape can restore. The file merely
+    existing isn't enough — an anonymous session once got saved by mistake — so this also
+    requires MS Learn's MSAL.js to have recorded a signed-in account (`msal.*account.keys` in
+    learn.microsoft.com's localStorage), which an anonymous visit never writes.
+    """
+    try:
+        with open(STORAGE_STATE_PATH) as f:
+            state = json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {"authenticated": False}
+    for origin in state.get("origins", []):
+        if "learn.microsoft.com" not in origin.get("origin", ""):
+            continue
+        for item in origin.get("localStorage", []):
+            name = item.get("name", "")
+            if name.startswith("msal.") and name.endswith("account.keys") and item.get("value") not in (None, "", "[]"):
+                return {"authenticated": True}
+    return {"authenticated": False}
+
+
+async def sign_out():
+    """Discards the saved MS Learn session so the next scrape requires a fresh interactive login."""
+    try:
+        os.remove(STORAGE_STATE_PATH)
+    except FileNotFoundError:
+        pass
+
 
 def log(msg: str):
     timestamped_msg = f"{msg}"
@@ -113,79 +153,258 @@ def fetch_ms_learn_catalog() -> list:
 
     return catalog_items
 
+# MS Learn renders several "Sign in" links (desktop header, mobile header, in-page CTA) and hides
+# whichever don't fit the current viewport. query_selector() returns the first match in document
+# order — at this crawler's 1400px viewport that's the hidden mobile-header link — so a visibility
+# check on that single match wrongly concluded there was no sign-in control at all. Always pick
+# the first *visible* match instead.
+SIGNIN_SELECTOR = "a.docs-sign-in, a[href*='identity/signin'], button:has-text('Sign in'), a:has-text('Sign in')"
+
+IDENTITY_DOMAINS = (
+    "login.microsoftonline.com",
+    "login.live.com",
+    "account.microsoft.com",
+    "login.windows.net",
+)
+
+# Only one interactive login window at a time — a second click on "Authenticate" used to start a
+# second headful browser polling in parallel with the first, each able to overwrite the other's
+# saved storage state.
+_auth_lock = asyncio.Lock()
+
+
+async def _find_visible_signin(page):
+    for el in await page.query_selector_all(SIGNIN_SELECTOR):
+        try:
+            if await el.is_visible():
+                return el
+        except Exception:
+            continue
+    return None
+
+
+# Microsoft reuses id="idSIButton9" for the primary button on every step of its login flow —
+# "Next" on the email page, "Sign in" on the password page, "Yes" only on "Stay signed in?". The
+# old "#idSIButton9, button:has-text('Yes')" selector therefore clicked "Next"/"Sign in" every
+# poll while the admin was still typing, submitting half-entered email/password forms. Only click
+# once the page really is the "Stay signed in?" (KMSI) prompt.
+KMSI_PAGE_SELECTOR = "#KmsiCheckboxField, #KmsiDescription, input[name='DontShowAgain'], :text('Stay signed in?')"
+
+
+async def _click_stay_signed_in_yes(page) -> bool:
+    try:
+        marker = await page.query_selector(KMSI_PAGE_SELECTOR)
+        if not marker or not await marker.is_visible():
+            return False
+        yes = await page.query_selector("#idSIButton9, button:has-text('Yes'), input[type='submit'][value='Yes']")
+        if yes and await yes.is_visible():
+            await yes.click()
+            return True
+    except Exception:
+        pass
+    return False
+
+
+async def _learn_page_shows_signed_in(page) -> bool:
+    """
+    Whether MS Learn's own header considers the user signed in. Its sign-in links carry
+    `auth-status-determined` once the page's MSAL instance has resolved auth state; until then
+    they're not a reliable signal either way, so wait briefly for that before judging.
+    """
+    try:
+        await page.wait_for_selector(".auth-status-determined", state="attached", timeout=10000)
+    except Exception:
+        pass
+    return await _find_visible_signin(page) is None
+
+
 async def launch_interactive_auth_session():
     """
-    Launches a headful Chromium browser window for the admin to sign in to Microsoft Learn using official MSAL OAuth.
-    Waits for full OAuth redirect completion back to learn.microsoft.com and persists session state.
+    Launches a headful Chromium browser window for the admin to sign in to Microsoft Learn using
+    the site's own MSAL sign-in flow, and persists the session only once sign-in genuinely
+    completed.
     """
+    if _auth_lock.locked():
+        return {"status": "already_in_progress", "authenticated": False}
+    async with _auth_lock:
+        return await _run_interactive_auth_session()
+
+
+async def _run_interactive_auth_session():
     os.makedirs(USER_DATA_DIR, exist_ok=True)
     print("[MS LEARN AUTH]: Launching Playwright browser for Microsoft Account authentication...")
-    print(f"[MS LEARN AUTH]: Profile directory: {USER_DATA_DIR}")
+    print(f"[MS LEARN AUTH]: Storage state will be saved to: {STORAGE_STATE_PATH}")
 
-    msal_auth_url = (
-        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"
-        "client_id=18fbca16-2224-45f6-85b0-f7bf2b39b3f3"
-        "&scope=openid%20profile%20email%20offline_access"
-        "&redirect_uri=https%3A%2F%2Flearn.microsoft.com%2F_themes%2Fdocs.theme%2Fmaster%2Fen-us%2F_themes%2Fglobal%2Fidentity-redirect.html"
-        "&client-request-id=01a0763d-4a99-7aa1-9895-79514834e746"
-        "&response_mode=fragment&client_info=1&clidata=1&prompt=select_account"
-        "&nonce=438a0c5a-3d6f-4ea6-994e-bb45ad670687"
-        "&state=eyJpZCI6IjAxYTA3NjNkLTRhOWItNzE0Yy04YTRiLTUxMDU0YTgzNmI3MSIsIm1ldGEiOnsiaW50ZXJhY3Rpb25UeXBlIjoicmVkaXJlY3QifX0%3D%7Chttps%253A%252F%252Flearn.microsoft.com%252Fen-us%252Fcredentials%252Fcertifications%252Fpractice-assessments-for-microsoft-certifications%253Fsource%253Ddocs"
-        "&x-client-SKU=msal.js.browser&x-client-VER=5.6.3&response_type=code"
-        "&code_challenge=6XXeqNStbWaOctoU7hrU-_ieXQW0JMeFvtsa33jfwFQ&code_challenge_method=S256"
-    )
+    # A plain launch()+new_context() (rather than launch_persistent_context against a profile
+    # directory) lets us close the browser completely once login succeeds, while still reliably
+    # handing the exact same cookies + localStorage to whatever later launches a scrape — headless
+    # or headful — via context.storage_state(). A persistent profile directory made "close now,
+    # resume reliably later" much harder to reason about (ProcessSingleton contention between
+    # concurrent launches, ambiguous retention of session-only cookies across relaunches).
+    p = await async_playwright().start()
+    browser = await p.chromium.launch(headless=False)
+    context = await browser.new_context(viewport={"width": 1400, "height": 900})
+    # Microsoft's OAuth completion page (identity-redirect.html) calls window.close() on itself —
+    # see the same guard in crawl_ms_learn_assessment. Without it here, the login tab could close
+    # itself mid-flow, before the admin finished signing in.
+    await context.add_init_script("window.close = () => {};")
+    page = await context.new_page()
+    try:
+        # Navigate to the real catalog page and let ITS OWN MSAL.js instance initiate the OAuth
+        # redirect, instead of hand-crafting an authorize URL ourselves: a fabricated URL with a
+        # hardcoded nonce/state/code_challenge authenticates against Microsoft's identity server,
+        # but no MSAL.js instance is expecting that state/PKCE pair, so the page's own token cache
+        # never gets populated.
+        print(f"[MS LEARN AUTH]: Opening the real catalog page ({CATALOG_URL}) so its own sign-in flow drives the redirect...")
+        await page.goto(CATALOG_URL)
+        try:
+            await page.wait_for_selector(".auth-status-determined", state="attached", timeout=10000)
+        except Exception:
+            pass
 
-    async with async_playwright() as p:
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=USER_DATA_DIR,
-            headless=False,
-            viewport={"width": 1400, "height": 900}
-        )
-        page = context.pages[0] if context.pages else await context.new_page()
-        
-        print("[MS LEARN AUTH]: Opening Microsoft OAuth login page...")
-        await page.goto(msal_auth_url)
-        await page.wait_for_timeout(3000)
+        signin_button = await _find_visible_signin(page)
+        if signin_button:
+            print("[MS LEARN AUTH]: Clicking the page's own 'Sign in' control...")
+            await signin_button.click()
+            await page.wait_for_timeout(2000)
+        else:
+            print("[MS LEARN AUTH]: No visible 'Sign in' control — the admin can use the page's own sign-in in the open window.")
 
         print("[MS LEARN AUTH]: Waiting for admin to complete Microsoft Online login (up to 180 seconds)...")
-        
+
+        # Success used to be "the tab's URL is on learn.microsoft.com" — which is already true on
+        # the catalog page before anyone signs in, so whenever the Sign-in click didn't navigate
+        # away (see SIGNIN_SELECTOR), the very first poll reported success, closed the browser and
+        # saved an anonymous session. Now success requires all of: the flow actually went through
+        # a Microsoft identity page, it came back to learn.microsoft.com, and MS Learn's own header
+        # no longer offers "Sign in". Microsoft's flow also hops across several identity domains
+        # (login.live.com for FIDO/passkeys) — none of those count as done.
         authenticated = False
-        # Poll up to 180s: Wait for user to finish login and redirect to learn.microsoft.com
+        visited_identity = any(d in page.url for d in IDENTITY_DOMAINS)
         for i in range(36):
-            current_url = page.url
-            print(f"[MS LEARN AUTH POLL {i+1}/36]: Current page URL -> {current_url}")
-            
-            # User completed Microsoft Online OAuth flow and returned to learn.microsoft.com
-            if "login.microsoftonline.com" not in current_url:
-                auth_cookies = await context.cookies()
-                ms_cookies = [c for c in auth_cookies if "microsoft" in c.get("domain", "")]
-                
-                # Check for redirected domain or auth cookies
-                if "learn.microsoft.com" in current_url or len(ms_cookies) >= 3:
-                    print(f"[MS LEARN AUTH SUCCESS]: Successfully authenticated into Microsoft Learn! Found {len(ms_cookies)} session cookies.")
-                    authenticated = True
-                    break
-            
             await asyncio.sleep(5)
 
-        # Save storage state
-        storage_state_path = os.path.join(USER_DATA_DIR, "storage_state.json")
-        await context.storage_state(path=storage_state_path)
-        print(f"[MS LEARN AUTH]: Saved storage state to {storage_state_path}")
-        
-        await context.close()
+            # Some completions finish in a new tab and close the original one.
+            if page.is_closed():
+                live_pages = [pg for pg in context.pages if not pg.is_closed()]
+                if not live_pages:
+                    print("[MS LEARN AUTH]: The login window was closed before sign-in completed.")
+                    break
+                page = live_pages[-1]
+
+            current_url = page.url
+            print(f"[MS LEARN AUTH POLL {i+1}/36]: Current page URL -> {current_url}")
+
+            if any(d in current_url for d in IDENTITY_DOMAINS):
+                visited_identity = True
+                # Proactively click through "Stay signed in?" — skipping it leaves only a
+                # session-only SSO cookie, which doesn't survive into later scrape contexts.
+                if await _click_stay_signed_in_yes(page):
+                    print("[MS LEARN AUTH]: 'Stay signed in?' prompt detected mid-flow — clicked Yes.")
+                continue
+
+            if (
+                visited_identity
+                and "learn.microsoft.com" in current_url
+                and await _learn_page_shows_signed_in(page)
+            ):
+                print("[MS LEARN AUTH SUCCESS]: MS Learn now shows the account as signed in.")
+                authenticated = True
+                break
+
+        if authenticated:
+            await context.storage_state(path=STORAGE_STATE_PATH)
+            print(f"[MS LEARN AUTH]: Saved storage state to {STORAGE_STATE_PATH}")
+        else:
+            print("[MS LEARN AUTH]: Sign-in not completed — no session saved.")
+
         return {
             "status": "authenticated" if authenticated else "pending_user_login",
             "authenticated": authenticated,
-            "profile_dir": USER_DATA_DIR
         }
+    finally:
+        # Always close fully, whether login succeeded, timed out, or errored — nothing needs to
+        # stay open between requests anymore.
+        await context.close()
+        await browser.close()
+        await p.stop()
+
+
+_EXAM_CODE_PREFIX = re.compile(r"^Exam\s+[A-Z]{2,3}-\d{3,4}\s*:\s*", re.I)
+
+
+def fetch_exam_overview_metadata(assessment_url: str) -> tuple[str, str, str]:
+    """
+    Official (title, description, badge logo URL) for the exam an assessment URL belongs to, or
+    empty strings for whatever couldn't be found.
+
+    Assessments live under either a certification page
+    (.../certifications/ai-business-professional/practice/assessment?...) or an exam page
+    (.../certifications/exams/ab-100/practice/assessment?...). The certification page is the best
+    source — it has the real name ("Microsoft Certified: AI Business Professional") and the
+    certification's own badge — so it's tried first. This used to take *everything* after
+    "certifications/" as the certification path, so it fetched the assessment page itself and
+    came back with "Practice Assessment" as the description and Microsoft Learn's generic
+    share image as the logo. An exam page (/exams/<code>/) redirects to its certification page
+    when the exam maps to exactly one; otherwise its own title and the official exam badge are
+    used, with the leading "Exam AB-100: " dropped since the code is shown separately.
+    """
+    meta_urls = []
+    cert_match = re.search(r"credentials/certifications/(?!exams/)([a-z0-9-]+)", assessment_url, re.I)
+    if cert_match:
+        meta_urls.append(f"https://learn.microsoft.com/en-us/credentials/certifications/{cert_match.group(1)}/")
+    exam_code_match = re.search(r"\b([a-z]{2,3}-\d{3,4})\b", assessment_url, re.I)
+    if exam_code_match:
+        meta_urls.append(
+            f"https://learn.microsoft.com/en-us/credentials/certifications/exams/{exam_code_match.group(1).lower()}/"
+        )
+
+    title = desc = logo = ""
+    for meta_url in meta_urls:
+        try:
+            log(f"[MS LEARN CRAWLER]: Fetching exam overview metadata from {meta_url}...")
+            res = requests.get(meta_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=10)
+            if res.status_code != 200:
+                continue
+            soup = BeautifulSoup(res.text, "html.parser")
+
+            h1 = soup.find("h1")
+            page_title = _EXAM_CODE_PREFIX.sub("", h1.get_text(" ", strip=True)) if h1 else ""
+            # Only a real badge counts — og:image is Microsoft Learn's generic share image on
+            # every page, which is what got stored as the "logo" before.
+            badge = soup.find("img", attrs={"src": re.compile(r"/badges/", re.I)})
+            page_logo = ""
+            if badge and badge.get("src"):
+                src = badge["src"]
+                page_logo = src if src.startswith("http") else f"https://learn.microsoft.com{src}"
+            desc_tag = soup.find("meta", attrs={"name": "description"})
+            page_desc = desc_tag["content"].strip() if desc_tag and desc_tag.get("content") else ""
+
+            title = title or page_title
+            logo = logo or page_logo
+            desc = desc or page_desc
+            log(f"[MS LEARN CRAWLER]: Overview metadata -> title: {page_title!r} | logo: {page_logo!r}")
+            if title and logo and desc:
+                break
+        except Exception as meta_err:
+            log(f"[MS LEARN CRAWLER WARNING]: Could not fetch exam overview metadata from {meta_url}: {meta_err}")
+    return title, desc, logo
+
+
+# Upper bound on questions per run when no max_questions is given — well above any practice
+# assessment's length, so it only stops a crawl whose page never reaches its end.
+MAX_QUESTIONS_SAFETY_CAP = 200
+
 
 async def crawl_ms_learn_assessment(
-    assessment_url: str, 
-    exam: str = "MS Learn Assessment", 
-    subject: str = "Microsoft Certification", 
-    max_questions: int = 50, 
-    headless: bool = False
+    assessment_url: str,
+    exam: str = "MS Learn Assessment",
+    subject: str = "Microsoft Certification",
+    max_questions: Optional[int] = None,
+    headless: bool = False,
+    on_progress: Optional[Callable[[int], None]] = None,
+    job_id: Optional[str] = None,
+    on_total: Optional[Callable[[int], None]] = None,
 ) -> list:
     """
     Autonomous Playwright crawler that accesses an assessment URL using the saved persistent session and storage_state,
@@ -193,28 +412,32 @@ async def crawl_ms_learn_assessment(
     extracts all questions, and inserts them into Neon PostgreSQL.
     """
     os.makedirs(USER_DATA_DIR, exist_ok=True)
-    storage_state_path = os.path.join(USER_DATA_DIR, "storage_state.json")
     log(f"[MS LEARN CRAWLER]: Starting assessment crawl for {assessment_url} (Exam: {exam})")
 
-    context_kwargs = {}
-    if os.path.exists(storage_state_path):
-        log(f"[MS LEARN CRAWLER]: Loading persisted auth state from {storage_state_path}")
-        context_kwargs["storage_state"] = storage_state_path
+    new_context_kwargs = {"viewport": {"width": 1400, "height": 900}}
+    if os.path.exists(STORAGE_STATE_PATH):
+        log(f"[MS LEARN CRAWLER]: Restoring saved session from {STORAGE_STATE_PATH}")
+        new_context_kwargs["storage_state"] = STORAGE_STATE_PATH
     else:
-        log(f"[MS LEARN CRAWLER WARNING]: No storage_state.json found in {USER_DATA_DIR}. Session might be unauthenticated.")
+        log("[MS LEARN CRAWLER WARNING]: No saved session found — this crawl will hit a fresh login wall.")
 
     extracted_questions = []
 
-    async with async_playwright() as p:
-        log(f"[MS LEARN CRAWLER DEBUG]: Launching Chromium persistent context (Headless: {headless}, UserDataDir: {USER_DATA_DIR})...")
-        # Note: storage_state is not used with persistent contexts - state is automatically managed via user_data_dir
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=USER_DATA_DIR,
-            headless=headless,
-            viewport={"width": 1400, "height": 900}
-        )
-        page = context.pages[0] if context.pages else await context.new_page()
-        
+    log(f"[MS LEARN CRAWLER DEBUG]: Launching Chromium (Headless: {headless})...")
+    p = await async_playwright().start()
+    browser = await p.chromium.launch(headless=headless)
+    context = await browser.new_context(**new_context_kwargs)
+    # Microsoft's OAuth completion page (identity-redirect.html) is written for popup-style
+    # auth and calls window.close() on itself once the handshake finishes. We navigate there
+    # directly rather than opening it as a real popup, but Chromium under Playwright's
+    # automation flags still honors that call — killing our tab mid-flow right after the
+    # account-picker/"Stay signed in?" step (confirmed via repeated "Target page, context or
+    # browser has been closed" errors at that exact point). Neutralize it for every page in
+    # this context before any navigation happens.
+    await context.add_init_script("window.close = () => {};")
+    page = await context.new_page()
+
+    try:
         log(f"[MS LEARN CRAWLER DEBUG]: Navigating to assessment page: {assessment_url}...")
         try:
             await page.goto(assessment_url, wait_until="domcontentloaded", timeout=30000)
@@ -228,7 +451,11 @@ async def crawl_ms_learn_assessment(
         
         # Auto-detect Exam Discipline and Subject from Title if requested
         if exam.lower() == "auto-detect" or subject.lower() == "auto-detect":
-            _exam_match = re.search(r'\b([A-Z]{2,3}-\d{3,4})\b', title_str, re.IGNORECASE)
+            # The tab title is usually just "Practice Assessment | Microsoft Learn"; the page's
+            # own heading ("Practice Assessment for Exam AZ-700: ...") carries the exam code.
+            heading = await page.query_selector("main h1")
+            heading_str = (await heading.inner_text()).strip() if heading else ""
+            _exam_match = re.search(r'\b([A-Z]{2,3}-\d{3,4})\b', f"{heading_str} {title_str}", re.IGNORECASE)
             if _exam_match and exam.lower() == "auto-detect":
                 exam = f"Exam {_exam_match.group(1).upper()}"
             if subject.lower() == "auto-detect":
@@ -236,88 +463,151 @@ async def crawl_ms_learn_assessment(
                 subject = _clean_title if _clean_title else "Microsoft Certification"
             log(f"[MS LEARN CRAWLER DEBUG]: Auto-detected Exam: '{exam}' | Subject: '{subject}'")
 
-        # Fetch official exam metadata (description, logo badge, and official title) from Microsoft Learn certification/exam page
-        exam_desc = ""
-        logo_url = ""
-        try:
-            # Determine potential metadata URLs (either certification page or exam code page)
-            meta_urls = []
-            if "credentials/certifications/" in assessment_url and "/exams/" not in assessment_url:
-                cert_slug_path = assessment_url.split("credentials/certifications/")[1].split("?")[0].strip("/")
-                meta_urls.append(f"https://learn.microsoft.com/en-us/credentials/certifications/{cert_slug_path}/")
-
-            exam_code_match = re.search(r'\b([a-z]{2,3}-\d{3,4})\b', assessment_url, re.I)
-            if exam_code_match:
-                base_exam_code = exam_code_match.group(1).lower()
-                meta_urls.append(f"https://learn.microsoft.com/en-us/credentials/certifications/exams/{base_exam_code}/")
-
-            for meta_url in meta_urls:
-                log(f"[MS LEARN CRAWLER]: Fetching exam overview metadata from {meta_url}...")
-                meta_res = requests.get(meta_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=10)
-                if meta_res.status_code == 200:
-                    meta_soup = BeautifulSoup(meta_res.text, "html.parser")
-                    
-                    # 1. Extract Official Title (e.g. Microsoft Certified: AI Transformation Leader)
-                    h1_tag = meta_soup.find("h1")
-                    og_title_tag = meta_soup.find("meta", attrs={"property": "og:title"})
-                    official_title = (h1_tag.get_text(strip=True) if h1_tag else "") or (og_title_tag["content"] if og_title_tag else "")
-                    
-                    if official_title and not exam or exam.lower().startswith("ms learn"):
-                        exam = official_title
-                        if ":" in official_title:
-                            subject = official_title.split(":", 1)[1].strip()
-                        elif "-" in official_title:
-                            subject = official_title.split("-", 1)[1].strip()
-                        log(f"[MS LEARN CRAWLER]: Extracted Official Title: '{exam}' | Subject: '{subject}'")
-
-                    # 2. Extract Logo / Badge SVG URL
-                    badge_img = meta_soup.find("img", attrs={"src": re.compile(r"badges|certification|badge", re.I)})
-                    if badge_img and badge_img.get("src"):
-                        raw_src = badge_img["src"]
-                        logo_url = raw_src if raw_src.startswith("http") else f"https://learn.microsoft.com{raw_src}"
-                        log(f"[MS LEARN CRAWLER]: Extracted Badge Logo URL: '{logo_url}'")
-                    else:
-                        og_img = meta_soup.find("meta", attrs={"property": "og:image"})
-                        if og_img and og_img.get("content"):
-                            logo_url = og_img["content"]
-
-                    # 3. Extract Exam Description
-                    desc_tag = meta_soup.find("meta", attrs={"name": "description"}) or meta_soup.find("meta", attrs={"property": "og:description"})
-                    if desc_tag and desc_tag.get("content"):
-                        exam_desc = desc_tag["content"].strip()
-                        log(f"[MS LEARN CRAWLER]: Extracted Exam Description ({len(exam_desc)} chars): '{exam_desc[:100]}...'")
-
-                    if logo_url or exam_desc:
-                        break
-        except Exception as meta_err:
-            log(f"[MS LEARN CRAWLER WARNING]: Could not fetch exam overview metadata: {meta_err}")
+        exam_title, exam_desc, logo_url = fetch_exam_overview_metadata(assessment_url)
 
 
         # Check if page requires user to click Sign-In
-        signin_button = await page.query_selector("a[href*='identity/signin'], button:has-text('Sign in'), a:has-text('Sign in')")
-        if signin_button and await signin_button.is_visible():
+        signin_button = await _find_visible_signin(page)
+        if signin_button:
             log("[MS LEARN CRAWLER DEBUG]: Unauthenticated landing page detected. Clicking Sign In button...")
             await signin_button.click()
             await page.wait_for_timeout(3000)
             log(f"[MS LEARN CRAWLER DEBUG]: URL after clicking Sign In: {page.url}")
 
-        # Check if auth prompt appeared or redirect to login.microsoftonline.com
-        if "login.microsoftonline.com" in page.url or "login.live.com" in page.url or "identity/signin" in page.url:
-            log(f"[MS LEARN CRAWLER DEBUG]: Redirected to Microsoft Identity page: {page.url}. Attempting auto session resumption...")
+        # Check if auth prompt appeared or redirect to login.microsoftonline.com. One round of
+        # tile-click + "Stay signed in?" is not always enough — navigating back to assessment_url
+        # can trigger a brand new `prompt=select_account` authorize call (a fresh client-request-id)
+        # rather than landing on the assessment, so retry the whole resumption dance a few times
+        # before giving up.
+        for resume_attempt in range(3):
+            if not (
+                "login.microsoftonline.com" in page.url
+                or "login.live.com" in page.url
+                or "identity/signin" in page.url
+            ):
+                break
+            log(
+                f"[MS LEARN CRAWLER DEBUG]: Redirected to Microsoft Identity page "
+                f"(attempt {resume_attempt + 1}/3): {page.url}. Attempting auto session resumption..."
+            )
             try:
-                tile = await page.query_selector("#newSessionLink, [data-test-id='signinOptions'], div.tile:has-text('Signed in')")
+                # `[data-test-id='signinOptions']` was confirmed (via screenshot) to match the
+                # "Sign-in options" link, which just expands a menu of alternate sign-in methods
+                # (passkey/GitHub/org) — not an account-resume tile. Clicking it every single
+                # attempt achieved nothing, which is why this resume path never once succeeded.
+                # `#newSessionLink` / `div.tile:has-text('Signed in')` remain as the actual
+                # candidates for an "already signed in as X" tile, should MSAL ever show one here.
+                tile = await page.query_selector("#newSessionLink, div.tile:has-text('Signed in')")
                 if tile:
-                    log("[MS LEARN CRAWLER DEBUG]: Found active Microsoft session tile! Clicking tile to sign in...")
+                    tile_text = (await tile.inner_text()).strip().replace("\n", " ")[:120]
+                    tile_id = await tile.get_attribute("id")
+                    log(
+                        f"[MS LEARN CRAWLER DEBUG]: Found active Microsoft session tile "
+                        f"(id={tile_id!r}, text={tile_text!r})! Clicking tile to sign in..."
+                    )
                     await tile.click()
-                    await page.wait_for_timeout(4000)
+                    await page.wait_for_timeout(1500)
+                    log(
+                        f"[MS LEARN CRAWLER DEBUG]: Immediately after tile click — URL: {page.url} "
+                        f"| Title: {await page.title()!r}"
+                    )
+                    try:
+                        await page.screenshot(
+                            path=f"/tmp/ms_learn_debug_attempt{resume_attempt + 1}_post_tile_click.png"
+                        )
+                    except Exception:
+                        pass
+
+                    # Picking an account is very often followed by a "Stay signed in?" interstitial
+                    # (id="idSIButton9" for Yes) before the redirect back to learn.microsoft.com
+                    # completes — the previous fixed 4s sleep + immediate re-navigate to
+                    # assessment_url never gave this screen a chance to appear, so clicking the
+                    # tile looked like it "worked" but actually abandoned the flow mid-step,
+                    # bouncing straight back to a fresh login prompt every single time (this is
+                    # exactly what the logs showed: every attempt, including ones that had
+                    # previously succeeded, hit the same loop).
+                    try:
+                        await page.wait_for_selector(KMSI_PAGE_SELECTOR, timeout=5000)
+                        if await _click_stay_signed_in_yes(page):
+                            log("[MS LEARN CRAWLER DEBUG]: 'Stay signed in?' prompt detected — clicked Yes.")
+                            await page.wait_for_timeout(1500)
+                            log(
+                                f"[MS LEARN CRAWLER DEBUG]: Immediately after 'Stay signed in?' click — "
+                                f"URL: {page.url} | Title: {await page.title()!r}"
+                            )
+                        else:
+                            log(
+                                f"[MS LEARN CRAWLER DEBUG]: No visible 'Stay signed in?' prompt found. "
+                                f"Current URL: {page.url} | Title: {await page.title()!r}"
+                            )
+                    except Exception as stay_signed_in_err:
+                        log(
+                            f"[MS LEARN CRAWLER DEBUG]: No 'Stay signed in?' interstitial appeared "
+                            f"({stay_signed_in_err.__class__.__name__}). Current URL: {page.url} | "
+                            f"Title: {await page.title()!r}"
+                        )
+                    try:
+                        await page.screenshot(
+                            path=f"/tmp/ms_learn_debug_attempt{resume_attempt + 1}_post_stay_signed_in.png"
+                        )
+                    except Exception:
+                        pass
+                else:
+                    log(
+                        f"[MS LEARN CRAWLER DEBUG]: No session tile found on identity page. "
+                        f"Title: {await page.title()!r}"
+                    )
+                    try:
+                        await page.screenshot(
+                            path=f"/tmp/ms_learn_debug_attempt{resume_attempt + 1}_no_tile.png"
+                        )
+                    except Exception:
+                        pass
+
+                # Wait for the redirect chain to actually leave Microsoft's identity domain,
+                # instead of a fixed sleep that may fire before the chain settles.
+                try:
+                    await page.wait_for_url(
+                        lambda url: "login.microsoftonline.com" not in url
+                        and "login.live.com" not in url,
+                        timeout=15000,
+                    )
+                except Exception:
+                    log(
+                            f"[MS LEARN CRAWLER WARNING]: Still on a Microsoft identity page after "
+                            f"15s: {page.url}"
+                        )
+
+                # Some Microsoft account-picker/"Stay signed in?" completions finish by opening the
+                # result in a new tab and closing the original one (a popup-style OAuth completion)
+                # rather than navigating the same page — the log evidence for this was `page.goto`
+                # failing with "Target page, context or browser has been closed" immediately after
+                # the tile click, even though the browser process itself was still alive. If our
+                # page handle died, recover the context's current live page instead of treating
+                # this as fatal.
+                if page.is_closed():
+                    log("[MS LEARN CRAWLER WARNING]: Page closed during account resumption — recovering the context's current page.")
+                    live_pages = [p for p in context.pages if not p.is_closed()]
+                    if live_pages:
+                        page = live_pages[-1]
+                        log(f"[MS LEARN CRAWLER DEBUG]: Recovered page. Current URL: {page.url}")
+                    else:
+                        page = await context.new_page()
+                        log("[MS LEARN CRAWLER WARNING]: No live pages left in context — opened a fresh one.")
 
                 if "practice/assessment" not in page.url:
                     log("[MS LEARN CRAWLER DEBUG]: Navigating back to practice assessment after account tile click...")
                     await page.goto(assessment_url, wait_until="domcontentloaded", timeout=20000)
                     await page.wait_for_timeout(3000)
 
-                log(f"[MS LEARN CRAWLER DEBUG]: Session resumed! Current URL: {page.url}")
-                await context.storage_state(path=storage_state_path)
+                if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
+                    log(
+                        f"[MS LEARN CRAWLER WARNING]: Session did NOT resume after attempt "
+                        f"{resume_attempt + 1}/3 — still on a Microsoft identity page: {page.url}"
+                    )
+                else:
+                    log(f"[MS LEARN CRAWLER DEBUG]: Session resumed! Current URL: {page.url}")
+                    await context.storage_state(path=STORAGE_STATE_PATH)
             except Exception as auth_err:
                 log(f"[MS LEARN CRAWLER WARNING]: Could not auto-resume Microsoft session: {auth_err}")
 
@@ -329,9 +619,22 @@ async def crawl_ms_learn_assessment(
         except Exception as fieldset_init_err:
             log(f"[MS LEARN CRAWLER WARNING]: Initial fieldset wait failed: {fieldset_init_err}")
 
+        media_store = FilesystemMediaStore()
         prev_question_text = ""
-        for q_index in range(1, max_questions + 1):
-            log(f"[MS LEARN CRAWLER DEBUG]: Processing Question {q_index}/{max_questions}...")
+        # No cap by default: the whole assessment is scraped (maximum data, deduplicated on
+        # approval). A caller-given max_questions still limits the run; the safety cap only guards
+        # against a page that never reaches its end.
+        limit = max_questions if max_questions else MAX_QUESTIONS_SAFETY_CAP
+        assessment_total: Optional[int] = None
+        # Distinct questions reached so far. The end is detected from these rather than from loop
+        # iterations: an iteration spent waiting on a slow page transition (same stem re-read)
+        # would otherwise count as a question and end the crawl one question early.
+        seen_stems: set[str] = set()
+        for q_index in range(1, limit + 1):
+            if assessment_total is not None and len(seen_stems) >= assessment_total:
+                log(f"[MS LEARN CRAWLER]: Reached the end of the assessment ({assessment_total} questions).")
+                break
+            log(f"[MS LEARN CRAWLER DEBUG]: Processing Question {q_index}/{assessment_total or limit}...")
             await page.wait_for_timeout(1000)
 
             # Wait for fieldset to appear
@@ -343,243 +646,102 @@ async def crawl_ms_learn_assessment(
                 log(f"[MS LEARN CRAWLER DEBUG]: Page Body snippet: {body_text}")
                 break
 
+            # "Question 1 of 50": the assessment's real length, read once.
+            if assessment_total is None:
+                progress_label = await page.query_selector("label.is-size-5")
+                total_match = re.search(
+                    r"of\s+(\d+)", (await progress_label.inner_text()) if progress_label else ""
+                )
+                if total_match:
+                    assessment_total = min(int(total_match.group(1)), limit)
+                    if on_total:
+                        on_total(assessment_total)
+
             fieldset = await page.query_selector("fieldset")
             if not fieldset:
                 log(f"[MS LEARN CRAWLER DEBUG]: No fieldset element found on Q{q_index}.")
                 break
 
-            # Extract Question Header & Text
-            q_header = await page.query_selector("h2, .quiz-header, label.is-size-5, legend")
-            q_title = (await q_header.inner_text()).strip() if q_header else f"Question {q_index}"
-            
-            q_paragraphs = await fieldset.query_selector_all("p")
-            q_texts = []
-            for p_elem in q_paragraphs:
-                txt = (await p_elem.inner_text()).strip()
-                if txt and not txt.startswith("Question ") and not txt.startswith("Select "):
-                    q_texts.append(txt)
+            # The stem alone identifies the question for "has the page moved on yet?" checks —
+            # the fieldset as a whole also contains the (hidden) rationale.
+            async def read_stem() -> str:
+                stem_el = await page.query_selector("fieldset #question-legend")
+                return " ".join((await stem_el.inner_text()).split()) if stem_el else ""
 
-            question_body = "\n".join(q_texts)
-            full_q_text = f"{q_title}: {question_body}".strip() if question_body else q_title
-
-            # Avoid duplicate extractions if DOM has not updated yet
-            if full_q_text == prev_question_text and q_index > 1:
+            stem = await read_stem()
+            if stem and stem == prev_question_text and q_index > 1:
                 log(f"[MS LEARN CRAWLER DEBUG]: Duplicate Q text detected. Waiting for DOM transition on question {q_index}...")
                 await page.wait_for_timeout(2500)
-                fieldset = await page.query_selector("fieldset")
-                if fieldset:
-                    q_paragraphs = await fieldset.query_selector_all("p")
-                    question_body = "\n".join([(await p.inner_text()).strip() for p in q_paragraphs])
-                    full_q_text = f"{q_title}: {question_body}".strip()
+                stem = await read_stem()
+            prev_question_text = stem
+            if stem:
+                seen_stems.add(stem)
+            log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Text: '{stem[:90]}...'")
 
-            prev_question_text = full_q_text
-            log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Text: '{full_q_text[:90]}...'")
-
-            # Extract choices
-            choice_labels = await fieldset.query_selector_all("label.quiz-choice, label.radio, label.checkbox, label[for*='choice']")
-            choices = []
-            for c_elem in choice_labels:
-                c_text = (await c_elem.inner_text()).strip()
-                if c_text and c_text not in choices:
-                    choices.append(c_text)
-            
-            log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Extracted {len(choices)} choices: {choices}")
-
-            # Select options to enable "Check Your Answer" (could be a checkbox needing multiple selections)
+            # Select options to enable "Check Your Answer" (a multi-select needs more than one).
             inputs = await fieldset.query_selector_all("input[type='radio'], input[type='checkbox'], input.radio-dot")
-            if inputs:
-                for inp in inputs[:3]: # Click up to 3 inputs to satisfy multi-selects
-                    try:
-                        await inp.click(force=True)
-                        await page.wait_for_timeout(200)
-                    except Exception as click_err:
-                        log(f"[MS LEARN CRAWLER DEBUG]: Choice selection click error: {click_err}")
+            for inp in inputs[:3]:
+                try:
+                    await inp.click(force=True)
+                    await page.wait_for_timeout(200)
+                except Exception as click_err:
+                    log(f"[MS LEARN CRAWLER DEBUG]: Choice selection click error: {click_err}")
 
-            # Click Check Your Answer
             check_ans_btn = await page.query_selector("button#checkUserAnswer, button:has-text('Check Your Answer')")
-            correct_answer = choices[0] if choices else "Option A"
-            explanation = "Extracted directly from Microsoft Learn Practice Assessment."
-
             if check_ans_btn:
                 try:
                     log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Clicking 'Check Your Answer' button...")
                     await check_ans_btn.click()
-                    await page.wait_for_timeout(1500)
-
-                    correct_labels = await fieldset.query_selector_all("label.is-correct, .quiz-choice:has-text('is correct'), .is-success")
-                    if correct_labels:
-                        correct_answers_list = []
-                        for c_lbl in correct_labels:
-                            c_txt = (await c_lbl.inner_text()).strip()
-                            if c_txt and c_txt not in correct_answers_list:
-                                correct_answers_list.append(c_txt)
-                        if correct_answers_list:
-                            correct_answer = " | ".join(correct_answers_list)
-                            log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Correct Answer Identified: '{correct_answer}'")
-
-                    rationale_elem = await page.query_selector(".rationale, .explanation, [data-bi-name='rationale'], div.margin-block-xs")
-                    if rationale_elem:
-                        explanation = (await rationale_elem.inner_text()).strip()
-                        log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Rationale Extracted: '{explanation[:80]}...'")
+                    await page.wait_for_selector("fieldset label.quiz-choice.is-correct", timeout=5000)
                 except Exception as check_err:
-                    log(f"[MS LEARN CRAWLER DEBUG]: Check Answer click error: {check_err}")
+                    log(f"[MS LEARN CRAWLER DEBUG]: Check Answer did not reveal a correct option: {check_err}")
 
-            # Extract additional reading links - search in multiple locations
-            additional_reading_links = []
-            
-            # Search for additional reading links on page after Check Answer
+            # Everything about the question — stem, options, correct answer(s), rationale, reading
+            # links — comes from the revealed fieldset's structure; see ms_learn_parser.py.
+            fieldset = await page.query_selector("fieldset")
             try:
-                # Look for any element that might contain additional resources
-                # Common patterns: divs with "additional", links after specific containers, etc.
-                all_elements = await page.query_selector_all("div, section, article")
-                
-                for elem in all_elements:
-                    try:
-                        elem_text = (await elem.inner_text()).strip()
-                        # Check if this element contains "Additional Reading"
-                        if "additional reading" in elem_text.lower() or "additional resources" in elem_text.lower():
-                            # Found the additional reading section, extract links from it
-                            links = await elem.query_selector_all("a[href]")
-                            for link in links:
-                                href = await link.get_attribute("href")
-                                link_text = (await link.inner_text()).strip()
-                                if href and link_text:
-                                    # Construct absolute URL if relative
-                                    if href.startswith("/"):
-                                        href = f"https://learn.microsoft.com{href}"
-                                    elif not href.startswith("http"):
-                                        href = f"https://learn.microsoft.com/{href}"
-                                    
-                                    # Avoid duplicates
-                                    if not any(
-                                        link["url"] == href for link in additional_reading_links
-                                    ):
-                                        additional_reading_links.append({
-                                            "text": link_text,
-                                            "url": href
-                                        })
-                            
-                            if additional_reading_links:
-                                log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Found additional reading section with {len(additional_reading_links)} links")
-                                break
-                    except Exception:
-                        pass
-                
-                # If still no links found, do a broader search for resource-like links
-                if not additional_reading_links:
-                    try:
-                        all_links = await page.query_selector_all("a[href]")
-                        for link in all_links:
-                            try:
-                                link_text = (await link.inner_text()).strip()
-                                # Look for links that seem like learning resources
-                                if any(keyword in link_text.lower() for keyword in 
-                                       ['microsoft learn', 'power platform', 'dynamics 365', 'dataverse', 
-                                        'integration pattern', 'concept', 'module', 'training', 'documentation']):
-                                    href = await link.get_attribute("href")
-                                    if href and link_text and ("learn.microsoft.com" in href or href.startswith("/")):
-                                        if href.startswith("/"):
-                                            href = f"https://learn.microsoft.com{href}"
-                                        
-                                        # Avoid duplicates
-                                        if not any(
-                                            link["url"] == href for link in additional_reading_links
-                                        ):
-                                            additional_reading_links.append({
-                                                "text": link_text,
-                                                "url": href
-                                            })
-                            except Exception:
-                                pass
-                        
-                        if additional_reading_links:
-                            log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Found {len(additional_reading_links)} resource links via broader search")
-                    except Exception as e:
-                        log(f"[MS LEARN CRAWLER DEBUG]: Broader link search failed: {e}")
-                        
-            except Exception as link_err:
-                log(f"[MS LEARN CRAWLER DEBUG]: Could not extract additional reading links: {link_err}")
+                parsed = parse_question_fieldset(await fieldset.evaluate("el => el.outerHTML"))
+            except MsLearnParseError as parse_err:
+                log(f"[MS LEARN CRAWLER WARNING]: Q{q_index} skipped — {parse_err}")
+                parsed = None
 
-            # Perform Cleaning & Normalization
-            clean_q_text = re.sub(r'^Question\s+\d+(\s+of\s+\d+)?:?\s*', '', full_q_text.strip(), flags=re.IGNORECASE)
-            
-            # Extract Rationale / Objective / Additional Reading if concatenated
-            combined_body = f"{full_q_text}\n{explanation}"
-            explanation_parts = []
-            
-            rat_match = re.search(r'Rationale:\s*(.*?)(?=\n\s*(?:Objective:|What This Item Tests:|Additional Reading:)|$)', combined_body, re.DOTALL | re.IGNORECASE)
-            if rat_match:
-                explanation_parts.append(f"Rationale:\n{rat_match.group(1).strip()}")
-            elif explanation and not explanation.startswith("Extracted directly"):
-                explanation_parts.append(explanation)
-                
-            obj_match = re.search(r'Objective:\s*(.*?)(?=\n\s*(?:What This Item Tests:|Additional Reading:|Rationale:)|$)', combined_body, re.DOTALL | re.IGNORECASE)
-            if obj_match:
-                explanation_parts.append(f"Objective:\n{obj_match.group(1).strip()}")
+            # Question images are downloaded now, with the signed-in session's cookies, and stored
+            # locally — see ms_learn_media.py for why a failed stem/option image drops the question.
+            images = []
+            if parsed and parsed.images:
+                async def fetch_image(url):
+                    resp = await context.request.get(url, timeout=20000)
+                    return resp.status, await resp.body(), resp.headers.get("content-type")
 
-            read_match = re.search(r'Additional Reading:\s*(.*?)(?=\n\s*(?:Objective:|What This Item Tests:|Rationale:)|$)', combined_body, re.DOTALL | re.IGNORECASE)
-            if read_match:
-                explanation_parts.append(f"Additional Reading:\n{read_match.group(1).strip()}")
-
-            # Strip metadata from clean_q_text
-            clean_q_text = re.split(r'\n\s*(?:Objective:|What This Item Tests:|Additional Reading:|Rationale:)', clean_q_text)[0].strip()
-
-            # Strip options if concatenated into clean_q_text
-            for choice in choices:
-                if choice and len(choice) > 3:
-                    clean_q_text = clean_q_text.replace(choice, "").strip()
-
-            paragraphs = [p.strip() for p in clean_q_text.split('\n') if p.strip() and not re.match(r'^Question\s+\d+', p, re.I)]
-            final_question_text = '\n\n'.join(paragraphs) if paragraphs else clean_q_text
-            final_explanation = '\n\n'.join(explanation_parts) if explanation_parts else "Extracted directly from Microsoft Learn Practice Assessment."
-
-            # Fallback: Extract link titles from "Additional Reading:" section if no links found yet
-            if not additional_reading_links and "Additional Reading" in final_explanation:
                 try:
-                    # Parse the Additional Reading section text
-                    read_section_match = re.search(
-                        r'Additional Reading:\s*(.*?)(?=\n\s*(?:Objective:|Rationale:|$))',
-                        final_explanation,
-                        re.DOTALL | re.IGNORECASE
-                    )
-                    if read_section_match:
-                        read_text = read_section_match.group(1).strip()
-                        # Split by newlines to get individual link titles
-                        link_titles = [line.strip() for line in read_text.split('\n') if line.strip() and not line.strip().startswith(('-', '*', '•'))]
-                        
-                        for title in link_titles:
-                            # Remove bullets/dashes if present
-                            title = re.sub(r'^[-*•]\s*', '', title).strip()
-                            if title and len(title) > 3:
-                                # Try to construct a reasonable URL based on the title
-                                # This is a best-effort fallback when actual links aren't found
-                                slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
-                                constructed_url = f"https://learn.microsoft.com/en-us/training/modules/{slug}/"
-                                
-                                additional_reading_links.append({
-                                    "text": title,
-                                    "url": constructed_url
-                                })
-                        
-                        if additional_reading_links:
-                            log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} Fallback: Created {len(additional_reading_links)} links from Additional Reading text")
-                except Exception as fb_err:
-                    log(f"[MS LEARN CRAWLER DEBUG]: Fallback link extraction failed: {fb_err}")
+                    images = await store_question_images(parsed.images, fetch_image, media_store, log)
+                except MediaFetchError as media_err:
+                    log(f"[MS LEARN CRAWLER WARNING]: Q{q_index} skipped — {media_err}")
+                    parsed = None
 
-            is_duplicate = any(sq["questionText"] == final_question_text for sq in extracted_questions)
-            if not is_duplicate:
-                extracted_questions.append({
-                    "questionText": final_question_text,
-                    "options": choices if len(choices) >= 2 else ["Option A", "Option B", "Option C", "Option D"],
-                    "answer": correct_answer,
-                    "explanation": final_explanation,
-                    "additionalReadingLinks": additional_reading_links,
-                    "exam": exam,
-                    "subject": subject
-                })
-                log(f"[MS LEARN CRAWLER SUCCESS]: Extracted Q{q_index}/{max_questions} successfully!")
-            else:
-                log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} skipped because it's a duplicate (page likely didn't transition fast enough).")
+            if parsed:
+                log(
+                    f"[MS LEARN CRAWLER DEBUG]: Q{q_index} {len(parsed.options)} options, correct: "
+                    f"{parsed.correct_options}, {len(parsed.reading_links)} reading link(s)"
+                )
+                if any(sq["questionText"] == parsed.question_text for sq in extracted_questions):
+                    log(f"[MS LEARN CRAWLER DEBUG]: Q{q_index} skipped because it's a duplicate (page likely didn't transition fast enough).")
+                else:
+                    extracted_questions.append({
+                        "questionText": parsed.question_text,
+                        "options": parsed.options,
+                        # Multi-answer questions keep the " | "-joined form the review/approval
+                        # step already understands (packages/api/src/lib/review-answers.ts).
+                        "answer": " | ".join(parsed.correct_options),
+                        "explanation": parsed.explanation,
+                        "additionalReadingLinks": parsed.reading_links,
+                        "images": images,
+                        "exam": exam,
+                        "subject": subject,
+                    })
+                    log(f"[MS LEARN CRAWLER SUCCESS]: Extracted Q{q_index}/{assessment_total or limit} successfully!")
+                    if on_progress:
+                        on_progress(len(extracted_questions))
 
             # Advance to Next Question with robust visible-element detection and JS click fallback
             clicked_next = False
@@ -681,10 +843,23 @@ async def crawl_ms_learn_assessment(
                     "extractedElements": extracted_questions,
                     "metadata": {
                         "exam": exam,
+                        # The official display name ("Microsoft Certified: AI Business
+                        # Professional"). `exam` stays the code-bearing identifier ("Exam AB-730")
+                        # that approval uses to match an already-registered exam.
+                        "examTitle": exam_title,
                         "subject": subject,
                         "description": exam_desc,
                         "logoUrl": logo_url,
                         "source": "Microsoft Learn Practice Assessment",
+                        # Links the batch back to the pipeline job that produced it, so the admin
+                        # scraping page can show a run and its review status as one row.
+                        "jobId": job_id,
+                        # Practice assessments draw questions at random from a pool, so questions
+                        # are identified by content (see the pipeline's stable_id.py): approving a
+                        # re-scrape adds only the questions not already published.
+                        "questionIdentity": "content",
+                        # What the published question set is called on the exam page.
+                        "questionSetTitle": "Official Microsoft Practice Assessment",
                         "count": len(extracted_questions)
                     }
                 },
@@ -694,5 +869,8 @@ async def crawl_ms_learn_assessment(
             else:
                 log("[MS LEARN CRAWLER]: Extraction succeeded but the database write failed — see [DB INSERT ERROR] above.")
 
-        await context.close()
         return extracted_questions
+    finally:
+        await context.close()
+        await browser.close()
+        await p.stop()

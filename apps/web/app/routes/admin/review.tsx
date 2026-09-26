@@ -8,12 +8,15 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Loader2,
   Sparkles,
   Trash2,
 } from "lucide-react";
 import React, { useState } from "react";
 import { extractLabeledSection, mergeReadingResources } from "../../../lib/additional-reading";
 import { orpc } from "../../../lib/orpc";
+import { type QuestionImage, QuestionImages } from "../../components/question/QuestionImages";
+import { placeholderKeys } from "../../components/ui/Skeleton";
 
 interface QuestionElement {
   questionText?: string;
@@ -28,6 +31,12 @@ interface QuestionElement {
   rationale?: string;
   exam?: string;
   subject?: string;
+  images?: Array<{
+    placement: "question" | "option" | "explanation";
+    optionIndex?: number | null;
+    storageKey: string;
+    alt?: string;
+  }>;
   additionalReading?: string | string[];
   additionalReadings?: string[];
   additionalReadingLinks?: Array<{ text: string; url?: string }>;
@@ -63,7 +72,7 @@ function parseQuestionElement(q: QuestionElement, index: number) {
   let options: string[] = [];
   if (Array.isArray(q.options) && q.options.length > 0) options = q.options;
   else if (Array.isArray(q.choices) && q.choices.length > 0) options = q.choices;
-  else options = ["Option A", "Option B", "Option C", "Option D"];
+  // No placeholder options: a reviewer has to see that none were extracted.
 
   // 1. Strip Question X of Y: prefix
   let cleanText = rawText.replace(/^Question\s+\d+(\s+of\s+\d+)?:?\s*/i, "").trim();
@@ -108,14 +117,24 @@ function parseQuestionElement(q: QuestionElement, index: number) {
     .filter((p) => p && !/^Question\s+\d+/i.test(p) && !/^Select\s+all/i.test(p));
 
   const questionText = paragraphs.join("\n\n") || cleanText;
-  const explanation =
-    explanationParts.join("\n\n") || "Extracted directly from Microsoft Learn Practice Assessment.";
-  const answer = q.answer || q.correctAnswer || options[0] || "";
+  // Missing explanation/answer stay missing (the batch's quality warnings call them out) rather
+  // than showing a placeholder explanation or the first option as "correct".
+  const explanation = explanationParts.join("\n\n");
+  const answer = q.answer || q.correctAnswer || "";
+  const images: QuestionImage[] = (q.images ?? []).map((image) => ({
+    url: `/api/media/${image.storageKey}`,
+    placement: image.placement,
+    optionKey:
+      image.placement === "option" && image.optionIndex != null
+        ? String.fromCharCode(65 + image.optionIndex)
+        : null,
+    alt: image.alt || null,
+  }));
   const exam = q.exam || "Practice Assessment";
   const subject = q.subject || "General Subject";
   const additionalReadings = mergeAdditionalReadings(q, fullContent);
 
-  return { questionText, options, answer, explanation, exam, subject, additionalReadings };
+  return { questionText, options, answer, explanation, exam, subject, additionalReadings, images };
 }
 
 export const Route = createFileRoute("/admin/review")({
@@ -124,7 +143,18 @@ export const Route = createFileRoute("/admin/review")({
 });
 
 function AdminReviewPage() {
-  const { data: queue } = useQuery(orpc.admin.getReviewQueue.queryOptions());
+  const {
+    data: queue,
+    isError: isQueueError,
+    error: queueError,
+    refetch: refetchQueue,
+  } = useQuery(orpc.admin.getReviewQueue.queryOptions());
+  // Until the queue has arrived the page shows skeletons — not "0 batches" and "queue is
+  // completely clear", which is what an empty `items` used to render while it loaded. Set in the
+  // same effect that copies the queue into `items`, so there's no render in between where the
+  // data has arrived but `items` is still empty.
+  const [hasLoadedQueue, setHasLoadedQueue] = useState(false);
+  const isQueueLoading = !hasLoadedQueue && !isQueueError;
   const { mutateAsync: processReviewItem } = useMutation(
     orpc.admin.processReviewItem.mutationOptions(),
   );
@@ -134,9 +164,20 @@ function AdminReviewPage() {
 
   const [items, setItems] = React.useState<any[]>(queue || []);
   const [isProcessing, setIsProcessing] = useState(false);
+  // Which item's button started the current request, so only that one shows a spinner — and the
+  // outcome of the last action, since publishing a large batch takes a while and used to finish
+  // silently (or fail silently per question).
+  const [activeAction, setActiveAction] = useState<{
+    id: string;
+    action: "approve" | "discard";
+  } | null>(null);
+  const [lastResult, setLastResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   React.useEffect(() => {
-    if (queue) setItems(queue);
+    if (queue) {
+      setItems(queue);
+      setHasLoadedQueue(true);
+    }
   }, [queue]);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
@@ -147,43 +188,87 @@ function AdminReviewPage() {
   const handleAction = async (id: string, action: "approve" | "discard") => {
     try {
       setIsProcessing(true);
-      await processReviewItem({ id, action: action === "discard" ? "reject" : "approve" });
+      setActiveAction({ id, action });
+      setLastResult(null);
+      const result = await processReviewItem({
+        id,
+        action: action === "discard" ? "reject" : "approve",
+      });
       setItems((prev) => prev.filter((i) => i.id !== id));
-    } catch (_err) {
-      alert("Error processing item in queue");
+      setLastResult({ ok: !result.message.includes(" failed: "), message: result.message });
+    } catch (err) {
+      setLastResult({
+        ok: false,
+        message: `Error processing item in queue: ${(err instanceof Error ? err.message : undefined) ?? "check server logs"}`,
+      });
     } finally {
       setIsProcessing(false);
+      setActiveAction(null);
     }
   };
 
-  // docs/roadmap/engineering-roadmap.md item 21: these used to loop handleAction sequentially —
-  // one browser round-trip per item in the batch. Both now send the whole id list in a single
-  // processReviewBatch request.
+  // docs/roadmap/engineering-roadmap.md item 21 moved both batch actions to a single
+  // processReviewBatch request. Discard still uses it (it's instant); approve doesn't:
+  // it approves batches from the page, a few at a time, instead of one processReviewBatch request:
+  // a request that only returns when every batch is published gave no progress at all (it looked
+  // frozen for minutes). Each batch is one processReviewItem call, so the button can count them
+  // off and each card disappears as its batch is published.
+  const BATCH_APPROVE_CONCURRENCY = 3;
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+
   const handleBatchApprove = async () => {
-    const safeItems = items.filter((i) => !i.hasCollision);
+    // Batches with a similar existing question or known extraction problems need a human look.
+    const safeItems = items.filter((i) => !i.hasCollision && !(i.qualityIssues?.length > 0));
     if (safeItems.length === 0) {
-      alert("No collision-free items available to approve.");
+      alert("No batches without collisions or extraction problems to approve.");
       return;
     }
     if (
       !confirm(
-        `Approve and publish all ${safeItems.length} collision-free scraped batches to live database?`,
+        `Approve and publish all ${safeItems.length} batches with no collisions or extraction problems?`,
       )
     ) {
       return;
     }
     setIsProcessing(true);
+    setLastResult(null);
+    setBatchProgress({ done: 0, total: safeItems.length });
+    const failures: string[] = [];
+    let published = 0;
+    let next = 0;
+    const worker = async () => {
+      while (next < safeItems.length) {
+        const item = safeItems[next++];
+        try {
+          const result = await processReviewItem({ id: item.id, action: "approve" });
+          setItems((prev) => prev.filter((i) => i.id !== item.id));
+          if (result.message.includes(" failed: ")) {
+            failures.push(`Batch ${item.id.slice(0, 8)}: ${result.message}`);
+          } else {
+            published++;
+          }
+        } catch (err) {
+          failures.push(
+            `Batch ${item.id.slice(0, 8)}: ${(err instanceof Error ? err.message : undefined) ?? "failed"}`,
+          );
+        } finally {
+          setBatchProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
+        }
+      }
+    };
     try {
-      const { results } = await processReviewBatch({
-        ids: safeItems.map((item) => item.id),
-        action: "approve",
-      });
-      const succeededIds = new Set(results.filter((r) => r.success).map((r) => r.id));
-      setItems((prev) => prev.filter((i) => !succeededIds.has(i.id)));
-    } catch (_err) {
-      alert("Error processing batch approve");
+      await Promise.all(
+        Array.from({ length: Math.min(BATCH_APPROVE_CONCURRENCY, safeItems.length) }, worker),
+      );
     } finally {
       setIsProcessing(false);
+      setBatchProgress(null);
+      setLastResult({
+        ok: failures.length === 0,
+        message:
+          `Published ${published} of ${safeItems.length} batches.` +
+          (failures.length ? `\n${failures.join("\n")}` : ""),
+      });
     }
   };
 
@@ -232,9 +317,16 @@ function AdminReviewPage() {
               <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
                 Data Cleaning & Verification Queue
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-blue-950 text-blue-400 border border-blue-800">
-                {items.length} Batches ({totalQuestions} Total Questions)
-              </span>
+              {isQueueLoading ? (
+                <span
+                  aria-hidden="true"
+                  className="h-5 w-44 rounded-full bg-slate-800/80 animate-pulse"
+                />
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-blue-950 text-blue-400 border border-blue-800">
+                  {items.length} Batches ({totalQuestions} Total Questions)
+                </span>
+              )}
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1">
               Verify extracted prompts, choices, correct answers & explanations before publishing to
@@ -247,7 +339,7 @@ function AdminReviewPage() {
           <button
             type="button"
             onClick={handleBatchDelete}
-            disabled={isProcessing || items.length === 0}
+            disabled={isQueueLoading || isProcessing || items.length === 0}
             className="px-5 py-3 bg-rose-950/60 hover:bg-rose-900 border border-rose-900/80 disabled:opacity-50 text-rose-300 font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-rose-900/30 flex items-center gap-2 shrink-0"
           >
             <Trash2 className="w-4 h-4" /> Batch Discard All
@@ -256,17 +348,52 @@ function AdminReviewPage() {
           <button
             type="button"
             onClick={handleBatchApprove}
-            disabled={isProcessing || items.length === 0}
+            disabled={isQueueLoading || isProcessing || items.length === 0}
             className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-emerald-900/30 flex items-center gap-2 shrink-0"
           >
-            <CheckCircle className="w-4 h-4" /> Batch Approve Safe Items
+            {batchProgress ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Publishing{" "}
+                {Math.min(batchProgress.done + 1, batchProgress.total)} of {batchProgress.total}{" "}
+                batches…
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4" /> Batch Approve Safe Items
+              </>
+            )}
           </button>
         </div>
       </div>
 
+      {lastResult && (
+        <div
+          className={`mb-6 p-4 rounded-xl border font-mono text-xs whitespace-pre-wrap break-words ${
+            lastResult.ok
+              ? "border-emerald-800 bg-emerald-950/40 text-emerald-300"
+              : "border-amber-800 bg-amber-950/30 text-amber-200"
+          }`}
+        >
+          {lastResult.message}
+        </div>
+      )}
+
       {/* Main Review Queue */}
       <div className="space-y-6">
-        {items.length === 0 ? (
+        {isQueueLoading ? (
+          <ReviewQueueSkeleton />
+        ) : isQueueError ? (
+          <div className="p-6 border border-rose-900/60 bg-rose-950/30 rounded-2xl font-mono text-xs text-rose-300 flex items-center justify-between gap-4">
+            <span>Couldn't load the review queue: {queueError?.message ?? "unknown error"}</span>
+            <button
+              type="button"
+              onClick={() => refetchQueue()}
+              className="px-3 py-1.5 border border-rose-800 hover:bg-rose-900/60 uppercase tracking-wider shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        ) : items.length === 0 ? (
           <div className="p-16 text-center text-slate-500 font-mono text-sm border border-slate-800 rounded-2xl bg-slate-950/40 space-y-3">
             <Sparkles className="w-8 h-8 text-slate-600 mx-auto" />
             <p className="text-slate-300 font-medium text-base">
@@ -288,7 +415,8 @@ function AdminReviewPage() {
             const parsed = item.parsedData as any;
             const elements: QuestionElement[] = parsed?.extractedElements || [];
             const isExpanded = expandedItems[item.id] !== false; // expanded by default
-            const _metadata = parsed?.metadata || {};
+            const metadata = parsed?.metadata || {};
+            const examCode = String(metadata.exam || "").replace(/^Exam\s+/i, "");
 
             return (
               <div
@@ -299,6 +427,37 @@ function AdminReviewPage() {
                     : "border-slate-800 bg-slate-950/60"
                 }`}
               >
+                {/* Exam details, as scraped — what this batch will be published under */}
+                {(metadata.examTitle || metadata.exam) && (
+                  <div className="px-5 pt-5 flex items-start gap-4">
+                    {metadata.logoUrl && (
+                      <img
+                        src={metadata.logoUrl}
+                        alt=""
+                        className="w-14 h-14 shrink-0 object-contain"
+                        loading="lazy"
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center flex-wrap gap-2">
+                        <h2 className="text-lg text-white font-medium">
+                          {metadata.examTitle || metadata.exam}
+                        </h2>
+                        {examCode && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            {examCode}
+                          </span>
+                        )}
+                      </div>
+                      {metadata.description && (
+                        <p className="text-xs text-slate-400 mt-1 leading-relaxed line-clamp-3">
+                          {metadata.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Batch Card Header */}
                 <div className="p-5 border-b border-slate-900 bg-slate-900/40 flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center flex-wrap gap-3">
@@ -321,12 +480,43 @@ function AdminReviewPage() {
                       {elements.length} Questions Extracted
                     </span>
 
+                    {/* What approving this batch will actually add — a re-scrape is mostly
+                        questions the exam already has, which publishing skips. */}
+                    {typeof item.newQuestionCount === "number" &&
+                      (item.newQuestionCount > 0 ? (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-800">
+                          {item.newQuestionCount} new
+                          {item.existingQuestionCount > 0
+                            ? ` · ${item.existingQuestionCount} already in exam`
+                            : ""}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-slate-900 text-slate-400 border border-slate-700">
+                          Nothing new · all {item.existingQuestionCount} already in exam
+                        </span>
+                      ))}
+
                     {item.hasCollision && (
                       <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-800 flex items-center gap-1">
                         <AlertCircle className="w-3.5 h-3.5" /> Similar Question Exists
                       </span>
                     )}
+
+                    {item.qualityIssues?.length > 0 && (
+                      <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> Extraction problems — re-scrape
+                        recommended
+                      </span>
+                    )}
                   </div>
+
+                  {item.qualityIssues?.length > 0 && (
+                    <ul className="basis-full text-xs font-mono text-rose-300/90 space-y-1 list-disc pl-5">
+                      {item.qualityIssues.map((issue: { code: string; message: string }) => (
+                        <li key={issue.code}>{issue.message}</li>
+                      ))}
+                    </ul>
+                  )}
 
                   <div className="flex items-center gap-3">
                     <button
@@ -348,7 +538,16 @@ function AdminReviewPage() {
                       onClick={() => handleAction(item.id, "approve")}
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-mono font-bold transition-all shadow-md flex items-center gap-1.5"
                     >
-                      <CheckCircle className="w-3.5 h-3.5" /> Approve & Publish
+                      {activeAction?.id === item.id && activeAction?.action === "approve" ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Publishing{" "}
+                          {elements.length} questions…
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-3.5 h-3.5" /> Approve & Publish
+                        </>
+                      )}
                     </button>
 
                     <button
@@ -389,18 +588,33 @@ function AdminReviewPage() {
                                 <h3 className="text-sm md:text-base font-medium text-slate-100 leading-relaxed font-sans whitespace-pre-line">
                                   {q.questionText}
                                 </h3>
+                                <QuestionImages
+                                  images={q.images}
+                                  placement="question"
+                                  className="mt-3"
+                                />
                               </div>
                             </div>
+
+                            {q.options.length === 0 && (
+                              <p className="text-xs font-mono text-rose-300">
+                                No options were extracted for this question.
+                              </p>
+                            )}
 
                             {/* Options Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                               {q.options.map((optText, optIdx) => {
                                 const optKey = String.fromCharCode(65 + optIdx);
-                                const isCorrect =
-                                  q.answer &&
-                                  (optText === q.answer ||
-                                    optText.includes(q.answer) ||
-                                    q.answer.includes(optText));
+                                // Exact match per " | "-joined correct answer, like approval does —
+                                // substring matching highlighted "1" when the answer was "10".
+                                const isCorrect = q.answer
+                                  .split(" | ")
+                                  .some(
+                                    (a) =>
+                                      a.trim().replace(/\s+/g, " ").toLowerCase() ===
+                                      optText.trim().replace(/\s+/g, " ").toLowerCase(),
+                                  );
 
                                 return (
                                   <div
@@ -420,7 +634,15 @@ function AdminReviewPage() {
                                     >
                                       {optKey}
                                     </span>
-                                    <span className="flex-1 leading-snug">{optText}</span>
+                                    <span className="flex-1 leading-snug">
+                                      {optText}
+                                      <QuestionImages
+                                        images={q.images}
+                                        placement="option"
+                                        optionKey={optKey}
+                                        className="mt-2"
+                                      />
+                                    </span>
                                     {isCorrect && (
                                       <span className="text-[10px] uppercase font-bold text-emerald-400 px-1.5 py-0.5 bg-emerald-900/60 rounded border border-emerald-700/60 shrink-0">
                                         Correct Answer
@@ -442,6 +664,7 @@ function AdminReviewPage() {
                                   <p className="leading-relaxed text-slate-300 whitespace-pre-line">
                                     {q.explanation}
                                   </p>
+                                  <QuestionImages images={q.images} placement="explanation" />
                                 </div>
                               </div>
                             )}
@@ -492,6 +715,78 @@ function AdminReviewPage() {
           })
         )}
       </div>
+    </div>
+  );
+}
+
+// Placeholder batch cards shown while the review queue loads, laid out like the real card
+// (exam header, batch row with badges and actions, question blocks with a 2×2 option grid and an
+// explanation) so the page doesn't jump when the data arrives.
+function ReviewQueueSkeleton({ batches = 2, questionsPerBatch = 2 }) {
+  const bar = "rounded bg-slate-800/80";
+  return (
+    <div aria-busy="true" className="space-y-6 animate-pulse">
+      <span className="sr-only">Loading review queue…</span>
+      {placeholderKeys(batches, "batch").map((key) => (
+        <div
+          key={key}
+          aria-hidden="true"
+          className="border border-slate-800 bg-slate-950/60 rounded-2xl overflow-hidden"
+        >
+          {/* exam header */}
+          <div className="px-5 pt-5 flex items-start gap-4">
+            <div className={`w-14 h-14 shrink-0 ${bar}`} />
+            <div className="flex-1 space-y-2 pt-1">
+              <div className="flex items-center gap-2">
+                <div className={`h-5 w-72 max-w-[60%] ${bar}`} />
+                <div className={`h-4 w-14 ${bar}`} />
+              </div>
+              <div className={`h-3 w-full max-w-2xl ${bar}`} />
+              <div className={`h-3 w-2/3 max-w-xl ${bar}`} />
+            </div>
+          </div>
+
+          {/* batch row: id, source link, badges / actions */}
+          <div className="p-5 border-b border-slate-900 bg-slate-900/40 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center flex-wrap gap-3">
+              <div className={`h-6 w-28 ${bar}`} />
+              <div className={`h-4 w-64 max-w-[40vw] ${bar}`} />
+              <div className="h-5 w-40 rounded-full bg-slate-800/80" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className={`h-8 w-24 rounded-lg ${bar}`} />
+              <div className={`h-8 w-36 rounded-lg ${bar}`} />
+              <div className={`h-8 w-24 rounded-lg ${bar}`} />
+            </div>
+          </div>
+
+          {/* question blocks */}
+          <div className="p-5 space-y-8">
+            {placeholderKeys(questionsPerBatch, "question").map((key) => (
+              <div key={key} className="space-y-4">
+                <div className="flex gap-2">
+                  <div className={`h-4 w-20 ${bar}`} />
+                  <div className={`h-4 w-24 ${bar}`} />
+                </div>
+                <div className="space-y-2">
+                  <div className={`h-4 w-full ${bar}`} />
+                  <div className={`h-4 w-11/12 ${bar}`} />
+                  <div className={`h-4 w-3/5 ${bar}`} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                  {placeholderKeys(4, "option").map((key) => (
+                    <div
+                      key={key}
+                      className="h-11 rounded-xl border border-slate-800/80 bg-slate-900/50"
+                    />
+                  ))}
+                </div>
+                <div className="h-20 rounded-xl border border-sky-900/30 bg-sky-950/10" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

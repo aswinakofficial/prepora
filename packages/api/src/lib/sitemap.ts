@@ -14,24 +14,44 @@ export interface SitemapUrl {
   lastmod?: string;
 }
 
-export function getStaticSitemapUrls(baseUrl: string): SitemapUrl[] {
-  return [
+export function getStaticSitemapUrls(
+  baseUrl: string,
+  options: { contributeEnabled?: boolean } = {},
+): SitemapUrl[] {
+  const urls: SitemapUrl[] = [
     { loc: `${baseUrl}/`, priority: "1.0", changefreq: "daily" },
     { loc: `${baseUrl}/exams`, priority: "0.9", changefreq: "daily" },
     { loc: `${baseUrl}/subjects`, priority: "0.8", changefreq: "weekly" },
     { loc: `${baseUrl}/practice`, priority: "0.8", changefreq: "monthly" },
     { loc: `${baseUrl}/search`, priority: "0.5", changefreq: "monthly" },
-    { loc: `${baseUrl}/contribute`, priority: "0.5", changefreq: "monthly" },
   ];
+  // The Contribute page only exists for visitors while its feature flag is on
+  // (lib/feature-flags.ts); defaults to included, matching the flag's own default.
+  if (options.contributeEnabled ?? true) {
+    urls.push({ loc: `${baseUrl}/contribute`, priority: "0.5", changefreq: "monthly" });
+  }
+  return urls;
 }
 
-/** Real published exams — replaces the three hardcoded demo entries this used to ship. */
+/**
+ * Real published exams that have at least one published question — replaces the three hardcoded
+ * demo entries this used to ship. An exam with no content yet would just be a thin, empty page, so
+ * it's left out the same way exams.list leaves it off the directory.
+ */
 export async function getExamSitemapUrls(
   db: ReturnType<typeof getDb>,
   baseUrl: string,
 ): Promise<SitemapUrl[]> {
   const result = await db.execute(sql`
-    SELECT slug, updated_at AS "updatedAt" FROM exams WHERE status = 'published'
+    SELECT e.slug, e.updated_at AS "updatedAt" FROM exams e
+    WHERE e.status = 'published'
+      AND EXISTS (
+        SELECT 1 FROM questions q
+        JOIN question_occurrences o ON o.question_id = q.id
+        JOIN question_sets qs ON qs.id = o.question_set_id
+        JOIN exam_variants ev ON ev.id = qs.exam_variant_id
+        WHERE ev.exam_id = e.id AND q.status = 'published'
+      )
   `);
   return (result.rows as unknown as { slug: string; updatedAt: string }[]).map((row) => ({
     loc: `${baseUrl}/exams/${row.slug}`,

@@ -1,47 +1,139 @@
 import { Trans } from "@lingui/react";
 import { Link } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
+import { Menu, Search, ShieldCheck, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { authClient } from "../../../lib/auth-client";
+import { useFeatureFlag } from "../../hooks/useFeatureFlag";
 import { useRBAC } from "../../hooks/useRBAC";
 import { RoleGuard } from "../auth/RoleGuard";
 import { SearchCommandModal } from "../search/SearchCommandModal";
 
 export function SiteHeader() {
-  const [_menuOpen, _setMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const { user, isAdmin, isAuthenticated } = useRBAC();
+  const { enabled: contributeEnabled } = useFeatureFlag("contribute");
 
   return (
     <>
-      <header className="border-b border-slate-900/80 mb-12 shrink-0 w-full z-40 bg-[#06080a]">
-        <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-12 text-xs font-mono tracking-widest uppercase">
+      <header className="border-b border-slate-900/80 mb-6 md:mb-12 shrink-0 w-full z-40 bg-[#06080a]">
+        {/* Mobile: one compact row — brand, search, menu. The desktop grid below used to stack
+            into three full-width rows here, taking a quarter of a phone screen. */}
+        <div className="md:hidden flex items-center justify-between px-4 py-4 text-xs font-mono tracking-widest uppercase">
+          <Link
+            to="/"
+            onClick={() => setMenuOpen(false)}
+            className="text-white font-bold tracking-[0.3em]"
+          >
+            PREPORA
+          </Link>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSearchModalOpen(true)}
+              aria-label="Search"
+              className="p-2.5 text-slate-400 hover:text-white transition-colors"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+              aria-controls="mobile-menu"
+              className="p-2.5 text-slate-400 hover:text-white transition-colors"
+            >
+              {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
+        {menuOpen && (
+          <nav
+            id="mobile-menu"
+            className="md:hidden border-t border-slate-900/80 px-4 pb-4 flex flex-col text-xs font-mono tracking-widest uppercase"
+          >
+            {[
+              { to: "/exams", label: <Trans id="Exams">Exams</Trans> },
+              ...(contributeEnabled
+                ? [{ to: "/contribute", label: <Trans id="Contribute">Contribute</Trans> }]
+                : []),
+            ].map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                onClick={() => setMenuOpen(false)}
+                className="py-3 border-b border-slate-900/60 text-slate-300 hover:text-white"
+              >
+                {item.label}
+              </Link>
+            ))}
+            <RoleGuard requireAdmin>
+              <Link
+                to="/admin"
+                onClick={() => setMenuOpen(false)}
+                className="py-3 border-b border-slate-900/60 text-emerald-400 flex items-center gap-2"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Dashboard
+              </Link>
+            </RoleGuard>
+            {isAuthenticated ? (
+              <div className="py-3 flex items-center justify-between gap-4">
+                <span className="text-[10px] text-slate-500 normal-case tracking-normal truncate">
+                  {user?.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setMenuOpen(false);
+                    await authClient.signOut();
+                  }}
+                  className="text-slate-400 hover:text-white uppercase tracking-widest shrink-0"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/auth/signin"
+                onClick={() => setMenuOpen(false)}
+                className="py-3 text-slate-300 hover:text-white"
+              >
+                Sign In
+              </Link>
+            )}
+          </nav>
+        )}
+
+        <div className="hidden max-w-[1400px] mx-auto md:grid md:grid-cols-12 text-xs font-mono tracking-widest uppercase">
           {/* Brand Col */}
-          <div className="col-span-1 md:col-span-3 border-b md:border-b-0 md:border-r border-slate-900/50 p-6 flex flex-col justify-center">
+          <div className="md:col-span-3 md:border-r border-slate-900/50 p-6 flex flex-col justify-center">
             <Link to="/" className="text-white font-bold tracking-[0.3em]">
               PREPORA
             </Link>
           </div>
 
           {/* Main Nav Col */}
-          <div className="col-span-1 md:col-span-6 p-6 flex items-center gap-8 md:gap-12 overflow-x-auto border-b md:border-b-0 md:border-r border-slate-900/50">
+          <div className="md:col-span-6 p-6 flex items-center gap-12 overflow-x-auto md:border-r border-slate-900/50">
             <Link
               to="/exams"
               className="text-slate-500 hover:text-white transition-colors shrink-0"
             >
               <Trans id="Exams">Exams</Trans>
             </Link>
-            <Link
-              to="/contribute"
-              className="text-slate-500 hover:text-white transition-colors shrink-0"
-            >
-              <Trans id="Contribute">Contribute</Trans>
-            </Link>
+            {contributeEnabled && (
+              <Link
+                to="/contribute"
+                className="text-slate-500 hover:text-white transition-colors shrink-0"
+              >
+                <Trans id="Contribute">Contribute</Trans>
+              </Link>
+            )}
           </div>
 
           {/* Action Col */}
-          <div className="col-span-1 md:col-span-3 p-6 flex items-center justify-between md:justify-end gap-6">
+          <div className="md:col-span-3 p-6 flex items-center justify-end gap-6">
             <RoleGuard requireAdmin>
               <Link
                 to="/admin"
@@ -69,7 +161,7 @@ export function SiteHeader() {
               </div>
             ) : (
               <Link
-                to={"/auth/signin" as any}
+                to="/auth/signin"
                 className="text-slate-500 hover:text-white transition-colors shrink-0"
               >
                 Sign In

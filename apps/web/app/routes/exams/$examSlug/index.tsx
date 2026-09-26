@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../../lib/json-ld";
+import { Skeleton, SkeletonRegion } from "../../../components/ui/Skeleton";
 
 export const Route = createFileRoute("/exams/$examSlug/")({
   head: ({ params }) => ({
@@ -56,7 +57,7 @@ function ExamPage() {
         ];
 
   return (
-    <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
+    <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-20 md:pb-32">
       {/* docs/roadmap/engineering-roadmap.md item 26: Course JSON-LD, rendered here rather than in
           head() because it needs the real exam data useQuery fetches — this app has no loader/SSR
           data-hydration pattern anywhere (confirmed repo-wide), so head() only ever has access to
@@ -83,7 +84,7 @@ function ExamPage() {
         />
       )}
       {/* Back Context */}
-      <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
+      <div className="px-4 sm:px-6 pt-4 md:pt-8 lg:pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-6 md:mb-10 lg:mb-16">
         <Link
           to="/exams"
           className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
@@ -92,9 +93,9 @@ function ExamPage() {
         </Link>
       </div>
 
-      <main className="max-w-[1200px] mx-auto px-6">
+      <main className="max-w-[1200px] mx-auto px-4 sm:px-6">
         {/* Context Rail */}
-        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-32 border-b border-slate-900 pb-4">
+        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-10 md:mb-16 lg:mb-32 border-b border-slate-900 pb-4 break-words">
           <Link to="/" className="hover:text-white transition-colors">
             ROOT
           </Link>
@@ -107,16 +108,18 @@ function ExamPage() {
         </div>
 
         {/* Top Header Section */}
-        <div className="mb-20 border-b border-slate-800 pb-12">
+        <div className="mb-12 md:mb-20 border-b border-slate-800 pb-8 md:pb-12">
           <div className="max-w-4xl w-full">
             {isLoading ? (
-              <div className="space-y-6">
-                <div className="h-10 sm:h-14 md:h-16 lg:h-20 bg-slate-900/90 animate-pulse rounded-md w-3/4 max-w-3xl" />
+              // Mirrors the loaded header: logo, then title, then description.
+              <SkeletonRegion label="Loading exam…" className="space-y-6">
+                <Skeleton className="w-20 h-20 sm:w-24 sm:h-24" />
+                <Skeleton className="h-10 sm:h-14 md:h-16 lg:h-20 rounded-md w-3/4 max-w-3xl" />
                 <div className="space-y-3">
-                  <div className="h-4 bg-slate-900/70 animate-pulse rounded w-full max-w-2xl" />
-                  <div className="h-4 bg-slate-900/70 animate-pulse rounded w-4/5 max-w-xl" />
+                  <Skeleton className="h-4 w-full max-w-2xl" />
+                  <Skeleton className="h-4 w-4/5 max-w-xl" />
                 </div>
-              </div>
+              </SkeletonRegion>
             ) : (
               <>
                 <div className="space-y-6 mb-6">
@@ -142,13 +145,18 @@ function ExamPage() {
         </div>
 
         {/* Index Main Content */}
-        <div className="space-y-24">
+        <div className="space-y-16 md:space-y-24">
           {/* Question Sets Section */}
           <section>
             <div className="flex justify-between items-end border-b border-slate-900 pb-2 mb-8">
-              <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400">
-                {/* Available Practice Question Sets ( */}
-                {isLoading ? "..." : sets.length})
+              <h2 className="font-mono text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] text-slate-400">
+                Available Practice Question Sets (
+                {isLoading ? (
+                  <Skeleton className="inline-block h-3 w-4 align-middle" />
+                ) : (
+                  sets.length
+                )}
+                )
               </h2>
               <span className="font-mono text-[10px] text-slate-500 uppercase tracking-widest hidden sm:inline">
                 SELECT A QUESTION SET TO START SIMULATION
@@ -156,30 +164,44 @@ function ExamPage() {
             </div>
 
             {isLoading ? (
-              <div className="border-t-2 border-slate-900 border-b-2 flex flex-col divide-y divide-slate-900">
+              // Mirrors a loaded set row: number, tag/volume/code pills, title, and the two
+              // Simulation / Learn buttons.
+              <SkeletonRegion
+                label="Loading question sets…"
+                className="border-t-2 border-slate-900 border-b-2 flex flex-col divide-y divide-slate-900"
+              >
                 {[1, 2].map((n) => (
                   <div
                     key={n}
-                    className="p-8 bg-[#06080a] flex flex-col md:flex-row md:items-center justify-between gap-8 animate-pulse"
+                    className="p-4 sm:p-8 bg-[#06080a] flex flex-col md:flex-row md:items-center justify-between gap-6 md:gap-8"
                   >
-                    <div className="space-y-4 flex-1">
-                      <div className="h-3 bg-slate-900 rounded w-48" />
-                      <div className="h-6 bg-slate-900/90 rounded w-3/4 max-w-xl" />
-                      <div className="h-4 bg-slate-900/60 rounded w-full max-w-2xl" />
+                    <div className="flex items-start gap-6 flex-1">
+                      <Skeleton className="h-4 w-8 mt-1" />
+                      <div className="space-y-3 flex-1">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Skeleton className="h-6 w-28" />
+                          <Skeleton className="h-3 w-32" />
+                          <Skeleton className="h-3 w-28" />
+                        </div>
+                        <Skeleton className="h-7 w-3/4 max-w-xl" />
+                      </div>
                     </div>
-                    <div className="h-12 w-48 bg-slate-900 rounded shrink-0" />
+                    <div className="flex flex-wrap items-center gap-3 shrink-0">
+                      <Skeleton className="h-11 w-36" />
+                      <Skeleton className="h-11 w-40" />
+                    </div>
                   </div>
                 ))}
-              </div>
+              </SkeletonRegion>
             ) : (
               <div className="border-t-2 border-slate-900 border-b-2 flex flex-col divide-y divide-slate-900">
                 {sets.map((set: any, idx: number) => (
                   <div
                     key={set.id || idx}
-                    className="p-8 bg-[#06080a] hover:bg-slate-900/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-8 group"
+                    className="p-4 sm:p-8 bg-[#06080a] hover:bg-slate-900/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 md:gap-8 group"
                   >
                     <div className="flex items-start gap-6 flex-1">
-                      <span className="font-mono text-sm text-slate-600 w-8 pt-1">
+                      <span className="font-mono text-sm text-slate-600 w-6 sm:w-8 pt-1 shrink-0">
                         {String(idx + 1).padStart(2, "0")}
                       </span>
                       <div className="space-y-3">
@@ -205,18 +227,18 @@ function ExamPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-3 shrink-0">
                       <Link
                         to="/practice"
                         search={{ examSlug, viewMode: "simulation" }}
-                        className="font-mono text-xs uppercase tracking-[0.15em] px-5 py-3 border border-slate-700 hover:border-slate-400 text-slate-300 hover:text-white hover:bg-slate-900/60 transition-all text-center"
+                        className="flex-1 md:flex-none whitespace-nowrap font-mono text-xs uppercase tracking-wider sm:tracking-[0.15em] px-3 sm:px-5 py-3 border border-slate-700 hover:border-slate-400 text-slate-300 hover:text-white hover:bg-slate-900/60 transition-all text-center"
                       >
                         [ SIMULATION ]
                       </Link>
                       <Link
                         to="/practice"
                         search={{ examSlug, viewMode: "learn" }}
-                        className="font-mono text-xs uppercase tracking-[0.15em] px-5 py-3 border border-sky-900/80 hover:border-sky-400 text-sky-400 hover:text-white hover:bg-sky-950/60 transition-all text-center"
+                        className="flex-1 md:flex-none whitespace-nowrap font-mono text-xs uppercase tracking-wider sm:tracking-[0.15em] px-3 sm:px-5 py-3 border border-sky-900/80 hover:border-sky-400 text-sky-400 hover:text-white hover:bg-sky-950/60 transition-all text-center"
                       >
                         [ LEARN MODE ] →
                       </Link>

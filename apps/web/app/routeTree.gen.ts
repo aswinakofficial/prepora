@@ -27,6 +27,7 @@ import { Route as AuthSigninImport } from './routes/auth/signin'
 import { Route as AdminSettingsImport } from './routes/admin/settings'
 import { Route as AdminScrapingImport } from './routes/admin/scraping'
 import { Route as AdminReviewImport } from './routes/admin/review'
+import { Route as AdminExamTypesImport } from './routes/admin/exam-types'
 import { Route as AdminContributionsImport } from './routes/admin/contributions'
 import { Route as AdminAnalyticsImport } from './routes/admin/analytics'
 import { Route as ExamsExamSlugIndexImport } from './routes/exams/$examSlug/index'
@@ -131,6 +132,12 @@ const AdminReviewRoute = AdminReviewImport.update({
   getParentRoute: () => AdminRoute,
 } as any)
 
+const AdminExamTypesRoute = AdminExamTypesImport.update({
+  id: '/exam-types',
+  path: '/exam-types',
+  getParentRoute: () => AdminRoute,
+} as any)
+
 const AdminContributionsRoute = AdminContributionsImport.update({
   id: '/contributions',
   path: '/contributions',
@@ -221,6 +228,13 @@ declare module '@tanstack/react-router' {
       path: '/contributions'
       fullPath: '/admin/contributions'
       preLoaderRoute: typeof AdminContributionsImport
+      parentRoute: typeof AdminImport
+    }
+    '/admin/exam-types': {
+      id: '/admin/exam-types'
+      path: '/exam-types'
+      fullPath: '/admin/exam-types'
+      preLoaderRoute: typeof AdminExamTypesImport
       parentRoute: typeof AdminImport
     }
     '/admin/review': {
@@ -322,6 +336,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   AdminContributionsRoute: typeof AdminContributionsRoute
+  AdminExamTypesRoute: typeof AdminExamTypesRoute
   AdminReviewRoute: typeof AdminReviewRoute
   AdminScrapingRoute: typeof AdminScrapingRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
@@ -331,6 +346,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAnalyticsRoute: AdminAnalyticsRoute,
   AdminContributionsRoute: AdminContributionsRoute,
+  AdminExamTypesRoute: AdminExamTypesRoute,
   AdminReviewRoute: AdminReviewRoute,
   AdminScrapingRoute: AdminScrapingRoute,
   AdminSettingsRoute: AdminSettingsRoute,
@@ -348,6 +364,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/admin/exam-types': typeof AdminExamTypesRoute
   '/admin/review': typeof AdminReviewRoute
   '/admin/scraping': typeof AdminScrapingRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -371,6 +388,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/admin/exam-types': typeof AdminExamTypesRoute
   '/admin/review': typeof AdminReviewRoute
   '/admin/scraping': typeof AdminScrapingRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -396,6 +414,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
+  '/admin/exam-types': typeof AdminExamTypesRoute
   '/admin/review': typeof AdminReviewRoute
   '/admin/scraping': typeof AdminScrapingRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -422,6 +441,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/admin/analytics'
     | '/admin/contributions'
+    | '/admin/exam-types'
     | '/admin/review'
     | '/admin/scraping'
     | '/admin/settings'
@@ -444,6 +464,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/admin/analytics'
     | '/admin/contributions'
+    | '/admin/exam-types'
     | '/admin/review'
     | '/admin/scraping'
     | '/admin/settings'
@@ -467,6 +488,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/admin/analytics'
     | '/admin/contributions'
+    | '/admin/exam-types'
     | '/admin/review'
     | '/admin/scraping'
     | '/admin/settings'
@@ -555,6 +577,7 @@ export const routeTree = rootRoute
       "children": [
         "/admin/analytics",
         "/admin/contributions",
+        "/admin/exam-types",
         "/admin/review",
         "/admin/scraping",
         "/admin/settings",
@@ -579,6 +602,10 @@ export const routeTree = rootRoute
     },
     "/admin/contributions": {
       "filePath": "admin/contributions.tsx",
+      "parent": "/admin"
+    },
+    "/admin/exam-types": {
+      "filePath": "admin/exam-types.tsx",
       "parent": "/admin"
     },
     "/admin/review": {

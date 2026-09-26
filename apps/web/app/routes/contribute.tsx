@@ -5,6 +5,9 @@ import { useState } from "react";
 import { trackEvent } from "../../lib/analytics";
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
+import { FeatureUnavailable } from "../components/feature/FeatureGate";
+import { Skeleton, SkeletonRegion } from "../components/ui/Skeleton";
+import { useFeatureFlag } from "../hooks/useFeatureFlag";
 
 export const Route = createFileRoute("/contribute")({
   head: () => ({
@@ -43,6 +46,32 @@ function ContributePage() {
     error,
     reset,
   } = useMutation(orpc.contributions.submit.mutationOptions());
+  const { enabled: contributeEnabled, isLoading: isLoadingFlags } = useFeatureFlag("contribute");
+
+  if (isLoadingFlags) {
+    return (
+      <SkeletonRegion
+        label="Loading…"
+        className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 pt-6 md:pt-16 space-y-8"
+      >
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-3 w-80 max-w-full" />
+        <Skeleton className="h-64 w-full max-w-4xl" />
+      </SkeletonRegion>
+    );
+  }
+
+  // The "contribute" feature flag (admin → Settings). Its links are hidden everywhere else while
+  // it's off, but someone can still arrive here directly or from an old bookmark; the server also
+  // refuses submissions, so this is the honest page to show them.
+  if (!contributeEnabled) {
+    return (
+      <FeatureUnavailable
+        eyebrow="Contributions closed"
+        title="We're not accepting contributions right now."
+      />
+    );
+  }
 
   if (isSuccess) {
     return (
@@ -85,7 +114,7 @@ function ContributePage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 selection:bg-slate-700 selection:text-white font-sans flex flex-col">
-      <main className="max-w-[1400px] w-full mx-auto px-6 pb-32 flex-1 pt-16">
+      <main className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 pb-20 md:pb-32 flex-1 pt-6 md:pt-16">
         <section className="grid grid-cols-1 md:grid-cols-12 gap-12">
           {/* Asymmetric Spacer / Context Col */}
           <div className="col-span-1 md:col-span-3 lg:col-span-3 border-r border-slate-900/50 pr-6 space-y-12 h-full hidden md:block">
@@ -109,7 +138,18 @@ function ContributePage() {
             </div>
           </div>
 
-          <div className="col-span-1 md:col-span-9 lg:col-span-8 md:pl-6 pb-24">
+          <div className="col-span-1 md:col-span-9 lg:col-span-8 md:pl-6 pb-16 md:pb-24">
+            {/* The page's introduction lives in the sidebar, which is hidden on phones — give
+                small screens a title so the form isn't the first and only thing they see. */}
+            <div className="md:hidden border-b border-slate-900 pb-6 mb-12">
+              <h1 className="text-white tracking-tighter text-3xl font-light mb-3">
+                Grow the index.
+              </h1>
+              <p className="font-mono text-[10px] uppercase text-slate-500 tracking-widest leading-relaxed">
+                Contribute a verified exam paper or certification question set.
+              </p>
+            </div>
+
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -129,7 +169,7 @@ function ContributePage() {
                   },
                 );
               }}
-              className="space-y-24 max-w-4xl"
+              className="space-y-16 md:space-y-24 max-w-4xl"
             >
               {/* Exam Matrix */}
               <div className="space-y-12">
@@ -209,12 +249,12 @@ function ContributePage() {
 
               {/* Data Vector Stream */}
               <div className="space-y-12">
-                <div className="flex items-end justify-between border-b border-slate-900 pb-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-slate-900 pb-4">
                   <h3 className="font-mono text-xs text-slate-500 tracking-[0.2em] uppercase">
                     02 / Content Payload
                   </h3>
 
-                  <div className="font-mono text-[10px] tracking-widest flex gap-6 uppercase">
+                  <div className="font-mono text-[10px] tracking-widest flex gap-6 uppercase whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => setTab("markdown")}

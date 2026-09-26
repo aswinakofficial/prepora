@@ -171,6 +171,7 @@ function AdminDashboard() {
               { to: "/admin/question-sets", label: "Manage Question Sets", code: "ACT.04" },
               { to: "/admin/scraping", label: "Web Scraper Engine", code: "ACT.05" },
               { to: "/admin/review", label: "Review & Data Cleaning Queue", code: "ACT.06" },
+              { to: "/admin/exam-types", label: "Manage Exam Categories", code: "ACT.08" },
               { to: "/admin/settings", label: "Database Wipe & DANGER Settings", code: "ACT.07" },
             ].map(({ to, label, code }) => (
               <Link

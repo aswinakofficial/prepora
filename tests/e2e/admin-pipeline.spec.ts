@@ -82,10 +82,8 @@ test.describe("admin pipeline / job inspection and source health", () => {
     try {
       await page.goto("/admin/scraping");
 
-      // Job inspection: per-stage counts and durations, drawn from pipeline_job_stages. The raw
-      // getScraperLogs text panel formats the same underlying data too, so these are matched
-      // loosely on purpose (.first()) — either panel proving the real counts reached the DOM is
-      // what this test cares about, not which one.
+      // Scrape runs table: per-stage counts and durations, drawn from pipeline_job_stages via
+      // admin.listScrapeRuns.
       await expect(page.getByText(`#${job.id.slice(0, 8)}`).first()).toBeVisible();
       await expect(page.getByText(/processed=7/).first()).toBeVisible();
       await expect(page.getByText(/failed=1/).first()).toBeVisible();

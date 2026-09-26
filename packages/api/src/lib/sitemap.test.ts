@@ -231,11 +231,42 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
     expect(matches[0].loc).toContain("/2024/");
   });
 
-  it("getExamSitemapUrls includes only published exams", async () => {
+  async function publishOneQuestion(chain: Awaited<ReturnType<typeof seedChain>>) {
+    const db = getDb();
+    const unique = randomUUID().slice(0, 8);
+    const [set] = await db
+      .insert(questionSets)
+      .values({
+        examVariantId: chain.variantId,
+        examSessionId: chain.session2025Id,
+        subjectId: chain.subjectId,
+        title: `Set ${unique}`,
+        slug: `set-${unique}`,
+        publicationStatus: "published",
+      })
+      .returning({ id: questionSets.id });
+    chain.questionSetIds.push(set.id);
+    const [question] = await db
+      .insert(questions)
+      .values({ slug: `q-${unique}`, questionText: `Q ${unique}`, status: "published" })
+      .returning({ id: questions.id });
+    chain.questionIds.push(question.id);
+    await db.insert(questionOccurrences).values({ questionId: question.id, questionSetId: set.id });
+  }
+
+  it("getExamSitemapUrls includes published exams that have published questions", async () => {
+    const db = getDb();
+    const chain = await seedChain();
+    await publishOneQuestion(chain);
+    const urls = await getExamSitemapUrls(db, BASE_URL);
+    expect(urls.some((u) => u.loc === `${BASE_URL}/exams/${chain.examSlug}`)).toBe(true);
+  });
+
+  it("getExamSitemapUrls leaves out a published exam with no published questions yet", async () => {
     const db = getDb();
     const chain = await seedChain();
     const urls = await getExamSitemapUrls(db, BASE_URL);
-    expect(urls.some((u) => u.loc === `${BASE_URL}/exams/${chain.examSlug}`)).toBe(true);
+    expect(urls.some((u) => u.loc === `${BASE_URL}/exams/${chain.examSlug}`)).toBe(false);
   });
 
   it("getQuestionSetSitemapUrls excludes draft question sets", async () => {

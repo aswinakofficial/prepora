@@ -1,0 +1,1 @@
+ALTER TABLE "attempts" ADD COLUMN "selected_option_ids" text[];

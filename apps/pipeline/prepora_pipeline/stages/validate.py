@@ -122,6 +122,26 @@ def validate_question(
     if normalized.answer is None:
         issues.append(ValidationIssue("error", "MISSING_ANSWER", "No answer found"))
 
+    for media in normalized.media:
+        if media.placement == "option" and media.option_key not in keys:
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    "MEDIA_OPTION_NOT_FOUND",
+                    f"Image {media.storage_key} is attached to option {media.option_key!r}, "
+                    f"which is not among {keys!r}",
+                )
+            )
+        elif media.placement != "option" and media.option_key is not None:
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    "MEDIA_OPTION_KEY_MISPLACED",
+                    f"Image {media.storage_key} has an option key but placement "
+                    f"{media.placement!r}",
+                )
+            )
+
     if isinstance(normalized.answer, McqAnswer) and keys:
         if normalized.answer.correct_key not in keys:
             issues.append(

@@ -4,6 +4,17 @@ both need it without importing each other.
 """
 
 
+def normalize_question_text(question_text: str) -> str:
+    """
+    The comparison form of a question's text: lowercase, whitespace collapsed, punctuation
+    stripped. Two questions are "the same content" exactly when these are equal — content_hash()
+    below is only a fast, collision-prone index into that comparison.
+    """
+    normalized = " ".join(question_text.lower().split())
+    normalized = "".join(ch for ch in normalized if ch.isalnum() or ch.isspace())
+    return normalized.strip()
+
+
 def content_hash(question_text: str) -> str:
     """
     Port of packages/content/src/duplicates.ts's contentHash(): lowercase, collapse whitespace,
@@ -17,9 +28,7 @@ def content_hash(question_text: str) -> str:
     fixed here — no content in either pipeline is non-ASCII yet, and picking a single correct
     Unicode-normalization behavior for both is a real design decision, not a one-line fix.
     """
-    normalized = " ".join(question_text.lower().split())
-    normalized = "".join(ch for ch in normalized if ch.isalnum() or ch.isspace())
-    normalized = normalized.strip()
+    normalized = normalize_question_text(question_text)
 
     h = 5381
     for ch in normalized:

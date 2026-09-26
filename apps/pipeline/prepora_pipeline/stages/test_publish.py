@@ -308,3 +308,211 @@ class TestFullRunIdempotency:
             (f"{test_exam.upper()}-%",),
         )[0]
         assert total_questions == 3
+
+
+def test_concurrent_first_publishes_share_one_set_session_and_subject(test_exam, test_subject):
+    # Regression: review-batch approval publishes many questions at once. Every one of them
+    # needs the same not-yet-existing question set / session / subject, and a plain
+    # "SELECT, then INSERT" let concurrent requests race — the losers failed with a
+    # UniqueViolation (or, for sessions, silently created duplicates).
+    import random
+    import string
+    from concurrent.futures import ThreadPoolExecutor
+
+    def text(n):
+        words = [
+            "".join(random.choices(string.ascii_lowercase, k=random.randint(4, 9)))
+            for _ in range(25)
+        ]
+        return f"Concurrent question {n}: {' '.join(words)}?"
+
+    questions = [
+        _normalized(test_exam, test_subject, question_text=text(n), number=n) for n in range(1, 13)
+    ]
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(publish_question, questions))
+
+    assert len({r.question_set_id for r in results}) == 1
+    assert all(r.question_created for r in results)
+    assert _row(
+        "SELECT COUNT(*) FROM exam_sessions es JOIN exam_variants ev ON ev.id = es.exam_variant_id "
+        "JOIN exams e ON e.id = ev.exam_id WHERE e.slug = %s",
+        (test_exam,),
+    )[0] == 1
+    assert _row("SELECT COUNT(*) FROM subjects WHERE slug = %s", (test_subject,))[0] == 1
+
+
+def _media(placement, n, option_key=None):
+    from prepora_pipeline.contracts import NormalizedMedia
+
+    sha = f"{n:064x}"
+    return NormalizedMedia(
+        placement=placement,
+        option_key=option_key,
+        storage_key=f"{sha[:2]}/{sha}.png",
+        mime_type="image/png",
+        alt_text=f"image {n}",
+        size_bytes=100,
+    )
+
+
+def test_publish_records_question_images_idempotently(test_exam, test_subject):
+    normalized = _normalized(
+        test_exam, test_subject, question_text="Refer to the exhibit. Which subnet is isolated?"
+    ).model_copy(
+        update={
+            "media": [
+                _media("question", 1),
+                _media("question", 2),
+                _media("option", 3, option_key="B"),
+                _media("explanation", 4),
+            ]
+        }
+    )
+    first = publish_question(normalized)
+    publish_question(normalized)  # re-publishing must not duplicate the images
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT placement, option_key, position, alt_text, filename FROM media "
+                "WHERE question_id = %s ORDER BY placement, option_key NULLS FIRST, position",
+                (first.question_id,),
+            )
+            rows = cur.fetchall()
+            assert rows == [
+                ("explanation", None, 0, "image 4", f"{4:064x}.png"),
+                ("option", "B", 0, "image 3", f"{3:064x}.png"),
+                ("question", None, 0, "image 1", f"{1:064x}.png"),
+                ("question", None, 1, "image 2", f"{2:064x}.png"),
+            ]
+            # Images go with their question.
+            cur.execute("DELETE FROM questions WHERE id = %s", (first.question_id,))
+            cur.execute("SELECT COUNT(*) FROM media WHERE question_id = %s", (first.question_id,))
+            assert cur.fetchone()[0] == 0
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_image_on_a_missing_option_is_refused(test_exam, test_subject):
+    normalized = _normalized(test_exam, test_subject, question_text="Which one?").model_copy(
+        update={"media": [_media("option", 5, option_key="Z")]}
+    )
+    with pytest.raises(PublishError, match="MEDIA_OPTION_NOT_FOUND"):
+        publish_question(normalized)
+
+
+def _pooled(test_exam, test_subject, *, question_text, number):
+    # A question from a randomly drawn pool (MS Learn): identified by content, not position.
+    return _normalized(
+        test_exam, test_subject, question_text=question_text, number=number
+    ).model_copy(update={"identity": "content"})
+
+
+def _occurrences(question_set_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT q.question_text, o.original_question_number FROM question_occurrences o "
+                "JOIN questions q ON q.id = o.question_id WHERE o.question_set_id = %s "
+                "ORDER BY o.original_question_number",
+                (question_set_id,),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def test_rescraped_pool_question_is_deduplicated_by_content(test_exam, test_subject):
+    text = "Which Azure service provides managed DNS zones for a virtual network?"
+    first = publish_question(_pooled(test_exam, test_subject, question_text=text, number=3))
+    # The same question comes back in a later scrape, at a different position.
+    again = publish_question(_pooled(test_exam, test_subject, question_text=text, number=41))
+    assert again.question_id == first.question_id
+    assert again.stable_content_id == first.stable_content_id
+    assert not again.question_created and not again.occurrence_created
+    assert len(_occurrences(first.question_set_id)) == 1
+
+
+def test_new_pool_question_at_a_used_position_is_added_not_dropped(test_exam, test_subject):
+    # Regression: position-based ids gave a new question that happened to appear 7th the id of the
+    # existing 7th question, and it was silently discarded as "already published".
+    first = publish_question(
+        _pooled(test_exam, test_subject, question_text="How do you peer two VNets?", number=7)
+    )
+    second = publish_question(
+        _pooled(
+            test_exam,
+            test_subject,
+            question_text="Which gateway SKU supports zone redundancy?",
+            number=7,
+        )
+    )
+    assert second.question_created
+    assert second.question_id != first.question_id
+    assert second.stable_content_id != first.stable_content_id
+
+
+def test_new_pool_questions_append_after_existing_ones(test_exam, test_subject):
+    texts = [
+        "What does Azure Firewall inspect by default?",
+        "Which rule type filters by FQDN?",
+        "Where are NSG flow logs stored?",
+    ]
+    results = [
+        publish_question(_pooled(test_exam, test_subject, question_text=t, number=1))
+        for t in texts
+    ]
+    rows = _occurrences(results[0].question_set_id)
+    assert [text for text, _ in rows] == texts
+    assert [number for _, number in rows] == [1, 2, 3]
+
+
+def test_content_hash_collision_with_different_text_is_not_merged(test_exam, test_subject):
+    from .content_hash import content_hash
+
+    new_text = "Which service encrypts traffic between on-premises and Azure?"
+    first = publish_question(
+        _pooled(test_exam, test_subject, question_text="An unrelated seed question?", number=1)
+    )
+    # Force a djb2 collision: another question row claims the new text's content_hash while its
+    # text is different.
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE questions SET content_hash = %s WHERE id = %s",
+                (content_hash(new_text), first.question_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    second = publish_question(_pooled(test_exam, test_subject, question_text=new_text, number=2))
+    assert second.question_created
+    assert second.question_id != first.question_id
+
+
+def test_concurrent_pool_appends_get_distinct_numbers(test_exam, test_subject):
+    # Approval publishes many questions at once; appends to the same set must not read the same
+    # MAX(original_question_number) and tie.
+    from concurrent.futures import ThreadPoolExecutor
+
+    first = publish_question(
+        _pooled(test_exam, test_subject, question_text="Seed question for the set?", number=1)
+    )
+    texts = [f"Concurrent pool question number {n} about topic {n * 7}?" for n in range(8)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(
+            pool.map(
+                lambda t: publish_question(
+                    _pooled(test_exam, test_subject, question_text=t, number=1)
+                ),
+                texts,
+            )
+        )
+    numbers = [number for _, number in _occurrences(first.question_set_id)]
+    assert numbers == list(range(1, 10))

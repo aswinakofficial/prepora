@@ -8,11 +8,12 @@ import {
   ExternalLink,
   Globe,
   Layers,
+  Lock,
+  LogOut,
   RefreshCw,
   Search,
   Sliders,
   Sparkles,
-  Terminal,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -56,6 +57,8 @@ export interface SiteOption {
   lastCrawlAt: string | null;
   lastSuccessfulCrawlAt: string | null;
   consecutiveFailures: number;
+  /** Why this source can't be scraped from here (MS Learn outside local development), if so. */
+  lockedReason: string | null;
 }
 
 const EMPTY_HEALTH: SourceHealth = {
@@ -77,6 +80,7 @@ const EMPTY_SITE: SiteOption = {
   defaultExam: "Auto-detect",
   defaultSubject: "Auto-detect",
   defaultMode: "mcq",
+  lockedReason: null,
   engine: "",
   connectorName: "",
   health: EMPTY_HEALTH,
@@ -102,6 +106,7 @@ function toSiteOption(source: {
   lastCrawlAt: string | Date | null;
   lastSuccessfulCrawlAt: string | Date | null;
   consecutiveFailures: number;
+  lockedReason?: string | null;
 }): SiteOption {
   let domain = source.baseUrl;
   try {
@@ -130,6 +135,7 @@ function toSiteOption(source: {
     defaultMode: "mcq",
     engine: source.connectorName,
     connectorName: source.connectorName,
+    lockedReason: source.lockedReason ?? null,
   };
 }
 
@@ -143,6 +149,17 @@ function AdminScrapingPage() {
   );
   const { mutateAsync: triggerMsLearnAuthFn } = useMutation(
     orpc.admin.triggerMsLearnAuth.mutationOptions(),
+  );
+  const {
+    data: msAuthStatusData,
+    error: msAuthStatusError,
+    refetch: refetchMsAuthStatus,
+  } = useQuery({
+    ...orpc.admin.getMsLearnAuthStatus.queryOptions(),
+    refetchInterval: 15000,
+  });
+  const { mutateAsync: signOutMsLearnAuthFn, isPending: isSigningOutMs } = useMutation(
+    orpc.admin.signOutMsLearnAuth.mutationOptions(),
   );
   const { data: healthData } = useQuery({
     ...orpc.admin.getScraperHealth.queryOptions(),
@@ -173,13 +190,22 @@ function AdminScrapingPage() {
   const [targetExam, setTargetExam] = useState("Auto-detect");
   const [targetSubject, setTargetSubject] = useState("Auto-detect");
   const [parserMode, setParserMode] = useState("mcq");
-  const [maxQuestions, setMaxQuestions] = useState<number>(50);
-  const [maxExamSets, setMaxExamSets] = useState<number>(msCatalog?.length || 10);
+  // Both default to "All" (empty) — maximum data; an admin can still enter a number to limit a
+  // run. Deduplication on approval makes collecting everything safe (re-scrapes only add what's
+  // new). maxExamSets used to default to 10 (or 0, the catalog's length before it loaded) and
+  // silently scraped fewer sets than were ticked; maxQuestions capped every run at 50.
+  const [maxQuestions, setMaxQuestions] = useState<number | "">("");
+  const [maxExamSets, setMaxExamSets] = useState<number | "">("");
+  const parseLimit = (value: string): number | "" => {
+    const n = Number.parseInt(value, 10);
+    return Number.isFinite(n) && n > 0 ? n : "";
+  };
   const [isHeadless, setIsHeadless] = useState<boolean>(true);
 
   // Prefill the form from the first registered source once the registry loads — mirrors what
   // TARGET_WEBSITES[0] used to provide synchronously, now sourced from the database instead.
-  const firstSite = sites[0];
+  // …skipping sources locked in this environment (MS Learn in production).
+  const firstSite = sites.find((site) => !site.lockedReason);
   useEffect(() => {
     if (!selectedWebsiteId && firstSite) {
       setSelectedWebsiteId(firstSite.id);
@@ -196,16 +222,15 @@ function AdminScrapingPage() {
   const [lastExtractionResult, setLastExtractionResult] = useState<any>(null);
   const [logFilter, setLogFilter] = useState<"all" | "selected">("all");
 
-  const { data: logsData, refetch: refetchLogs } = useQuery({
-    ...orpc.admin.getScraperLogs.queryOptions(),
-    refetchInterval: isScraping ? 1500 : 4000,
-  });
-
-  // docs/roadmap/engineering-roadmap.md item 21: structured per-stage counts/durations, drawn
-  // from pipeline_job_stages, alongside the raw log panel above.
-  const { data: pipelineJobsData } = useQuery({
-    ...orpc.admin.listPipelineJobs.queryOptions(),
-    refetchInterval: isScraping ? 1500 : 5000,
+  // Every scrape run — its job status, live progress, per-stage counts, and the review batch it
+  // produced — in one table. Polls quickly while anything is queued or running.
+  const { data: scrapeRuns, refetch: refetchRuns } = useQuery({
+    ...orpc.admin.listScrapeRuns.queryOptions(),
+    refetchInterval: (query) =>
+      isScraping ||
+      query.state.data?.some((run) => run.status === "queued" || run.status === "running")
+        ? 1500
+        : 5000,
   });
 
   useEffect(() => {
@@ -231,7 +256,7 @@ function AdminScrapingPage() {
   const handleBulkScrapeSelected = async () => {
     const itemsToScrape = msCatalog
       .filter((item) => selectedCatalogUrls.includes(item.url))
-      .slice(0, maxExamSets);
+      .slice(0, maxExamSets || undefined);
     if (itemsToScrape.length === 0) {
       setErrorMsg("Please select at least one exam set from the catalog to scrape.");
       return;
@@ -263,7 +288,7 @@ function AdminScrapingPage() {
           targetSubject: "Microsoft Certification",
           parserMode: "mcq",
           jobId: curJobId,
-          maxQuestions,
+          maxQuestions: maxQuestions || undefined,
           headless: isHeadless,
         });
         totalSaved += data.extracted_count || 0;
@@ -289,7 +314,7 @@ function AdminScrapingPage() {
     try {
       const data = await triggerMsLearnAuthFn({});
       if (data.authenticated) {
-        setMsAuthStatus("Microsoft Account authenticated! Persistent session state saved.");
+        setMsAuthStatus("Microsoft Account signed in. Session saved for scraping.");
         setSuccessMsg("Microsoft Account authenticated successfully!");
       } else {
         setMsAuthStatus(
@@ -301,6 +326,20 @@ function AdminScrapingPage() {
       setMsAuthStatus(`Auth error: ${err.message}`);
     } finally {
       setIsAuthenticatingMs(false);
+      await refetchMsAuthStatus();
+    }
+  };
+
+  const handleSignOutMs = async () => {
+    setErrorMsg(null);
+    try {
+      await signOutMsLearnAuthFn({});
+      setMsAuthStatus(null);
+      setSuccessMsg("Signed out of Microsoft Learn.");
+    } catch (err: any) {
+      setErrorMsg(`Sign out failed: ${err.message}`);
+    } finally {
+      await refetchMsAuthStatus();
     }
   };
 
@@ -313,6 +352,7 @@ function AdminScrapingPage() {
   }, [healthData]);
 
   const handleSelectWebsite = (site: SiteOption) => {
+    if (site.lockedReason) return;
     setSelectedWebsiteId(site.id);
     setUrl(site.defaultUrl);
     setTargetExam("Auto-detect");
@@ -340,7 +380,7 @@ function AdminScrapingPage() {
         targetExam,
         targetSubject,
         jobId,
-        maxQuestions,
+        maxQuestions: maxQuestions || undefined,
         headless: isHeadless,
       });
 
@@ -355,10 +395,12 @@ function AdminScrapingPage() {
     }
   };
 
-  const filteredQuestions = questions.filter((q: any) => {
-    if (logFilter === "all") return true;
-    return q.sourceUrl?.toLowerCase().includes(selectedWebsite.domain.toLowerCase());
-  });
+  const visibleRuns = (scrapeRuns ?? []).filter(
+    (run) =>
+      logFilter === "all" ||
+      run.sourceId === selectedWebsite.id ||
+      run.url?.toLowerCase().includes(selectedWebsite.domain.toLowerCase()),
+  );
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
@@ -452,18 +494,32 @@ function AdminScrapingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {sites.map((site) => {
               const isSelected = selectedWebsite.id === site.id;
+              const isLocked = !!site.lockedReason;
 
               return (
                 <button
                   key={site.id}
                   type="button"
                   onClick={() => handleSelectWebsite(site)}
-                  className={`p-6 border transition-all cursor-pointer relative group flex flex-col justify-between text-left w-full ${
-                    isSelected
-                      ? "border-blue-500 bg-blue-950/20 shadow-lg shadow-blue-950/40"
-                      : "border-slate-900 bg-slate-950/60 hover:border-slate-700 hover:bg-slate-900/30"
+                  disabled={isLocked}
+                  title={site.lockedReason ?? undefined}
+                  className={`p-6 border transition-all relative group flex flex-col justify-between text-left w-full ${
+                    isLocked
+                      ? "border-slate-900 bg-slate-950/40 opacity-60 cursor-not-allowed"
+                      : isSelected
+                        ? "cursor-pointer border-blue-500 bg-blue-950/20 shadow-lg shadow-blue-950/40"
+                        : "cursor-pointer border-slate-900 bg-slate-950/60 hover:border-slate-700 hover:bg-slate-900/30"
                   }`}
                 >
+                  {isLocked && (
+                    <div className="mb-4 flex items-start gap-2 font-mono text-[10px] text-amber-300 border border-amber-900/60 bg-amber-950/30 px-2.5 py-2">
+                      <Lock className="w-3.5 h-3.5 shrink-0 mt-px" />
+                      <span>
+                        <span className="uppercase tracking-widest block mb-0.5">Local only</span>
+                        {site.lockedReason}
+                      </span>
+                    </div>
+                  )}
                   <div>
                     <div className="flex items-center justify-between gap-3 mb-4">
                       <span
@@ -578,22 +634,48 @@ function AdminScrapingPage() {
                         account session.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleLaunchMsAuth}
-                      disabled={isAuthenticatingMs}
-                      className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                      <RefreshCw
-                        className={`w-3.5 h-3.5 ${isAuthenticatingMs ? "animate-spin" : ""}`}
-                      />
-                      {isAuthenticatingMs ? "Authenticating..." : "Authenticate Microsoft Account"}
-                    </button>
+                    {msAuthStatusData?.authenticated ? (
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-2 bg-emerald-950 border border-emerald-800 text-emerald-400 font-mono text-xs uppercase tracking-wider flex items-center gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Already Authenticated
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleSignOutMs}
+                          disabled={isSigningOutMs}
+                          className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs uppercase tracking-wider border border-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                          Sign Out
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleLaunchMsAuth}
+                        disabled={isAuthenticatingMs}
+                        className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 ${isAuthenticatingMs ? "animate-spin" : ""}`}
+                        />
+                        {isAuthenticatingMs
+                          ? "Authenticating..."
+                          : "Authenticate Microsoft Account"}
+                      </button>
+                    )}
                   </div>
 
                   {msAuthStatus && (
                     <div className="p-3 bg-slate-900 border border-slate-800 text-xs font-mono text-sky-300">
                       {msAuthStatus}
+                    </div>
+                  )}
+
+                  {msAuthStatusError && (
+                    <div className="p-3 bg-red-950/40 border border-red-900 text-xs font-mono text-red-300">
+                      Could not check Microsoft Learn session status: {msAuthStatusError.message}
                     </div>
                   )}
 
@@ -773,9 +855,13 @@ function AdminScrapingPage() {
                       min={1}
                       max={100}
                       value={maxExamSets}
-                      onChange={(e) => setMaxExamSets(parseInt(e.target.value, 10) || 5)}
+                      placeholder="All selected"
+                      onChange={(e) => setMaxExamSets(parseLimit(e.target.value))}
                       className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-300 px-3 py-3 outline-none transition-colors"
                     />
+                    <p className="font-mono text-[10px] text-slate-500">
+                      Leave empty to scrape every selected set.
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -791,9 +877,13 @@ function AdminScrapingPage() {
                       min={1}
                       max={100}
                       value={maxQuestions}
-                      onChange={(e) => setMaxQuestions(parseInt(e.target.value, 10) || 5)}
+                      placeholder="All"
+                      onChange={(e) => setMaxQuestions(parseLimit(e.target.value))}
                       className="w-full bg-slate-900 border border-slate-800 focus:border-slate-500 font-mono text-xs text-slate-300 px-3 py-3 outline-none transition-colors"
                     />
+                    <p className="font-mono text-[10px] text-slate-500">
+                      Leave empty for every question in the assessment.
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -1008,280 +1098,251 @@ function AdminScrapingPage() {
           </div>
         </section>
 
-        {/* SECTION 2.5: LIVE TELEMETRY & EXECUTION LOGS */}
-        <section className="mb-12">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 border-b border-slate-900 pb-3">
-            <div>
-              <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-emerald-400" />
-                <span>03 / Live Scraper Execution & Progress Logs</span>
-              </h2>
-              <p className="font-mono text-[10px] text-slate-500 uppercase mt-1">
-                Real-time Playwright crawler output & background thread progress
-              </p>
-            </div>
-            <div className="flex items-center gap-3 font-mono text-[10px]">
-              <span className="text-slate-500 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                Auto-telemetry active
-              </span>
-              <button
-                type="button"
-                onClick={() => refetchLogs()}
-                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 uppercase tracking-widest transition-colors"
-              >
-                Refresh Log Output
-              </button>
-            </div>
-          </div>
-
-          <div className="border border-slate-900 bg-[#070b0e] p-4 font-mono text-xs space-y-1.5 max-h-72 overflow-y-auto shadow-inner rounded-none">
-            {logsData?.logs && logsData.logs.length > 0 ? (
-              logsData.logs.map((logLine: string, index: number) => {
-                const isErr =
-                  logLine.toLowerCase().includes("error") ||
-                  logLine.toLowerCase().includes("warning") ||
-                  logLine.toLowerCase().includes("fallback");
-                const isSuccess =
-                  logLine.toLowerCase().includes("success") ||
-                  logLine.toLowerCase().includes("extracted") ||
-                  logLine.toLowerCase().includes("saved");
-                const isHighlight = logLine.startsWith("[") || logLine.includes("MS LEARN");
-
-                return (
-                  <div
-                    key={index}
-                    className={`leading-relaxed font-mono text-[11px] ${
-                      isErr
-                        ? "text-rose-400 font-semibold"
-                        : isSuccess
-                          ? "text-emerald-400"
-                          : isHighlight
-                            ? "text-blue-300"
-                            : "text-slate-400"
-                    }`}
-                  >
-                    <span className="text-slate-600 select-none mr-2">
-                      [{String(index + 1).padStart(3, "0")}]
-                    </span>
-                    {logLine}
-                  </div>
-                );
-              })
-            ) : (
-              <div className="text-slate-600 italic py-6 text-center">
-                Waiting for scraper log telemetry... Trigger a scraping job above to stream
-                real-time Playwright execution logs.
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* SECTION 3.5: JOB INSPECTION — docs/roadmap/engineering-roadmap.md item 21 */}
-        <section className="mb-12">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-900 pb-3">
-            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-400" />
-              <span>03.5 / Job Inspection (Per-Stage Counts & Durations)</span>
-            </h2>
-          </div>
-
-          <div className="border border-slate-900 overflow-hidden bg-slate-950/40">
-            <table className="w-full text-left font-mono text-xs">
-              <thead className="border-b border-slate-900 bg-slate-900/50 text-slate-500 uppercase tracking-widest text-[10px]">
-                <tr>
-                  <th className="p-4 font-normal">Job</th>
-                  <th className="p-4 font-normal">Source</th>
-                  <th className="p-4 font-normal">Status</th>
-                  <th className="p-4 font-normal">Stages</th>
-                  <th className="p-4 font-normal">Started</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-900/80 text-slate-300">
-                {!pipelineJobsData || pipelineJobsData.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-600">
-                      No pipeline jobs recorded yet.
-                    </td>
-                  </tr>
-                ) : (
-                  pipelineJobsData.map((job: any) => (
-                    <tr key={job.id} className="hover:bg-slate-900/40 transition-colors align-top">
-                      <td className="p-4 text-slate-400">#{job.id.slice(0, 8)}</td>
-                      <td className="p-4 text-slate-300">{job.sourceId}</td>
-                      <td className="p-4">
-                        <span
-                          className={`px-2 py-0.5 text-[10px] uppercase tracking-wider border ${
-                            job.status === "completed"
-                              ? "bg-emerald-950/40 border-emerald-900/80 text-emerald-400"
-                              : job.status === "partial"
-                                ? "bg-amber-950/40 border-amber-900/80 text-amber-400"
-                                : job.status === "failed"
-                                  ? "bg-rose-950/40 border-rose-900/80 text-rose-400"
-                                  : "bg-slate-900 border-slate-800 text-slate-400"
-                          }`}
-                        >
-                          {job.status}
-                        </span>
-                      </td>
-                      <td className="p-4 space-y-1">
-                        {job.stages.length === 0 ? (
-                          <span className="text-slate-600">No stages recorded</span>
-                        ) : (
-                          job.stages.map((stage: any) => (
-                            <div key={stage.id} className="text-[11px] text-slate-400">
-                              <span className="text-slate-300">{stage.stage}</span>{" "}
-                              <span
-                                className={
-                                  stage.status === "completed"
-                                    ? "text-emerald-500"
-                                    : stage.status === "failed"
-                                      ? "text-rose-500"
-                                      : "text-amber-500"
-                                }
-                              >
-                                {stage.status}
-                              </span>{" "}
-                              — processed={stage.processedCount} failed={stage.failedCount}{" "}
-                              duplicate={stage.duplicateCount} skipped={stage.skippedCount}
-                              {stage.durationMs != null ? ` (${stage.durationMs}ms)` : ""}
-                            </div>
-                          ))
-                        )}
-                      </td>
-                      <td className="p-4 text-slate-600 text-[11px]" suppressHydrationWarning>
-                        {job.startedAt
-                          ? new Date(job.startedAt).toISOString().replace("T", " ").slice(0, 19)
-                          : "—"}{" "}
-                        UTC
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* SECTION 4: WEBSITE JOB HISTORY & INGESTION LOGS */}
+        {/* SECTION 3: SCRAPE RUNS — replaces three panels (a text log, a job table and a batch
+            table) that each showed one slice of the same runs. */}
         <section>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-slate-900 pb-4">
             <div>
               <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
-                <span>03 / Scraped Ingestion Logs ({filteredQuestions.length})</span>
+                <span>03 / Scrape Runs ({visibleRuns.length})</span>
               </h2>
-              <p className="font-mono text-[10px] text-slate-500 uppercase mt-1">
-                Showing logs for: {logFilter === "all" ? "All Portals" : selectedWebsite.name}
+              <p className="font-mono text-[10px] text-slate-500 uppercase mt-1 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                Live — status, progress, stages and review status of each run
               </p>
             </div>
 
-            {/* Filter Toggle */}
-            <div className="flex items-center border border-slate-900 bg-slate-950 p-1 font-mono text-xs">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center border border-slate-900 bg-slate-950 p-1 font-mono text-xs">
+                {(["all", "selected"] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setLogFilter(filter)}
+                    className={`px-3 py-1 text-[11px] uppercase tracking-wider transition-colors ${
+                      logFilter === filter
+                        ? "bg-slate-800 text-white font-semibold"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    {filter === "all" ? "All Sources" : `Only ${selectedWebsite.name}`}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
-                onClick={() => setLogFilter("all")}
-                className={`px-3 py-1 text-[11px] uppercase tracking-wider transition-colors ${
-                  logFilter === "all"
-                    ? "bg-slate-800 text-white font-semibold"
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
+                onClick={() => refetchRuns()}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono text-[10px] uppercase tracking-widest transition-colors"
               >
-                All Portals
-              </button>
-              <button
-                type="button"
-                onClick={() => setLogFilter("selected")}
-                className={`px-3 py-1 text-[11px] uppercase tracking-wider transition-colors ${
-                  logFilter === "selected"
-                    ? "bg-slate-800 text-white font-semibold"
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                Only {selectedWebsite.name}
+                Refresh
               </button>
             </div>
           </div>
 
-          <div className="border border-slate-900 overflow-hidden bg-slate-950/40">
-            <table className="w-full text-left font-mono text-xs">
-              <thead className="border-b border-slate-900 bg-slate-900/50 text-slate-500 uppercase tracking-widest text-[10px]">
-                <tr>
-                  <th className="p-4 font-normal">Source URL</th>
-                  <th className="p-4 font-normal">Status</th>
-                  <th className="p-4 font-normal">Extracted Qs</th>
-                  <th className="p-4 font-normal">Exam / Subject</th>
-                  <th className="p-4 font-normal">Timestamp</th>
-                  <th className="p-4 font-normal text-right">Review Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-900/80 text-slate-300">
-                {filteredQuestions.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-600">
-                      No scraping job history found for this view. Select a portal above and run a
-                      job to ingest questions.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredQuestions.map((q: any) => {
-                    const metadata = (q.parsedData as any)?.metadata || {};
-                    const extractedElements = (q.parsedData as any)?.extractedElements || [];
-                    const count = extractedElements.length || metadata.extractedCount || 0;
-
-                    return (
-                      <tr key={q.id} className="hover:bg-slate-900/40 transition-colors">
-                        <td
-                          className="p-4 max-w-[280px] truncate text-slate-300"
-                          title={q.sourceUrl}
-                        >
-                          <a
-                            href={q.sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:text-blue-400 transition-colors flex items-center gap-1"
-                          >
-                            <span className="truncate">{q.sourceUrl}</span>
-                            <ExternalLink className="w-3 h-3 text-slate-600 shrink-0" />
-                          </a>
-                        </td>
-                        <td className="p-4">
-                          <span
-                            className={`px-2 py-0.5 text-[10px] uppercase tracking-wider border ${
-                              q.status === "pending"
-                                ? "bg-amber-950/40 border-amber-900/80 text-amber-400"
-                                : q.status === "approved"
-                                  ? "bg-emerald-950/40 border-emerald-900/80 text-emerald-400"
-                                  : "bg-rose-950/40 border-rose-900/80 text-rose-400"
-                            }`}
-                          >
-                            {q.status}
-                          </span>
-                        </td>
-                        <td className="p-4 text-white font-medium">{count} Qs</td>
-                        <td className="p-4 text-slate-500">
-                          {metadata.exam || "Kerala PSC AE"} · {metadata.subject || "SOM"}
-                        </td>
-                        <td className="p-4 text-slate-600 text-[11px]" suppressHydrationWarning>
-                          {new Date(q.createdAt).toISOString().replace("T", " ").slice(0, 19)} UTC
-                        </td>
-                        <td className="p-4 text-right">
-                          <Link
-                            to="/admin/review"
-                            className="text-slate-400 hover:text-white border-b border-slate-700 hover:border-white pb-0.5 transition-colors uppercase tracking-wider text-[11px]"
-                          >
-                            Review Queue →
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <ScrapeRunsTable runs={visibleRuns} />
         </section>
       </main>
+    </div>
+  );
+}
+
+type ScrapeRun = NonNullable<Awaited<ReturnType<typeof orpc.admin.listScrapeRuns.call>>>[number];
+
+const RUN_STATUS_STYLE: Record<string, string> = {
+  completed: "bg-emerald-950/40 border-emerald-900/80 text-emerald-400",
+  partial: "bg-amber-950/40 border-amber-900/80 text-amber-400",
+  failed: "bg-rose-950/40 border-rose-900/80 text-rose-400",
+  running: "bg-sky-950/40 border-sky-900/80 text-sky-300",
+  queued: "bg-slate-900 border-slate-800 text-slate-400",
+};
+
+const BATCH_STATUS_STYLE: Record<string, string> = {
+  pending: "text-amber-400",
+  approved: "text-emerald-400",
+  rejected: "text-rose-400",
+};
+
+function formatDuration(ms: number): string {
+  const secs = Math.max(0, Math.round(ms / 1000));
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+function ScrapeRunsTable({ runs }: { runs: ScrapeRun[] }) {
+  return (
+    <div className="border border-slate-900 overflow-x-auto bg-slate-950/40">
+      <table className="w-full text-left font-mono text-xs">
+        <thead className="border-b border-slate-900 bg-slate-900/50 text-slate-500 uppercase tracking-widest text-[10px]">
+          <tr>
+            <th className="p-4 font-normal">Run</th>
+            <th className="p-4 font-normal">Status &amp; stages</th>
+            <th className="p-4 font-normal">Questions</th>
+            <th className="p-4 font-normal">Review</th>
+            <th className="p-4 font-normal">Started / Duration</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-900/80 text-slate-300">
+          {runs.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="p-8 text-center text-slate-600">
+                No scrape runs yet. Start one above — it appears here immediately and updates live.
+              </td>
+            </tr>
+          ) : (
+            runs.map((run) => {
+              const active = run.status === "running" || run.status === "queued";
+              // The stage still in progress (MS Learn reports processed/discovered as it goes).
+              const liveStage = run.stages.find((stage) => stage.status === "running");
+              const progress =
+                liveStage && liveStage.discoveredCount > 0
+                  ? Math.min(1, liveStage.processedCount / liveStage.discoveredCount)
+                  : null;
+              const started = run.startedAt ? new Date(run.startedAt) : null;
+              const ended = run.completedAt ? new Date(run.completedAt) : null;
+              const title =
+                run.batch?.examTitle || run.batch?.exam || run.targetExam || run.sourceId;
+              const questionCount =
+                run.batch?.questionCount ??
+                run.stages.reduce((max, stage) => Math.max(max, stage.processedCount), 0);
+
+              return (
+                <tr key={run.id} className="hover:bg-slate-900/40 transition-colors align-top">
+                  <td className="p-4 max-w-[320px]">
+                    <div className="flex items-start gap-3">
+                      {run.batch?.logoUrl && (
+                        <img
+                          src={run.batch.logoUrl}
+                          alt=""
+                          className="w-8 h-8 object-contain shrink-0"
+                          loading="lazy"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-slate-200 font-sans text-sm truncate" title={title}>
+                          {title}
+                        </div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">
+                          #{run.id.slice(0, 8)} · {run.sourceId}
+                        </div>
+                        {run.url && (
+                          <a
+                            href={run.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-slate-500 hover:text-blue-400 flex items-center gap-1 mt-0.5"
+                            title={run.url}
+                          >
+                            <span className="truncate">{run.url}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="p-4 min-w-[280px]">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase tracking-wider border ${
+                        RUN_STATUS_STYLE[run.status] ?? RUN_STATUS_STYLE.queued
+                      }`}
+                    >
+                      {active && <RefreshCw className="w-3 h-3 animate-spin" />}
+                      {run.status}
+                    </span>
+                    {progress != null && liveStage && (
+                      <div className="mt-2">
+                        <div className="h-1 bg-slate-900 border border-slate-800">
+                          <div
+                            className="h-full bg-sky-400 transition-all"
+                            style={{ width: `${Math.round(progress * 100)}%` }}
+                          />
+                        </div>
+                        <div className="text-[10px] text-sky-300 mt-1">
+                          {liveStage.processedCount} / {liveStage.discoveredCount} questions
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-2 space-y-0.5">
+                      {run.stages.map((stage) => (
+                        <div key={stage.id} className="text-[11px] text-slate-500">
+                          <span className="text-slate-300">{stage.stage}</span>{" "}
+                          <span
+                            className={
+                              stage.status === "completed"
+                                ? "text-emerald-500"
+                                : stage.status === "failed"
+                                  ? "text-rose-500"
+                                  : "text-amber-500"
+                            }
+                          >
+                            {stage.status}
+                          </span>{" "}
+                          — processed={stage.processedCount} failed={stage.failedCount} duplicate=
+                          {stage.duplicateCount} skipped={stage.skippedCount}
+                          {stage.durationMs != null ? ` (${stage.durationMs}ms)` : ""}
+                          {stage.errorDetail && (
+                            <div className="text-rose-400 whitespace-pre-wrap break-words">
+                              {stage.errorDetail}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {run.errorSummary && (
+                      <div className="mt-2 text-[11px] text-rose-400 whitespace-pre-wrap break-words">
+                        {run.errorSummary}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="p-4 text-white font-medium whitespace-nowrap">
+                    {questionCount} Qs
+                  </td>
+
+                  <td className="p-4 whitespace-nowrap">
+                    {run.batch ? (
+                      <div className="space-y-1">
+                        <div
+                          className={`uppercase tracking-wider text-[10px] ${
+                            BATCH_STATUS_STYLE[run.batch.status] ?? "text-slate-400"
+                          }`}
+                        >
+                          {run.batch.status}
+                        </div>
+                        {run.batch.status === "pending" && (
+                          <Link
+                            to="/admin/review"
+                            className="text-slate-400 hover:text-white border-b border-slate-700 hover:border-white pb-0.5 transition-colors uppercase tracking-wider text-[10px]"
+                          >
+                            Review →
+                          </Link>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-slate-600 text-[10px]">
+                        {active ? "Scraping…" : "No batch"}
+                      </span>
+                    )}
+                  </td>
+
+                  <td
+                    className="p-4 text-slate-500 text-[11px] whitespace-nowrap"
+                    suppressHydrationWarning
+                  >
+                    {started ? `${started.toISOString().replace("T", " ").slice(0, 19)} UTC` : "—"}
+                    {started && (
+                      <div className="text-slate-400 mt-0.5">
+                        {formatDuration((ended ?? new Date()).getTime() - started.getTime())}
+                        {!ended && active ? " so far" : ""}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

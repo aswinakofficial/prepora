@@ -39,6 +39,19 @@ class NormalizedOption(BaseModel):
     text: str = Field(min_length=1)
 
 
+class NormalizedMedia(BaseModel):
+    """An image belonging to the question, already stored in the media store
+    (prepora_pipeline/core/media_store.py) — publishing records it, it never fetches anything."""
+
+    placement: Literal["question", "option", "explanation"]
+    option_key: str | None = Field(default=None, pattern=r"^[A-Za-z]$")
+    storage_key: str = Field(pattern=r"^[0-9a-f]{2}/[0-9a-f]{64}\.(png|jpg|gif|webp|svg)$")
+    mime_type: str = Field(pattern=r"^image/(png|jpeg|gif|webp|svg\+xml)$")
+    alt_text: str | None = Field(default=None, max_length=500)
+    size_bytes: int | None = Field(default=None, ge=0)
+    source_url: str | None = None
+
+
 class McqAnswer(BaseModel):
     type: Literal["mcq"] = "mcq"
     correct_key: str = Field(pattern=r"^[A-Za-z]$")
@@ -85,6 +98,14 @@ class NormalizedQuestion(BaseModel):
     session_label: str | None = None
     shift: str | None = None
     course_slug: str | None = None
+    # Human-readable name for the question set this question belongs to, used only when publishing
+    # creates that set — it never renames an existing one, and it isn't part of the set's slug.
+    question_set_title: str | None = Field(default=None, max_length=200)
+
+    # How the question is identified across runs (stages/stable_id.py): "position" for exam papers,
+    # where number N of a given paper is a fixed question; "content" for sources that draw
+    # questions at random from a pool (MS Learn), where only the text identifies a question.
+    identity: Literal["position", "content"] = "position"
 
     # Question content.
     number: int | None = Field(default=None, gt=0)
@@ -94,6 +115,8 @@ class NormalizedQuestion(BaseModel):
     answer: NormalizedAnswer | None = None
     explanation: str | None = None
     topic_slug: str | None = None
+    # Images in the stem, an option or the explanation, in display order.
+    media: list[NormalizedMedia] = Field(default_factory=list)
     difficulty: Difficulty | None = None
     tags: list[str] | None = None
 

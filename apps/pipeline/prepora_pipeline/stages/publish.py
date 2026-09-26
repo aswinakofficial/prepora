@@ -35,7 +35,7 @@ from prepora_pipeline.contracts import (
 )
 
 from ..core.db import get_db_connection
-from .content_hash import content_hash
+from .content_hash import content_hash, normalize_question_text
 from .dedupe import check_duplicate
 from .stable_id import derive_question_set_slug, derive_stable_content_id
 from .validate import validate_question
@@ -112,8 +112,14 @@ def publish_question(normalized: NormalizedQuestion) -> PublishResult:
             )
 
             occurrence_created = _resolve_or_create_occurrence(
-                cur, question_id, question_set_id, validated.number
+                cur,
+                question_id,
+                question_set_id,
+                # Pool sources have no fixed numbering: a question new to the set goes after the
+                # ones already in it, whatever position it had in this particular scrape.
+                None if validated.identity == "content" else validated.number,
             )
+            _record_media(cur, question_id, validated.media)
 
             conn.commit()
     except Exception:
@@ -144,42 +150,80 @@ def _resolve_exam(cur, exam_slug: str) -> str:
     return row[0]
 
 
-def _resolve_or_create_variant(cur, exam_id: str, variant_slug: str) -> str:
-    cur.execute(
-        "SELECT id FROM exam_variants WHERE exam_id = %s AND slug = %s", (exam_id, variant_slug)
-    )
+# Race-safe find-or-create. Callers publish many questions concurrently (packages/api's
+# review-batch approval runs several at once), and they all need the same variant, session,
+# subject and question set the first time an exam is published. A plain "SELECT, then INSERT if
+# missing" let two requests both see nothing and both insert, and the loser failed with a
+# UniqueViolation — which surfaced as whole waves of "Internal Server Error" publish failures.
+# ON CONFLICT DO NOTHING makes the losing insert a no-op instead (under READ COMMITTED it waits
+# for the winner to commit), and the follow-up SELECT then finds the winner's row.
+def _select_id(cur, sql: str, params: tuple) -> str | None:
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def _get_or_insert(
+    cur, select_sql: str, select_params: tuple, insert_sql: str, insert_params: tuple
+) -> str:
+    existing = _select_id(cur, select_sql, select_params)
+    if existing:
+        return existing
+    cur.execute(f"{insert_sql} ON CONFLICT DO NOTHING RETURNING id", insert_params)
     row = cur.fetchone()
     if row:
         return row[0]
-    cur.execute(
-        "INSERT INTO exam_variants (exam_id, name, slug) VALUES (%s, %s, %s) RETURNING id",
+    winner = _select_id(cur, select_sql, select_params)
+    if winner is None:
+        raise PublishError("A concurrent insert conflicted but its row could not be found.")
+    return winner
+
+
+def _resolve_or_create_variant(cur, exam_id: str, variant_slug: str) -> str:
+    return _get_or_insert(
+        cur,
+        "SELECT id FROM exam_variants WHERE exam_id = %s AND slug = %s",
+        (exam_id, variant_slug),
+        "INSERT INTO exam_variants (exam_id, name, slug) VALUES (%s, %s, %s)",
         (exam_id, _humanize(variant_slug), variant_slug),
     )
-    return cur.fetchone()[0]
 
 
 def _resolve_or_create_session(
     cur, variant_id: str, year: int | None, session_label: str | None
 ) -> str:
     if year is not None:
-        cur.execute(
+        find = (
             "SELECT id FROM exam_sessions WHERE exam_variant_id = %s AND year = %s",
             (variant_id, year),
         )
     elif session_label:
-        cur.execute(
+        find = (
             "SELECT id FROM exam_sessions WHERE exam_variant_id = %s AND label = %s",
             (variant_id, session_label),
         )
     else:
-        cur.execute(
+        find = (
             "SELECT id FROM exam_sessions WHERE exam_variant_id = %s AND year IS NULL "
             "AND label = 'Version 1'",
             (variant_id,),
         )
-    row = cur.fetchone()
-    if row:
-        return row[0]
+
+    # The common case — the session already exists — takes no lock at all. Taking it
+    # unconditionally held one lock per exam for each publish's whole transaction, which
+    # serialized every concurrent publish for the same exam (a 50-question batch took ~25s).
+    existing = _select_id(cur, *find)
+    if existing:
+        return existing
+
+    # First publish for this session: exam_sessions has no unique constraint to conflict on, so
+    # concurrent creators are serialized with a transaction-scoped advisory lock (released at
+    # commit/rollback) and re-check before inserting.
+    session_key = f"exam_session:{variant_id}:{year if year is not None else session_label or ''}"
+    cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (session_key,))
+    existing = _select_id(cur, *find)
+    if existing:
+        return existing
 
     label = session_label or (str(year) if year is not None else "Version 1")
     cur.execute(
@@ -191,69 +235,63 @@ def _resolve_or_create_session(
 
 
 def _resolve_or_create_subject(cur, subject_slug: str) -> str:
-    cur.execute("SELECT id FROM subjects WHERE slug = %s", (subject_slug,))
-    row = cur.fetchone()
-    if row:
-        return row[0]
-    cur.execute(
-        "INSERT INTO subjects (name, slug) VALUES (%s, %s) RETURNING id",
+    return _get_or_insert(
+        cur,
+        "SELECT id FROM subjects WHERE slug = %s",
+        (subject_slug,),
+        "INSERT INTO subjects (name, slug) VALUES (%s, %s)",
         (_humanize(subject_slug), subject_slug),
     )
-    return cur.fetchone()[0]
 
 
 def _resolve_or_create_topic(cur, subject_id: str, topic_slug: str) -> str:
-    cur.execute(
-        "SELECT id FROM topics WHERE subject_id = %s AND slug = %s", (subject_id, topic_slug)
-    )
-    row = cur.fetchone()
-    if row:
-        return row[0]
-    cur.execute(
-        "INSERT INTO topics (subject_id, name, slug) VALUES (%s, %s, %s) RETURNING id",
+    return _get_or_insert(
+        cur,
+        "SELECT id FROM topics WHERE subject_id = %s AND slug = %s",
+        (subject_id, topic_slug),
+        "INSERT INTO topics (subject_id, name, slug) VALUES (%s, %s, %s)",
         (subject_id, _humanize(topic_slug), topic_slug),
     )
-    return cur.fetchone()[0]
 
 
 def _resolve_or_create_course(cur, variant_id: str, subject_id: str, course_slug: str) -> str:
-    cur.execute(
+    return _get_or_insert(
+        cur,
         "SELECT id FROM courses WHERE exam_variant_id = %s AND subject_id = %s",
         (variant_id, subject_id),
-    )
-    row = cur.fetchone()
-    if row:
-        return row[0]
-    cur.execute(
-        "INSERT INTO courses (exam_variant_id, subject_id, code) "
-        "VALUES (%s, %s, %s) RETURNING id",
+        "INSERT INTO courses (exam_variant_id, subject_id, code) VALUES (%s, %s, %s)",
         (variant_id, subject_id, course_slug),
     )
-    return cur.fetchone()[0]
 
 
 def _resolve_or_create_question_set(
     cur, variant_id: str, session_id: str, subject_id: str, normalized: NormalizedQuestion
 ) -> str:
     slug = derive_question_set_slug(normalized)
-    cur.execute("SELECT id FROM question_sets WHERE slug = %s", (slug,))
-    row = cur.fetchone()
-    if row:
-        return row[0]
+    existing = _select_id(cur, "SELECT id FROM question_sets WHERE slug = %s", (slug,))
+    if existing:
+        return existing
 
-    title_parts = [_humanize(normalized.exam_slug), _humanize(normalized.exam_variant_slug)]
-    if normalized.year:
-        title_parts.append(str(normalized.year))
-    elif normalized.session_label:
-        title_parts.append(normalized.session_label)
-    title_parts.append(_humanize(normalized.subject_slug))
-    title = " ".join(title_parts)
+    # A connector that knows what the set is actually called (e.g. "Official Microsoft Practice
+    # Assessment") names it; otherwise fall back to a title derived from the slugs.
+    title = normalized.question_set_title
+    if not title:
+        title_parts = [_humanize(normalized.exam_slug), _humanize(normalized.exam_variant_slug)]
+        if normalized.year:
+            title_parts.append(str(normalized.year))
+        elif normalized.session_label:
+            title_parts.append(normalized.session_label)
+        title_parts.append(_humanize(normalized.subject_slug))
+        title = " ".join(title_parts)
 
-    cur.execute(
+    return _get_or_insert(
+        cur,
+        "SELECT id FROM question_sets WHERE slug = %s",
+        (slug,),
         "INSERT INTO question_sets "
         "(exam_variant_id, exam_session_id, subject_id, shift_label, title, slug, source_type, "
         "source_url, source_document, publication_status) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'published') RETURNING id",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'published')",
         (
             variant_id,
             session_id,
@@ -266,26 +304,31 @@ def _resolve_or_create_question_set(
             normalized.source_document,
         ),
     )
-    return cur.fetchone()[0]
 
 
 def _resolve_or_create_question(
     cur, stable_content_id: str, normalized: NormalizedQuestion, topic_id: str | None
 ) -> tuple[str, bool]:
-    cur.execute("SELECT id FROM questions WHERE stable_content_id = %s", (stable_content_id,))
-    row = cur.fetchone()
-    if row:
-        return row[0], False
-
+    # One round trip for both lookups (each costs ~100ms against a remote database): a
+    # stable_content_id match wins; otherwise the exact same question content, previously
+    # published under a different stable_content_id (typically: a different exam year), is reused
+    # rather than duplicated. Fuzzy/near-duplicate reuse across different phrasings is item 20's
+    # job, not this exact-match check's.
+    #
+    # content_hash is a 32-bit djb2 — fast to index, but two different questions can share one. A
+    # hash match is therefore only reused once the normalized text is confirmed equal; otherwise a
+    # collision would silently merge a new question into an unrelated one.
     hash_ = content_hash(normalized.question_text)
-    cur.execute("SELECT id FROM questions WHERE content_hash = %s", (hash_,))
-    row = cur.fetchone()
-    if row:
-        # The exact same question content, previously published under a different
-        # stable_content_id (typically: a different exam year) — reuse the canonical row rather
-        # than creating a duplicate. Fuzzy/near-duplicate reuse across different phrasings is item
-        # 20's job, not this exact-match check's.
-        return row[0], False
+    cur.execute(
+        "SELECT id, question_text, stable_content_id = %s AS by_id FROM questions "
+        "WHERE stable_content_id = %s OR content_hash = %s "
+        "ORDER BY (stable_content_id = %s) DESC",
+        (stable_content_id, stable_content_id, hash_, stable_content_id),
+    )
+    wanted = normalize_question_text(normalized.question_text)
+    for existing_id, existing_text, by_id in cur.fetchall():
+        if by_id or normalize_question_text(existing_text) == wanted:
+            return existing_id, False
 
     slug = stable_content_id.lower()
     cur.execute(
@@ -306,14 +349,21 @@ def _resolve_or_create_question(
     )
     question_id = cur.fetchone()[0]
 
+    # All options in one multi-row INSERT rather than one round trip each.
     option_id_by_key = {}
-    for i, opt in enumerate(normalized.options):
+    if normalized.options:
+        values_sql = ", ".join(["(%s, %s, %s, %s)"] * len(normalized.options))
+        params = [
+            value
+            for i, opt in enumerate(normalized.options)
+            for value in (question_id, opt.key, opt.text, i)
+        ]
         cur.execute(
             "INSERT INTO question_options (question_id, option_key, option_text, sequence) "
-            "VALUES (%s, %s, %s, %s) RETURNING id",
-            (question_id, opt.key, opt.text, i),
+            f"VALUES {values_sql} RETURNING option_key, id",
+            params,
         )
-        option_id_by_key[opt.key] = cur.fetchone()[0]
+        option_id_by_key = dict(cur.fetchall())
 
     _insert_answers(cur, question_id, normalized.answer, option_id_by_key)
 
@@ -360,18 +410,77 @@ def _insert_answers(cur, question_id: str, answer, option_id_by_key: dict[str, s
         raise PublishError(f"Unknown answer type: {type(answer)!r}")
 
 
+def _record_media(cur, question_id: str, media) -> None:
+    """
+    Records the question's images (already stored by the scraper — see core/media_store.py).
+    Idempotent like the rest of publishing: re-publishing the same question adds only images it
+    doesn't already have, matched on (storage key, placement, option), in one round trip.
+    """
+    if not media:
+        return
+    rows = []
+    positions: dict[tuple[str, str | None], int] = {}
+    for item in media:
+        slot = (item.placement, item.option_key)
+        position = positions.get(slot, 0)
+        positions[slot] = position + 1
+        rows.append(
+            (
+                item.storage_key.rsplit("/", 1)[-1],
+                item.storage_key,
+                item.mime_type,
+                item.size_bytes,
+                item.alt_text,
+                question_id,
+                item.placement,
+                item.option_key,
+                position,
+            )
+        )
+    values_sql = ", ".join(
+        ["(%s, %s, %s, %s::integer, %s, %s, %s, %s, %s::integer)"] * len(rows)
+    )
+    cur.execute(
+        "INSERT INTO media (filename, storage_key, mime_type, size_bytes, alt_text, question_id, "
+        "placement, option_key, position) "
+        "SELECT v.* FROM (VALUES "
+        + values_sql
+        + ") AS v(filename, storage_key, mime_type, size_bytes, alt_text, question_id, "
+        "placement, option_key, position) "
+        "WHERE NOT EXISTS (SELECT 1 FROM media m WHERE m.question_id = v.question_id "
+        "AND m.storage_key = v.storage_key AND m.placement IS NOT DISTINCT FROM v.placement "
+        "AND m.option_key IS NOT DISTINCT FROM v.option_key)",
+        [value for row in rows for value in row],
+    )
+
+
 def _resolve_or_create_occurrence(
     cur, question_id: str, question_set_id: str, original_question_number: int | None
 ) -> bool:
-    cur.execute(
-        "SELECT id FROM question_occurrences WHERE question_id = %s AND question_set_id = %s",
-        (question_id, question_set_id),
-    )
-    if cur.fetchone():
-        return False
+    # One round trip: question_occurrences_unique (question_id, question_set_id) makes an
+    # existing occurrence a no-op, and RETURNING tells us whether a row was actually inserted.
+    # Without a number (content identity), the occurrence takes the next one in its set so new
+    # questions append. Concurrent publishes into the same set would otherwise read the same MAX
+    # and tie, so appends to one set are serialized by a transaction-scoped advisory lock (held
+    # only for the short remainder of this publish).
+    if original_question_number is None:
+        # A re-scraped question usually already has its occurrence — that's a no-op, and must not
+        # queue behind the lock (which is held to commit) and serialize the whole batch.
+        cur.execute(
+            "SELECT 1 FROM question_occurrences WHERE question_id = %s AND question_set_id = %s",
+            (question_id, question_set_id),
+        )
+        if cur.fetchone():
+            return False
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%s))", (f"occurrence-append:{question_set_id}",)
+        )
     cur.execute(
         "INSERT INTO question_occurrences "
-        "(question_id, question_set_id, original_question_number) VALUES (%s, %s, %s)",
-        (question_id, question_set_id, original_question_number),
+        "(question_id, question_set_id, original_question_number) VALUES (%s, %s, "
+        "COALESCE(%s, (SELECT COALESCE(MAX(original_question_number), 0) + 1 "
+        "FROM question_occurrences WHERE question_set_id = %s))) "
+        "ON CONFLICT (question_id, question_set_id) DO NOTHING RETURNING id",
+        (question_id, question_set_id, original_question_number, question_set_id),
     )
-    return True
+    return cur.fetchone() is not None

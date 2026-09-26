@@ -6,6 +6,7 @@ import { z } from "zod";
 import { publicProcedure } from "../context.js";
 import { createPracticeSession, finalizePracticeSession, recordAttempt } from "../lib/attempts.js";
 import { findPublishedQuestionByPath } from "../lib/catalog-questions.js";
+import { loadQuestionImages } from "../lib/question-media.js";
 
 export const questionsRouter = {
   // docs/roadmap/engineering-roadmap.md item 24: the question-detail page used to render a fixed
@@ -41,13 +42,24 @@ export const questionsRouter = {
 
       const q = await db.query.questions.findFirst({
         where: eq(questions.id, match.id),
-        with: { options: true },
+        with: { options: true, answers: true },
       });
       if (!q) return null;
+
+      // Question and option images only — explanation images come back with the explanation,
+      // from submitAnswer, so they can't hint at the answer before one is chosen.
+      const images = (await loadQuestionImages(db, [q.id], ["question", "option"])).get(q.id) ?? [];
 
       return {
         id: q.id,
         text: q.questionText,
+        images,
+        // How many options make up the answer (3 for "Choose 3"), so the page can collect that
+        // many before revealing — the count only, never which ones.
+        answerCount: Math.max(
+          1,
+          q.answers.filter((a) => a.isCorrect !== false && a.correctOptionId).length,
+        ),
         options: [...q.options]
           .sort((a, b) => a.sequence - b.sequence)
           .map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
@@ -105,15 +117,21 @@ export const questionsRouter = {
     .input(
       z.object({
         id: z.string(),
-        selectedOptionId: z.string(),
+        // One option for a single-answer question; every chosen option for a "Choose N" one.
+        selectedOptionIds: z.array(z.string()).min(1).optional(),
+        selectedOptionId: z.string().optional(),
         sessionId: z.string().optional(),
         practiceSessionId: z.string().optional(),
       }),
     )
     .handler(async ({ input, context }) => {
+      if (!input.selectedOptionIds?.length && !input.selectedOptionId) {
+        throw new ORPCError("BAD_REQUEST", { message: "Select at least one option." });
+      }
       const db = getDb();
       const result = await recordAttempt(db, {
         questionId: input.id,
+        selectedOptionIds: input.selectedOptionIds,
         selectedOptionId: input.selectedOptionId,
         userId: context.user?.id,
         sessionId: input.sessionId,

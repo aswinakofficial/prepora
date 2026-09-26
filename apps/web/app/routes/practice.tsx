@@ -1,17 +1,26 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { BookOpen, Clock, ExternalLink, Flag, Sparkles, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import {
   type AdditionalReadingResource,
-  extractLabeledSection,
   mergeReadingResources,
+  splitExplanationAndReadings,
 } from "../../lib/additional-reading";
 import { trackEvent } from "../../lib/analytics";
 import { getAnonymousSessionId } from "../../lib/anonymous-session";
+import {
+  formatKeys,
+  isSelectionComplete,
+  isSelectionCorrect,
+  requiredSelections,
+  toggleSelection,
+} from "../../lib/answer-selection";
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
+import { type QuestionImage, QuestionImages } from "../components/question/QuestionImages";
+import { placeholderKeys, Skeleton, SkeletonRegion } from "../components/ui/Skeleton";
 
 const practiceSearchSchema = z.object({
   examSlug: z.string().optional(),
@@ -21,13 +30,20 @@ const practiceSearchSchema = z.object({
 
 export const Route = createFileRoute("/practice")({
   validateSearch: (search) => practiceSearchSchema.parse(search),
+  // A practice session is always for one exam. Links that arrive without one (the footer's
+  // "Practice", topic and question-set pages) used to land on a setup screen whose exam and
+  // subject dropdowns were hard-coded placeholders wired to nothing, so starting from it gave a
+  // session with zero questions. Pick an exam from the directory instead.
+  beforeLoad: ({ search }) => {
+    if (!search.examSlug) throw redirect({ to: "/exams" });
+  },
   head: () => ({
     meta: [
       { title: "Practice & Learn Exam Hub — Prepora" },
       {
         name: "description",
         content:
-          "Distraction-free exam practice, Learn Mode, and mock test environment with verified step-by-step resolution logic.",
+          "Distraction-free exam practice and Learn Mode with verified step-by-step explanations.",
       },
     ],
     // Canonicalizes to the base path regardless of ?examSlug=/?viewMode= — this is an interactive
@@ -37,50 +53,30 @@ export const Route = createFileRoute("/practice")({
   component: PracticePage,
 });
 
-type Mode = "practice" | "mock";
-type Stage = "setup" | "active" | "results";
+type Stage = "active" | "results";
 
 interface Question {
   id: string;
   text: string;
   options: { id: string; key: string; text: string }[];
   correctKey: string;
+  /** Every correct option — more than one for a "Choose N" question. */
+  correctKeys?: string[];
+  questionType?: string;
   explanation: string;
+  images?: QuestionImage[];
   topic: string;
   additionalReading?: string | string[];
   additionalReadings?: string[];
   additionalReadingLinks?: Array<{ text: string; url?: string }>;
 }
 
-const ADDITIONAL_READING_STOP_LABELS = [
-  "Objective",
-  "What This Item Tests",
-  "Rationale",
-  "Additional Reading Resources",
-];
-
-function extractAdditionalReadingFromExplanation(explanation: string) {
-  const additionalReadingPattern =
-    /Additional Reading:\s*([\s\S]*?)(?=\n\s*(?:Objective|What This Item Tests|Rationale|Additional Reading Resources):|$)/i;
-  const section = extractLabeledSection(
-    explanation,
-    "Additional Reading",
-    ADDITIONAL_READING_STOP_LABELS,
-  );
-
-  return {
-    explanation: explanation.replace(additionalReadingPattern, "").trim(),
-    resources: section ? section.split(/\n+/).filter(Boolean) : [],
-  };
-}
-
 function getQuestionResolution(question: Question) {
-  const extracted = extractAdditionalReadingFromExplanation(question.explanation || "");
+  const extracted = splitExplanationAndReadings(question.explanation || "");
 
   const additionalReadings = mergeReadingResources({
-    extractedTitles: extracted.resources,
     rawReadings: question.additionalReadings || question.additionalReading,
-    readingLinks: question.additionalReadingLinks,
+    readingLinks: [...extracted.readings, ...(question.additionalReadingLinks || [])],
   });
 
   return {
@@ -167,13 +163,14 @@ function PracticePage() {
   const examSlug = search?.examSlug;
   const initialQ = search?.q;
 
-  const [mode, setMode] = useState<Mode>("practice");
   const [viewMode, setViewMode] = useState<"simulation" | "learn">(
     search?.viewMode === "learn" ? "learn" : "simulation",
   );
-  const [stage, setStage] = useState<Stage>("setup");
+  const [stage, setStage] = useState<Stage>("active");
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // A selection per question is a list of option keys (one for single-answer questions, N for
+  // "Choose N") — see lib/answer-selection.ts.
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [submitted, setSubmitted] = useState<Record<string, boolean>>({});
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -181,9 +178,12 @@ function PracticePage() {
   // Learn Mode specific states
   const [showAllExplanations, setShowAllExplanations] = useState(false);
   const [revealedExplanations, setRevealedExplanations] = useState<Record<string, boolean>>({});
-  const [learnAnswers, setLearnAnswers] = useState<Record<string, string>>({});
+  const [learnAnswers, setLearnAnswers] = useState<Record<string, string[]>>({});
+  // Learn mode records a question's attempt once — the first time its answer is complete — not
+  // again every time the user changes their selection afterwards.
+  const [learnRecorded, setLearnRecorded] = useState<Record<string, boolean>>({});
 
-  const { data: realExamData } = useQuery(
+  const { data: realExamData, isLoading: isLoadingExam } = useQuery(
     orpc.exams.getBySlug.queryOptions({ input: { examSlug: examSlug || "" } }),
   );
 
@@ -208,31 +208,27 @@ function PracticePage() {
   );
 
   useEffect(() => {
-    if (examSlug) {
-      setStage("active");
-      if (initialQ && initialQ > 0 && initialQ <= activeQuestions.length) {
-        setCurrentIndex(initialQ - 1);
-      }
+    if (initialQ && initialQ > 0 && initialQ <= activeQuestions.length) {
+      setCurrentIndex(initialQ - 1);
     }
-  }, [examSlug, initialQ, activeQuestions.length]);
+  }, [initialQ, activeQuestions.length]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (stage === "active") {
+    // Not while the questions are still loading — the session clock starts with the session.
+    if (stage === "active" && activeQuestions.length > 0) {
       interval = setInterval(() => {
         setTimerSeconds((prev) => prev + 1);
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [stage]);
+  }, [stage, activeQuestions.length]);
 
-  // Created once real questions are known, so totalQuestions is accurate — not on the setup
-  // screen's "INITIALIZE SEQUENCE" click, which fires before the exam query has necessarily
-  // resolved.
+  // Created once real questions are known, so totalQuestions is accurate.
   useEffect(() => {
     if (stage === "active" && activeQuestions.length > 0 && !practiceSessionId) {
       startPracticeSession(
-        { mode, totalQuestions: activeQuestions.length, sessionId: anonymousSessionId },
+        { mode: "practice", totalQuestions: activeQuestions.length, sessionId: anonymousSessionId },
         {
           onSuccess: (res) => {
             setPracticeSessionId(res.id);
@@ -241,25 +237,18 @@ function PracticePage() {
         },
       );
     }
-  }, [
-    stage,
-    activeQuestions.length,
-    practiceSessionId,
-    mode,
-    anonymousSessionId,
-    startPracticeSession,
-  ]);
+  }, [stage, activeQuestions.length, practiceSessionId, anonymousSessionId, startPracticeSession]);
 
   const currentQ = activeQuestions[currentIndex] || activeQuestions[0];
 
   // Fire-and-forget: keeps the interaction optimistic (the UI never waits on this) while still
   // giving every answer a real, server-verified attempts row.
-  const recordAttempt = (question: Question, optionKey: string) => {
-    const option = question.options.find((o) => o.key === optionKey);
-    if (!option) return;
+  const recordAttempt = (question: Question, optionKeys: string[]) => {
+    const optionIds = question.options.filter((o) => optionKeys.includes(o.key)).map((o) => o.id);
+    if (optionIds.length === 0) return;
     submitAnswer({
       id: question.id,
-      selectedOptionId: option.id,
+      selectedOptionIds: optionIds,
       sessionId: anonymousSessionId,
       practiceSessionId: practiceSessionId ?? undefined,
     });
@@ -267,17 +256,17 @@ function PracticePage() {
   };
 
   const handleSelectOption = (key: string) => {
-    if (mode === "practice" && submitted[currentQ.id]) return;
-    setAnswers((prev) => ({ ...prev, [currentQ.id]: key }));
-    // Mock mode has no separate "check" step (correctness is withheld until the results screen —
-    // see the mode description on the setup screen), so selecting an option IS the commit moment;
-    // practice mode instead records the attempt from handleCheckAnswer, once the user has actually
-    // asked to see whether they were right.
-    if (mode === "mock") recordAttempt(currentQ, key);
+    if (submitted[currentQ.id]) return;
+    // The attempt is recorded from handleCheckAnswer, once the user has asked to see whether
+    // they were right.
+    setAnswers((prev) => ({
+      ...prev,
+      [currentQ.id]: toggleSelection(prev[currentQ.id] ?? [], key, requiredSelections(currentQ)),
+    }));
   };
 
   const handleCheckAnswer = () => {
-    if (answers[currentQ.id]) {
+    if (isSelectionComplete(answers[currentQ.id], requiredSelections(currentQ))) {
       setSubmitted((prev) => ({ ...prev, [currentQ.id]: true }));
       recordAttempt(currentQ, answers[currentQ.id]);
     }
@@ -291,9 +280,9 @@ function PracticePage() {
     let correct = 0;
     let attempted = 0;
     activeQuestions.forEach((q) => {
-      if (answers[q.id]) {
+      if (answers[q.id]?.length) {
         attempted++;
-        if (answers[q.id] === q.correctKey) correct++;
+        if (isSelectionCorrect(answers[q.id], correctKeysOf(q))) correct++;
       }
     });
     return { correct, attempted, total: activeQuestions.length };
@@ -324,154 +313,13 @@ function PracticePage() {
     return `${mins.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  // ── 1. Setup Stage ──
-  if (stage === "setup") {
-    return (
-      <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-        {/* Back Context */}
-        <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
-          <Link
-            to="/"
-            className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
-          >
-            ← BACK TO ROOT
-          </Link>
-        </div>
-
-        <main className="max-w-[1200px] mx-auto px-6">
-          {/* Context Rail */}
-          <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-24 border-b border-slate-900 pb-4">
-            <Link to="/" className="hover:text-white transition-colors">
-              ROOT
-            </Link>
-            <span className="mx-4 text-slate-700">/</span>
-            <span className="text-slate-300">SIMULATION GRID</span>
-          </div>
-
-          <div className="mb-24 flex flex-col lg:flex-row lg:items-end justify-between gap-12 border-b border-slate-800 pb-12">
-            <div className="max-w-2xl">
-              <h1 className="text-4xl md:text-5xl lg:text-7xl font-normal tracking-tighter text-white mb-6 leading-tight uppercase">
-                Session Initialization
-              </h1>
-              <p className="font-mono text-xs tracking-widest text-slate-500 uppercase leading-relaxed">
-                Configure simulation parameters. High-yield raw vectors ready for traversal.
-              </p>
-            </div>
-            <div className="font-mono text-[10px] text-slate-600 tracking-widest uppercase text-right shrink-0">
-              SYS: ONLINE <br />
-              LATENCY: OPTIMAL
-            </div>
-          </div>
-
-          {/* Configuration Space */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-            {/* Simulation Topology Selection */}
-            <div>
-              <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-600 mb-8 border-b border-slate-900 pb-2">
-                {/* Simulation Protocol */}
-              </h2>
-
-              <div className="border-t-2 border-b-2 border-slate-900 bg-slate-900 gap-px grid grid-cols-1">
-                <button
-                  type="button"
-                  onClick={() => setMode("practice")}
-                  className={`bg-[#06080a] p-8 hover:bg-slate-900/30 transition-colors text-left border-b border-slate-900/50 flex flex-col ${mode === "practice" ? "border-l-2 border-l-slate-300 bg-slate-900/20" : ""}`}
-                >
-                  <span className="font-mono text-[10px] text-slate-600 tracking-widest uppercase mb-4">
-                    PROTOCOL ALPHA
-                  </span>
-                  <h3
-                    className={`text-xl font-light mb-2 transition-colors ${mode === "practice" ? "text-white" : "text-slate-300"}`}
-                  >
-                    Untimed Practice Sequence
-                  </h3>
-                  <p className="font-mono text-[10px] text-slate-500 tracking-widest uppercase">
-                    Immediate telemetry. Step-by-step resolution logic active.
-                  </p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("mock")}
-                  className={`bg-[#06080a] p-8 hover:bg-slate-900/30 transition-colors text-left border-slate-900/50 flex flex-col ${mode === "mock" ? "border-l-2 border-l-slate-300 bg-slate-900/20" : ""}`}
-                >
-                  <span className="font-mono text-[10px] text-slate-600 tracking-widest uppercase mb-4">
-                    PROTOCOL OMEGA
-                  </span>
-                  <h3
-                    className={`text-xl font-light mb-2 transition-colors ${mode === "mock" ? "text-white" : "text-slate-300"}`}
-                  >
-                    Strict Live Simulation
-                  </h3>
-                  <p className="font-mono text-[10px] text-slate-500 tracking-widest uppercase">
-                    Time constraints enforced. Scoring delayed to completion summary.
-                  </p>
-                </button>
-              </div>
-            </div>
-
-            {/* Target Matrix */}
-            <div>
-              <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-600 mb-8 border-b border-slate-900 pb-2">
-                {/* Target Vectors */}
-              </h2>
-
-              <div className="space-y-8">
-                <div>
-                  <label
-                    htmlFor="practice-target-framework"
-                    className="font-mono text-[10px] text-slate-500 uppercase tracking-widest block mb-4"
-                  >
-                    Target Framework
-                  </label>
-                  <select
-                    id="practice-target-framework"
-                    className="w-full bg-[#06080a] border-b-2 border-slate-800 text-white font-light text-lg p-3 outline-none hover:border-slate-600 focus:border-slate-400 transition-colors cursor-pointer rounded-none appearance-none font-mono tracking-widest uppercase text-xs"
-                  >
-                    <option>Kerala PSC — Assistant Engineer</option>
-                    <option>GATE Civil Engineering</option>
-                    <option>SSC JE Civil</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="practice-domain-focus"
-                    className="font-mono text-[10px] text-slate-500 uppercase tracking-widest block mb-4"
-                  >
-                    Domain Focus
-                  </label>
-                  <select
-                    id="practice-domain-focus"
-                    className="w-full bg-[#06080a] border-b-2 border-slate-800 text-white font-light text-lg p-3 outline-none hover:border-slate-600 focus:border-slate-400 transition-colors cursor-pointer rounded-none appearance-none font-mono tracking-widest uppercase text-xs"
-                  >
-                    <option>All Disciplinary Vectors</option>
-                    <option>Strength of Materials</option>
-                    <option>Fluid Mechanics</option>
-                  </select>
-                </div>
-
-                <div className="pt-8 text-right">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStage("active");
-                      setTimerSeconds(0);
-                    }}
-                    className="border border-slate-700 hover:border-white px-8 py-4 font-mono text-xs uppercase tracking-widest transition-colors hover:bg-white hover:text-black"
-                  >
-                    INITIALIZE SEQUENCE
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   // ── 2. Active Session Stage ──
   if (stage === "active") {
+    // While the exam loads, show the session's shape — not "no published questions yet", which
+    // is what an empty question list used to render until the data arrived.
+    if (isLoadingExam) {
+      return <PracticeSessionSkeleton mode={viewMode} />;
+    }
     if (activeQuestions.length === 0) {
       return (
         <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white flex flex-col items-center justify-center px-6 text-center">
@@ -493,8 +341,10 @@ function PracticePage() {
       );
     }
 
-    const isAnsSubmitted = mode === "practice" ? submitted[currentQ.id] : false;
-    const selectedKey = answers[currentQ.id];
+    const isAnsSubmitted = submitted[currentQ.id];
+    const selectedKeys = answers[currentQ.id] ?? [];
+    const currentCorrectKeys = correctKeysOf(currentQ);
+    const currentRequired = requiredSelections(currentQ);
     const isLastQuestion = currentIndex === activeQuestions.length - 1;
 
     return (
@@ -598,9 +448,14 @@ function PracticePage() {
               <div className="space-y-16">
                 {activeQuestions.map((q, idx) => {
                   const qNumStr = String(idx + 1).padStart(2, "0");
-                  const userAns = learnAnswers[q.id];
+                  const userAns = learnAnswers[q.id] ?? [];
+                  const correctKeys = correctKeysOf(q);
+                  const required = requiredSelections(q);
+                  // A "Choose N" answer is only checked once N options are chosen — revealing it
+                  // on the first click gave the answer away.
+                  const isAnswered = isSelectionComplete(userAns, required);
                   const isExplanationShown =
-                    showAllExplanations || revealedExplanations[q.id] || !!userAns;
+                    showAllExplanations || revealedExplanations[q.id] || isAnswered;
                   const resolution = getQuestionResolution(q);
 
                   return (
@@ -636,22 +491,28 @@ function PracticePage() {
                       </div>
 
                       {/* Question Text */}
-                      <h3 className="text-xl sm:text-2xl text-slate-100 font-light leading-relaxed">
+                      <h3 className="text-xl sm:text-2xl text-slate-100 font-light leading-relaxed whitespace-pre-line">
                         {q.text}
                       </h3>
+                      <QuestionImages images={q.images} placement="question" />
+                      <SelectionHint required={required} selected={userAns.length} />
 
                       {/* Options Feed */}
                       <div className="space-y-2 border-t border-slate-900 pt-6">
                         {q.options.map((opt) => {
-                          const isSelected = userAns === opt.key;
-                          const isCorrect = opt.key === q.correctKey;
+                          const isSelected = userAns.includes(opt.key);
+                          const isCorrect = correctKeys.includes(opt.key);
 
                           let borderStyle =
                             "border-slate-900/80 hover:border-slate-700 bg-slate-950/40";
                           let keyStyle = "border-slate-800 text-slate-500";
                           let badge = null;
 
-                          if (isSelected) {
+                          if (isSelected && !isExplanationShown) {
+                            // Part-way through a "Choose N": chosen, not yet checked.
+                            borderStyle = "border-sky-700/80 bg-sky-950/20 text-white";
+                            keyStyle = "bg-sky-900 text-sky-100 border-sky-600";
+                          } else if (isSelected) {
                             if (isCorrect) {
                               borderStyle = "border-emerald-700/80 bg-emerald-950/20 text-white";
                               keyStyle = "bg-emerald-900 text-emerald-200 border-emerald-700";
@@ -684,9 +545,14 @@ function PracticePage() {
                             <button
                               type="button"
                               key={opt.key}
+                              aria-pressed={isSelected}
                               onClick={() => {
-                                setLearnAnswers((prev) => ({ ...prev, [q.id]: opt.key }));
-                                recordAttempt(q, opt.key);
+                                const next = toggleSelection(userAns, opt.key, required);
+                                setLearnAnswers((prev) => ({ ...prev, [q.id]: next }));
+                                if (isSelectionComplete(next, required) && !learnRecorded[q.id]) {
+                                  recordAttempt(q, next);
+                                  setLearnRecorded((prev) => ({ ...prev, [q.id]: true }));
+                                }
                               }}
                               className={`w-full p-4 sm:p-5 border flex items-center justify-between text-left transition-all group ${borderStyle}`}
                             >
@@ -698,6 +564,12 @@ function PracticePage() {
                                 </span>
                                 <span className="text-base font-light text-slate-200">
                                   {opt.text}
+                                  <QuestionImages
+                                    images={q.images}
+                                    placement="option"
+                                    optionKey={opt.key}
+                                    className="mt-2"
+                                  />
                                 </span>
                               </div>
                               {badge && <div className="ml-4 shrink-0">{badge}</div>}
@@ -716,10 +588,16 @@ function PracticePage() {
                               VERIFIED SOLUTION
                             </span>
                             <span className="text-slate-500">
-                              CORRECT ANSWER: OPTION {q.correctKey}
+                              CORRECT ANSWER: {correctKeys.length > 1 ? "OPTIONS" : "OPTION"}{" "}
+                              {formatKeys(correctKeys)}
                             </span>
                           </div>
                           <ResolutionText text={resolution.explanation} />
+                          <QuestionImages
+                            images={q.images}
+                            placement="explanation"
+                            className="mt-4"
+                          />
 
                           <AdditionalReadingResources resources={resolution.additionalReadings} />
                         </div>
@@ -737,7 +615,7 @@ function PracticePage() {
               </h3>
               <div className="grid grid-cols-4 gap-px bg-slate-900 border border-slate-900 mb-8">
                 {activeQuestions.map((q, idx) => {
-                  const isAns = !!learnAnswers[q.id];
+                  const isAns = isSelectionComplete(learnAnswers[q.id], requiredSelections(q));
                   const isExp = showAllExplanations || revealedExplanations[q.id];
 
                   let cellClass = "bg-[#06080a] text-slate-500 hover:bg-slate-900/60";
@@ -789,15 +667,26 @@ function PracticePage() {
                 </button>
               </div>
 
-              <h2 className="text-2xl md:text-3xl lg:text-4xl font-light tracking-tight text-white mb-16 leading-relaxed">
+              <h2 className="text-2xl md:text-3xl lg:text-4xl font-light tracking-tight text-white mb-16 leading-relaxed whitespace-pre-line">
                 {currentQ.text}
               </h2>
+              <QuestionImages
+                images={currentQ.images}
+                placement="question"
+                className="-mt-10 mb-16"
+              />
+
+              <SelectionHint
+                required={currentRequired}
+                selected={selectedKeys.length}
+                className="-mt-10 mb-8"
+              />
 
               {/* Options List */}
-              <div className="space-y-0.5 mb-16 border-t border-slate-900 pt-8" role="radiogroup">
+              <div className="space-y-0.5 mb-16 border-t border-slate-900 pt-8">
                 {currentQ.options.map((opt) => {
-                  const isSelected = selectedKey === opt.key;
-                  const isCorrect = opt.key === currentQ.correctKey;
+                  const isSelected = selectedKeys.includes(opt.key);
+                  const isCorrect = currentCorrectKeys.includes(opt.key);
 
                   let borderClass = "border-slate-900 hover:border-slate-700 hover:bg-slate-900/30";
                   let keyClass = "text-slate-600 border-slate-800";
@@ -821,6 +710,7 @@ function PracticePage() {
                     <button
                       type="button"
                       key={opt.key}
+                      aria-pressed={isSelected}
                       onClick={() => handleSelectOption(opt.key)}
                       disabled={isAnsSubmitted}
                       className={`w-full p-6 border-b border-l-2 flex flex-col md:flex-row md:items-center text-left transition-all group ${borderClass} border-l-transparent`}
@@ -837,7 +727,15 @@ function PracticePage() {
                         >
                           {opt.key}
                         </span>
-                        <span className="text-lg font-light flex-1 pt-1 md:pt-0">{opt.text}</span>
+                        <span className="text-lg font-light flex-1 pt-1 md:pt-0">
+                          {opt.text}
+                          <QuestionImages
+                            images={currentQ.images}
+                            placement="option"
+                            optionKey={opt.key}
+                            className="mt-3"
+                          />
+                        </span>
 
                         {isAnsSubmitted && isCorrect && (
                           <span className="font-mono tracking-widest text-[10px] text-white uppercase mt-4 md:mt-0">
@@ -855,9 +753,8 @@ function PracticePage() {
                 })}
               </div>
 
-              {/* Verified Explanation (Practice Mode) */}
-              {mode === "practice" &&
-                isAnsSubmitted &&
+              {/* Verified Explanation */}
+              {isAnsSubmitted &&
                 (() => {
                   const resolution = getQuestionResolution(currentQ);
 
@@ -868,6 +765,11 @@ function PracticePage() {
                         <Sparkles className="w-3.5 h-3.5" /> Resolution Logic
                       </div>
                       <ResolutionText text={resolution.explanation} />
+                      <QuestionImages
+                        images={currentQ.images}
+                        placement="explanation"
+                        className="mt-4"
+                      />
                       <AdditionalReadingResources resources={resolution.additionalReadings} />
                     </div>
                   );
@@ -884,11 +786,11 @@ function PracticePage() {
                   ← Prev Node
                 </button>
 
-                {mode === "practice" && !isAnsSubmitted ? (
+                {!isAnsSubmitted ? (
                   <button
                     type="button"
                     onClick={handleCheckAnswer}
-                    disabled={!selectedKey}
+                    disabled={!isSelectionComplete(selectedKeys, currentRequired)}
                     className="px-8 py-3 border border-slate-400 disabled:opacity-20 disabled:border-slate-800 text-white text-[10px] uppercase tracking-widest transition-colors hover:bg-white hover:text-black font-mono"
                   >
                     EXECUTE QUERY
@@ -924,7 +826,7 @@ function PracticePage() {
                 <div className="grid grid-cols-4 gap-px bg-slate-900 border border-slate-900">
                   {activeQuestions.map((q, idx) => {
                     const isCurrent = idx === currentIndex;
-                    const isAns = !!answers[q.id];
+                    const isAns = !!answers[q.id]?.length;
                     const isFlag = !!flagged[q.id];
 
                     let cellClass = "bg-[#06080a] text-slate-500 hover:bg-slate-900/50";
@@ -966,123 +868,211 @@ function PracticePage() {
     );
   }
 
-  // ── 3. Results & Mastery Analytics Stage ──
+  // ── 3. Results Stage ──
+  // Only numbers this session actually produced. This screen used to also show a hard-coded
+  // "topic breakdown" (Elasticity & Hooke's Law 2/2, Bending Moments & Shear Force 1/2) left over
+  // from placeholder civil-engineering data — identical after every session, for every exam.
   const { correct, attempted, total } = calculateScore();
   const accuracyPct = attempted > 0 ? Math.round((correct / attempted) * 100) : 0;
+  const skipped = total - attempted;
+  const examName = realExamData?.name || "this exam";
+
+  const restart = () => {
+    setAnswers({});
+    setSubmitted({});
+    setFlagged({});
+    setCurrentIndex(0);
+    setTimerSeconds(0);
+    setPracticeSessionId(null);
+    setStage("active");
+  };
+
+  const stats = [
+    { label: "Score", value: `${correct}`, suffix: `/${total}`, note: "correct answers" },
+    {
+      label: "Accuracy",
+      value: `${accuracyPct}`,
+      suffix: "%",
+      note: attempted > 0 ? "of the questions you answered" : "no questions answered",
+    },
+    {
+      label: "Answered",
+      value: `${attempted}`,
+      suffix: `/${total}`,
+      note: skipped > 0 ? `${skipped} skipped` : "none skipped",
+    },
+    { label: "Time", value: formatTime(timerSeconds), suffix: "", note: "minutes : seconds" },
+  ];
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
-      <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-24">
-        <Link
-          to="/"
-          className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
-        >
-          ← ABORT TO MATRIX
-        </Link>
-      </div>
-
-      <main className="max-w-[1200px] mx-auto px-6">
-        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-24 border-b border-slate-900 pb-4 flex items-center justify-between">
-          <div>
-            <span className="text-white">SESSION COMPLETE</span>
-            <span className="mx-4 text-slate-700">/</span>
-            <span className="text-slate-500">TELEMETRY ANALYSIS</span>
+      <main className="max-w-[1200px] mx-auto px-6 pt-16">
+        <div className="mb-16 border-b border-slate-900 pb-8">
+          <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-3">
+            Session complete
           </div>
-          <span className="text-green-500 font-bold hidden md:inline">SYSTEM CAPTURE: SUCCESS</span>
+          <h1 className="text-3xl md:text-4xl font-light text-white tracking-tight">{examName}</h1>
         </div>
 
-        {/* High-Contrast Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-slate-900 border-t border-b border-slate-900 mb-24">
-          <div className="bg-[#06080a] p-12 text-center flex flex-col">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mb-6">
-              Execution Accuracy
-            </span>
-            <span className="text-6xl md:text-8xl font-light text-white tracking-tighter mb-2">
-              {accuracyPct}
-              <span className="text-3xl text-slate-600">%</span>
-            </span>
-          </div>
-
-          <div className="bg-[#06080a] p-12 text-center flex flex-col">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mb-6">
-              Valid Vectors
-            </span>
-            <span className="text-6xl md:text-8xl font-light text-slate-300 tracking-tighter mb-2">
-              {correct}
-              <span className="text-3xl text-slate-600">/{total}</span>
-            </span>
-          </div>
-
-          <div className="bg-[#06080a] p-12 text-center flex flex-col">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600 mb-6">
-              Duration
-            </span>
-            <span className="text-6xl md:text-8xl font-light text-slate-300 tracking-tighter mb-2">
-              {formatTime(timerSeconds)}
-            </span>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-slate-900 border-t border-b border-slate-900 mb-16">
+          {stats.map((stat) => (
+            <div key={stat.label} className="bg-[#06080a] p-8 md:p-10 text-center flex flex-col">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-slate-500 mb-4">
+                {stat.label}
+              </span>
+              <span className="text-5xl md:text-6xl font-light text-white tracking-tighter mb-2">
+                {stat.value}
+                {stat.suffix && <span className="text-2xl text-slate-600">{stat.suffix}</span>}
+              </span>
+              <span className="font-mono text-[10px] text-slate-600 uppercase tracking-widest">
+                {stat.note}
+              </span>
+            </div>
+          ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-          {/* Topic Breakdown */}
-          <div>
-            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-600 mb-8 border-b border-slate-900 pb-2">
-              {/* Topological Decay Analysis */}
-            </h2>
-            <div className="space-y-6">
-              <div className="border-b border-slate-900/50 pb-6">
-                <div className="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase mb-4">
-                  <span className="text-slate-300">Elasticity & Hooke's Law</span>
-                  <span className="text-slate-500">2/2 VOL</span>
-                </div>
-                <div className="w-full bg-[#06080a] h-1 border border-slate-800">
-                  <div className="bg-slate-300 h-full w-full" />
-                </div>
-              </div>
-
-              <div className="border-b border-slate-900/50 pb-6">
-                <div className="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase mb-4">
-                  <span className="text-slate-300">Bending Moments & Shear Force</span>
-                  <span className="text-slate-500">1/2 VOL</span>
-                </div>
-                <div className="w-full bg-[#06080a] h-1 border border-slate-800">
-                  <div className="bg-slate-500 h-full w-1/2" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="pt-2">
-            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-600 mb-8 border-b border-slate-900 pb-2">
-              {/* Protocol Operations */}
-            </h2>
-            <div className="flex flex-col gap-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setStage("setup");
-                  setAnswers({});
-                  setSubmitted({});
-                  setFlagged({});
-                  setPracticeSessionId(null);
-                }}
-                className="w-full p-6 text-left border border-slate-700 hover:border-white transition-colors group flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-mono text-[10px] tracking-widest text-slate-500 uppercase mb-2">
-                    Operation 01
-                  </div>
-                  <div className="text-xl font-light text-slate-300 group-hover:text-white transition-colors">
-                    Re-Initialize Sequence
-                  </div>
-                </div>
-                <span className="font-mono text-xs text-slate-600 group-hover:text-white">→</span>
-              </button>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <button
+            type="button"
+            onClick={restart}
+            className="p-6 text-left border border-slate-700 hover:border-white transition-colors group flex items-center justify-between"
+          >
+            <span className="text-lg font-light text-slate-300 group-hover:text-white transition-colors">
+              Practice again
+            </span>
+            <span className="font-mono text-xs text-slate-600 group-hover:text-white">→</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode("learn");
+              restart();
+            }}
+            className="p-6 text-left border border-slate-700 hover:border-white transition-colors group flex items-center justify-between"
+          >
+            <span className="text-lg font-light text-slate-300 group-hover:text-white transition-colors">
+              Review in Learn mode
+            </span>
+            <span className="font-mono text-xs text-slate-600 group-hover:text-white">→</span>
+          </button>
+          {examSlug && (
+            <Link
+              to="/exams/$examSlug"
+              params={{ examSlug }}
+              className="p-6 text-left border border-slate-700 hover:border-white transition-colors group flex items-center justify-between"
+            >
+              <span className="text-lg font-light text-slate-300 group-hover:text-white transition-colors">
+                Back to exam
+              </span>
+              <span className="font-mono text-xs text-slate-600 group-hover:text-white">→</span>
+            </Link>
+          )}
         </div>
       </main>
     </div>
+  );
+}
+
+// Placeholder for a practice session while its questions load, laid out like the mode being
+// opened: Learn shows a feed of question cards, Simulation one question with its options. Both
+// keep the top bar and the question-navigator sidebar.
+function PracticeSessionSkeleton({ mode }: { mode: "simulation" | "learn" }) {
+  const options = (
+    <div className="space-y-3">
+      {[1, 2, 3, 4].map((n) => (
+        <div key={n} className="flex items-center gap-4 border border-slate-900 p-4">
+          <Skeleton className="w-8 h-8 shrink-0" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <SkeletonRegion
+      label="Loading practice session…"
+      className="min-h-screen bg-[#06080a] flex flex-col"
+    >
+      <div className="px-6 py-4 border-b border-slate-900 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-7 w-64 max-w-[40vw] hidden sm:block" />
+        </div>
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-8 w-52" />
+          <Skeleton className="h-8 w-24" />
+        </div>
+      </div>
+
+      <div className="flex-1 w-full grid grid-cols-1 lg:grid-cols-4 border-t border-slate-900">
+        <main className="lg:col-span-3 border-r border-slate-900 p-6 sm:p-12 md:p-16 space-y-12">
+          {mode === "learn" ? (
+            [1, 2].map((n) => (
+              <div key={n} className="border border-slate-900 p-6 sm:p-8 space-y-6">
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-6 w-40" />
+                  <Skeleton className="h-6 w-28" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-full" />
+                  <Skeleton className="h-6 w-4/5" />
+                </div>
+                {options}
+              </div>
+            ))
+          ) : (
+            <>
+              <div className="flex items-center justify-between border-b border-slate-900 pb-4">
+                <Skeleton className="h-3 w-40" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <div className="space-y-4">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-11/12" />
+                <Skeleton className="h-8 w-3/5" />
+              </div>
+              {options}
+            </>
+          )}
+        </main>
+
+        <aside className="p-8 space-y-6 hidden lg:block">
+          <Skeleton className="h-3 w-32" />
+          <div className="grid grid-cols-5 gap-2">
+            {placeholderKeys(15, "cell").map((key) => (
+              <Skeleton key={key} className="aspect-square" />
+            ))}
+          </div>
+        </aside>
+      </div>
+    </SkeletonRegion>
+  );
+}
+
+// Every correct option of a question (older payloads only had correctKey).
+function correctKeysOf(q: Question): string[] {
+  return q.correctKeys?.length ? q.correctKeys : q.correctKey ? [q.correctKey] : [];
+}
+
+// "Select 3 answers · 1 of 3 selected" — only for questions with more than one correct option.
+function SelectionHint({
+  required,
+  selected,
+  className = "",
+}: {
+  required: number;
+  selected: number;
+  className?: string;
+}) {
+  if (required <= 1) return null;
+  return (
+    <p
+      className={`font-mono text-[11px] uppercase tracking-widest ${
+        selected === required ? "text-sky-300" : "text-slate-400"
+      } ${className}`}
+      aria-live="polite"
+    >
+      Select {required} answers · {selected} of {required} selected
+    </p>
   );
 }

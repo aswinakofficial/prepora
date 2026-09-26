@@ -58,6 +58,7 @@ export const topicsRouter = {
             id: q.id,
             text: q.questionText,
             explanation: q.explanation,
+            images: q.images,
             difficulty: q.difficulty,
             examSlug: occ.examSlug,
             variantSlug: occ.examVariantSlug,

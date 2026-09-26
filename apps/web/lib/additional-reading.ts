@@ -51,9 +51,11 @@ export function mergeReadingResources(options: {
 }): AdditionalReadingResource[] {
   const resources = new Map<string, AdditionalReadingResource>();
 
-  const addResource = (text?: string, url?: string) => {
-    const title = normalizeReadingTitle(text || "");
+  const addResource = (rawText?: string, rawUrl?: string) => {
+    const parsed = parseReadingLine(rawText || "");
+    const title = parsed.text;
     if (!title) return;
+    const url = safeReadingUrl(rawUrl) || parsed.url;
     const key = title.toLowerCase();
     const existing = resources.get(key);
     resources.set(key, { text: existing?.text || title, url: url || existing?.url });
@@ -78,4 +80,59 @@ export function mergeReadingResources(options: {
   });
 
   return Array.from(resources.values());
+}
+
+// Only ever link out over http(s). These URLs come from scraped pages and end up in an <a href>,
+// so anything else — javascript:, data:, a relative path — is dropped rather than rendered.
+function safeReadingUrl(url?: string): string | undefined {
+  const trimmed = url?.trim();
+  return trimmed && /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
+}
+
+/**
+ * One line of an "Additional Reading:" section: either a bare title, or a Markdown-style link
+ * `[title](https://...)` — the form packages/api's review approval writes when the scraper
+ * captured the resource's URL, so the link survives into the published explanation.
+ */
+export function parseReadingLine(line: string): AdditionalReadingResource {
+  const title = normalizeReadingTitle(line);
+  const link = title.match(/^\[(.+)\]\((\S+)\)$/);
+  if (link) {
+    const url = safeReadingUrl(link[2]);
+    if (url) return { text: normalizeReadingTitle(link[1]), url };
+  }
+  return { text: title };
+}
+
+const EXPLANATION_SECTION_LABELS = [
+  "Objective",
+  "What This Item Tests",
+  "Rationale",
+  "Additional Reading Resources",
+];
+
+/**
+ * Splits a published explanation into the explanation proper and its "Additional Reading:"
+ * resources (titles, with URLs where the explanation carries them). Shared by practice mode and
+ * the single-question page so both show the same clickable list.
+ */
+export function splitExplanationAndReadings(explanation: string): {
+  explanation: string;
+  readings: AdditionalReadingResource[];
+} {
+  const section = extractLabeledSection(
+    explanation,
+    "Additional Reading",
+    EXPLANATION_SECTION_LABELS,
+  );
+  const sectionPattern = new RegExp(
+    `Additional Reading:\\s*[\\s\\S]*?(?=\\n\\s*(?:${EXPLANATION_SECTION_LABELS.join("|")}):|$)`,
+    "i",
+  );
+  return {
+    explanation: explanation.replace(sectionPattern, "").trim(),
+    readings: mergeReadingResources({
+      extractedTitles: section ? section.split(/\n+/).filter(Boolean) : [],
+    }),
+  };
 }

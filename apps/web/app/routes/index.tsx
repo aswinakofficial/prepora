@@ -6,6 +6,8 @@ import { useState } from "react";
 import { authClient } from "../../lib/auth-client";
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
+import { FeatureGate } from "../components/feature/FeatureGate";
+import { Skeleton, SkeletonRegion } from "../components/ui/Skeleton";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -47,13 +49,13 @@ function HomePage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 selection:bg-slate-700 selection:text-white font-sans">
-      <main className="max-w-[1400px] mx-auto px-6 pt-24 pb-32">
+      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-10 md:pt-24 pb-20 md:pb-32">
         {/* HERO / ASYMMETRIC SEARCH */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-12 mb-24">
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-12 mb-16 md:mb-24">
           <div className="hidden md:block col-span-2 lg:col-span-3 border-l border-slate-900/50 pl-6 h-full"></div>
 
           <div className="col-span-1 md:col-span-10 lg:col-span-9">
-            <h1 className="text-5xl md:text-7xl lg:text-8xl text-white font-normal tracking-tighter mb-16 leading-[0.9] max-w-4xl selection:bg-white selection:text-black">
+            <h1 className="text-5xl md:text-7xl lg:text-8xl text-white font-normal tracking-tighter mb-10 md:mb-16 leading-[0.9] max-w-4xl selection:bg-white selection:text-black">
               PREPARE WITH
               <br />
               PRECISION.
@@ -194,17 +196,17 @@ function HomePage() {
         </section>
 
         {/* LIVE DATABASE EXAM CATALOGUE */}
-        <section className="mb-32">
-          <div className="flex justify-between items-end border-b border-slate-900 pb-4 mb-8">
+        <section className="mb-20 md:mb-32">
+          {/* Stacks on phones: title + count on one line, "Explore directory" below — the three
+              used to share one squeezed row, breaking the count pill over two lines. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end border-b border-slate-900 pb-4 mb-8">
             <div>
-              <h2 className="text-sm font-mono tracking-widest text-slate-400 uppercase flex items-center gap-2">
+              <h2 className="text-sm font-mono tracking-widest text-slate-400 uppercase flex flex-wrap items-center gap-2">
                 Published Exam Sets
                 {isLoading ? (
-                  <span className="px-3 py-0.5 bg-slate-900 border border-slate-800 text-slate-500 font-mono text-xs rounded-full animate-pulse">
-                    LOADING...
-                  </span>
+                  <Skeleton className="h-5 w-24 rounded-full" />
                 ) : (
-                  <span className="px-2 py-0.5 bg-slate-900 border border-slate-800 text-sky-400 font-mono text-xs rounded-full">
+                  <span className="px-2 py-0.5 bg-slate-900 border border-slate-800 text-sky-400 font-mono text-xs rounded-full whitespace-nowrap">
                     {realExams.length} Available
                   </span>
                 )}
@@ -221,26 +223,29 @@ function HomePage() {
           </div>
 
           {isLoading ? (
-            <div className="flex flex-col border-t border-slate-900 divide-y divide-slate-900/60">
-              {[1, 2, 3].map((n) => (
+            <SkeletonRegion
+              label="Loading exams…"
+              className="flex flex-col border-t border-slate-900 divide-y divide-slate-900/60"
+            >
+              {[1, 2, 3, 4].map((n) => (
                 <div
                   key={n}
-                  className="py-6 px-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse"
+                  className="py-6 px-4 flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="flex items-center gap-6 flex-1">
-                    <div className="h-4 w-6 bg-slate-900 rounded" />
+                    <Skeleton className="h-4 w-6" />
                     <div className="space-y-2 flex-1">
                       <div className="flex items-center gap-3">
-                        <div className="h-6 w-72 bg-slate-900/90 rounded" />
-                        <div className="h-5 w-20 bg-slate-900/60 rounded" />
+                        <Skeleton className="h-6 w-72 max-w-[60vw]" />
+                        <Skeleton className="h-5 w-20" />
                       </div>
-                      <div className="h-3 w-44 bg-slate-900/40 rounded" />
+                      <Skeleton className="h-3 w-44" />
                     </div>
                   </div>
-                  <div className="h-4 w-24 bg-slate-900/60 rounded shrink-0" />
+                  <Skeleton className="h-4 w-24 shrink-0" />
                 </div>
               ))}
-            </div>
+            </SkeletonRegion>
           ) : realExams.length > 0 ? (
             <div className="flex flex-col border-t border-slate-900">
               {realExams.map((exam: any, idx: number) => (
@@ -250,16 +255,16 @@ function HomePage() {
                   params={{ examSlug: exam.slug }}
                   className="group py-6 border-b border-slate-900/60 hover:bg-slate-900/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 px-4"
                 >
-                  <div className="flex items-center gap-6">
-                    <span className="font-mono text-xs text-slate-600 group-hover:text-slate-400 w-8">
+                  <div className="flex items-start sm:items-center gap-4 sm:gap-6 min-w-0">
+                    <span className="font-mono text-xs text-slate-600 group-hover:text-slate-400 w-6 sm:w-8 shrink-0 pt-1 sm:pt-0">
                       {String(idx + 1).padStart(2, "0")}
                     </span>
-                    <div>
-                      <div className="flex items-center gap-3 mb-1">
-                        <h3 className="text-xl text-slate-200 group-hover:text-white font-light transition-colors">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
+                        <h3 className="text-lg sm:text-xl text-slate-200 group-hover:text-white font-light transition-colors leading-snug">
                           {exam.name || exam.title}
                         </h3>
-                        <span className="font-mono text-[10px] text-sky-400 border border-sky-900/60 bg-sky-950/40 px-2 py-0.5 uppercase tracking-widest">
+                        <span className="font-mono text-[10px] text-sky-400 border border-sky-900/60 bg-sky-950/40 px-2 py-0.5 uppercase tracking-widest whitespace-nowrap">
                           {exam.code || "MS-EXAM"}
                         </span>
                       </div>
@@ -304,26 +309,28 @@ function HomePage() {
           )}
         </section>
 
-        {/* CONTRIBUTION CALLOUT */}
-        <section className="pt-16 border-t border-slate-900">
-          <div className="max-w-xl">
-            <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-8">
-              Help Expand the Live Archive
-            </h2>
-            <p className="text-lg text-slate-300 mb-6">
-              Have an official question paper or certification set that isn't indexed yet?
-            </p>
-            <Link
-              to="/contribute"
-              className="inline-block text-slate-400 hover:text-white border-b border-slate-700 hover:border-slate-400 pb-1 transition-all mb-4"
-            >
-              Contribute a question set →
-            </Link>
-            <p className="text-xs text-slate-600 font-mono">
-              Every submission is validated and indexed directly into the database queue.
-            </p>
-          </div>
-        </section>
+        {/* CONTRIBUTION CALLOUT — only while the "contribute" feature flag is on */}
+        <FeatureGate flag="contribute">
+          <section className="pt-16 border-t border-slate-900">
+            <div className="max-w-xl">
+              <h2 className="text-sm font-mono tracking-widest text-slate-500 uppercase mb-8">
+                Help Expand the Live Archive
+              </h2>
+              <p className="text-lg text-slate-300 mb-6">
+                Have an official question paper or certification set that isn't indexed yet?
+              </p>
+              <Link
+                to="/contribute"
+                className="inline-block text-slate-400 hover:text-white border-b border-slate-700 hover:border-slate-400 pb-1 transition-all mb-4"
+              >
+                Contribute a question set →
+              </Link>
+              <p className="text-xs text-slate-600 font-mono">
+                Every submission is validated and indexed directly into the database queue.
+              </p>
+            </div>
+          </section>
+        </FeatureGate>
       </main>
     </div>
   );

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../../../lib/json-ld";
 import { orpc } from "../../../../../lib/orpc";
+import { SkeletonListRows } from "../../../../components/ui/Skeleton";
 
 export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
   head: ({ params }) => {
@@ -102,9 +103,7 @@ function ExamSubjectPage() {
 
         <div className="border-t-2 border-slate-900 border-b-2">
           {isLoading ? (
-            <div className="py-16 text-center">
-              <p className="font-mono text-sm text-slate-500">Loading questions…</p>
-            </div>
+            <SkeletonListRows label="Loading questions…" />
           ) : questions.length === 0 ? (
             <div className="py-16 text-center">
               <p className="font-mono text-sm text-slate-500">

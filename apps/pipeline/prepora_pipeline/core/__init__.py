@@ -14,6 +14,7 @@ from .jobs import (
     stage_run,
     start_job,
 )
+from .media_store import FilesystemMediaStore, MediaError, MediaStore, StoredMedia
 from .registry import (
     Source,
     get_allowed_base_urls,
@@ -33,6 +34,10 @@ __all__ = [
     "ArtifactStore",
     "ArtifactNotFoundError",
     "FilesystemArtifactStore",
+    "FilesystemMediaStore",
+    "MediaError",
+    "MediaStore",
+    "StoredMedia",
     "reprocess_source",
     "JobRecord",
     "StageCounts",

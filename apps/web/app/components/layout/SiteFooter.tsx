@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { GraduationCap } from "lucide-react";
+import { useFeatureFlag } from "../../hooks/useFeatureFlag";
 
 export function SiteFooter() {
+  const { enabled: contributeEnabled } = useFeatureFlag("contribute");
   return (
     <footer className="border-t border-[var(--border)] mt-16" role="contentinfo">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -45,7 +47,7 @@ export function SiteFooter() {
             <h3 className="font-semibold text-sm mb-3">Community</h3>
             <ul className="space-y-2">
               {[
-                { to: "/contribute", label: "Contribute" },
+                ...(contributeEnabled ? [{ to: "/contribute", label: "Contribute" }] : []),
                 { to: "/auth/signup", label: "Sign up" },
                 { to: "/auth/signin", label: "Sign in" },
               ].map(({ to, label }) => (

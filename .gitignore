@@ -28,6 +28,10 @@ apps/web/app.config.timestamp_*.js
 test-results/
 playwright-report/
 
+# Dev-server output captured for live/agentic debugging (see CLAUDE.md) — local scratch, never
+# belongs in git.
+.dev-logs/
+
 # Generated sitemap/RSS files (docs/roadmap/engineering-roadmap.md item 26) — database-backed and
 # wired into `pnpm build` (content:sitemap, content:rss) so they can't drift; committing a
 # generated snapshot would just go stale the moment new content is published.
@@ -37,3 +41,6 @@ apps/web/public/sitemap-exams.xml
 apps/web/public/sitemap-question-sets.xml
 apps/web/public/sitemap-questions.xml
 apps/web/public/rss.xml
+
+# Local installer downloads (e.g. a desktop app .deb) — never repository content.
+*.deb

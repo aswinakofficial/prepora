@@ -8,6 +8,7 @@ import {
   Globe,
   LayoutDashboard,
   Settings,
+  Tags,
   Users,
 } from "lucide-react";
 import { getWebRequest } from "vinxi/http";
@@ -93,7 +94,10 @@ const dashboardItem: NavItem = {
 const navSections: { label: string; items: NavItem[] }[] = [
   {
     label: "Content",
-    items: [{ to: "/admin/contributions", label: "Contributions", icon: Users }],
+    items: [
+      { to: "/admin/contributions", label: "Contributions", icon: Users },
+      { to: "/admin/exam-types", label: "Exam Categories", icon: Tags },
+    ],
   },
   {
     label: "Pipeline",

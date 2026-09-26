@@ -39,7 +39,7 @@ from typing import Literal
 
 from ..contracts import NormalizedQuestion
 from ..core.db import get_db_connection
-from .content_hash import content_hash
+from .content_hash import content_hash, normalize_question_text
 from .stable_id import derive_question_set_slug
 
 DedupeOutcome = Literal[
@@ -68,7 +68,23 @@ def _normalize_text(text: str) -> str:
     return "".join(ch for ch in normalized if ch.isalnum() or ch.isspace()).strip()
 
 
+try:
+    # Same unit-cost edit distance as _levenshtein_py below, in C. The pure-Python version took
+    # ~11ms per comparison on a typical question, run against every same-subject question of
+    # similar length on every publish — CPU-bound, so it also serialized concurrent publishes
+    # behind Python's GIL. It was the largest single cost of publishing a review batch.
+    from rapidfuzz.distance import Levenshtein as _RapidfuzzLevenshtein
+except ImportError:  # pragma: no cover — only when rapidfuzz isn't installed
+    _RapidfuzzLevenshtein = None
+
+
 def levenshtein(a: str, b: str) -> int:
+    if _RapidfuzzLevenshtein is not None:
+        return _RapidfuzzLevenshtein.distance(a, b)
+    return _levenshtein_py(a, b)
+
+
+def _levenshtein_py(a: str, b: str) -> int:
     """Wagner-Fischer edit distance, O(min(m, n)) space — a > b doesn't matter, only the smaller
     dimension needs to be the row we keep, so swap to guarantee the tighter of the two."""
     if len(a) < len(b):
@@ -105,17 +121,25 @@ def _existing_question_set_id(cur, slug: str) -> str | None:
     return row[0] if row else None
 
 
-def _find_exact_duplicate(cur, hash_: str) -> list[tuple[str, str | None]]:
-    """Every (question_id, question_set_id) pair sharing this content hash, via the
+def _find_exact_duplicate(
+    cur, hash_: str, question_text: str
+) -> list[tuple[str, str | None]]:
+    """Every (question_id, question_set_id) pair with this exact content, via the
     questions_content_hash_idx — a question with no occurrence yet still returns one row with a
-    None set id."""
+    None set id. The hash is a 32-bit djb2 that different texts can share, so matches are
+    confirmed on the normalized text: a collision is not a duplicate."""
     cur.execute(
-        "SELECT q.id, qo.question_set_id FROM questions q "
+        "SELECT q.id, qo.question_set_id, q.question_text FROM questions q "
         "LEFT JOIN question_occurrences qo ON qo.question_id = q.id "
         "WHERE q.content_hash = %s",
         (hash_,),
     )
-    return cur.fetchall()
+    wanted = normalize_question_text(question_text)
+    return [
+        (question_id, set_id)
+        for question_id, set_id, text in cur.fetchall()
+        if normalize_question_text(text) == wanted
+    ]
 
 
 def _find_near_duplicate(cur, normalized: NormalizedQuestion) -> tuple[str, float] | None:
@@ -160,7 +184,7 @@ def check_duplicate(normalized: NormalizedQuestion) -> DedupeDecision:
         with conn.cursor() as cur:
             question_set_id = _existing_question_set_id(cur, derive_question_set_slug(normalized))
             hash_ = content_hash(normalized.question_text)
-            matches = _find_exact_duplicate(cur, hash_)
+            matches = _find_exact_duplicate(cur, hash_, normalized.question_text)
             near = None if matches else _find_near_duplicate(cur, normalized)
     finally:
         conn.close()

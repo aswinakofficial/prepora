@@ -54,13 +54,20 @@ export const examsRouter = {
       const [rows, counts] = await Promise.all([
         db.query.exams.findMany({
           where: eq(exams.status, "published"),
-          limit: input?.limit || 100,
           with: { organization: true, examType: true },
         }),
         countPublishedQuestionsByExam(db),
       ]);
 
-      return rows.map((exam) => {
+      // A registered exam is not a browsable hub until at least one question has actually been
+      // published for it (e.g. every item in an approved batch failed to publish) — listing
+      // it anyway sends users to an empty "no published questions yet" page. The limit applies
+      // after this filter so empty exams can't crowd real ones out of the page.
+      const withContent = rows
+        .filter((exam) => (counts.get(exam.id) ?? 0) > 0)
+        .slice(0, input?.limit || 100);
+
+      return withContent.map((exam) => {
         const questionCount = counts.get(exam.id) ?? 0;
         return {
           id: exam.id,
@@ -137,7 +144,10 @@ export const examsRouter = {
             text: q.questionText,
             options: q.options,
             correctKey: q.correctKey,
+            correctKeys: q.correctKeys,
+            questionType: q.questionType,
             explanation: q.explanation,
+            images: q.images,
             topic: q.topicName || occ.subjectName || exam.name,
             examSlug: occ.examSlug,
             variantSlug: occ.examVariantSlug,
@@ -183,7 +193,7 @@ export const examsRouter = {
           const setOccurrences = occurrences.filter((o) => o.questionSetId === id);
           return {
             id,
-            title: setOccurrences[0]?.questionSetSlug ?? id,
+            title: setOccurrences[0]?.questionSetTitle || setOccurrences[0]?.questionSetSlug || id,
             questionCount: setOccurrences.length,
           };
         }),

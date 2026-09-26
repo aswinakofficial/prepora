@@ -89,6 +89,9 @@ export const attempts = pgTable(
       .notNull()
       .references(() => questions.id),
     selectedOptionId: text("selected_option_id"),
+    // Every option chosen, for questions with more than one correct answer ("Choose 3").
+    // selectedOptionId keeps the first of them, so single-answer readers keep working.
+    selectedOptionIds: text("selected_option_ids").array(),
     textAnswer: text("text_answer"),
     isCorrect: boolean("is_correct"),
     practiceSessionId: text("practice_session_id"),

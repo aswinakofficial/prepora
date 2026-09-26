@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
+import { Skeleton, SkeletonRegion } from "../../components/ui/Skeleton";
 
 const examsSearchSchema = z.object({
   category: z.string().optional(),
@@ -45,7 +46,9 @@ function ExamsPage() {
   // hand-maintained frontend constant — see docs/architecture/exam-domain-model.md §2, Limitation
   // 2, and docs/roadmap/engineering-roadmap.md item 10. A new exam type shows up here as soon as
   // it's inserted, with no frontend code change.
-  const { data: examTypesData } = useQuery(orpc.exams.listTypes.queryOptions());
+  const { data: examTypesData, isLoading: isLoadingTypes } = useQuery(
+    orpc.exams.listTypes.queryOptions(),
+  );
 
   const CATEGORIES = useMemo(
     () => [
@@ -119,7 +122,7 @@ function ExamsPage() {
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Breadcrumb section */}
-      <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
+      <div className="px-4 sm:px-6 pt-4 md:pt-8 lg:pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-6 md:mb-10 lg:mb-16">
         <Link
           to="/"
           className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
@@ -128,9 +131,9 @@ function ExamsPage() {
         </Link>
       </div>
 
-      <main className="max-w-[1200px] mx-auto px-6">
+      <main className="max-w-[1200px] mx-auto px-4 sm:px-6">
         {/* Context Rail */}
-        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-32 border-b border-slate-900 pb-4">
+        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-10 md:mb-16 lg:mb-32 border-b border-slate-900 pb-4">
           <Link to="/" className="hover:text-white transition-colors">
             ROOT
           </Link>
@@ -139,9 +142,9 @@ function ExamsPage() {
         </div>
 
         {/* Page Header */}
-        <div className="mb-24 flex flex-col lg:flex-row lg:items-end justify-between gap-12 border-b border-slate-800 pb-12">
+        <div className="mb-10 md:mb-16 lg:mb-24 flex flex-col lg:flex-row lg:items-end justify-between gap-8 md:gap-12 border-b border-slate-800 pb-8 md:pb-12">
           <div className="max-w-2xl">
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-normal tracking-tighter text-white mb-6 leading-tight">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-normal tracking-tighter text-white mb-4 md:mb-6 leading-tight">
               EXAMINATION HUBS
             </h1>
             <p className="font-mono text-xs tracking-widest text-slate-500 uppercase">
@@ -168,8 +171,13 @@ function ExamsPage() {
         </div>
 
         {/* Structural Filter Bar */}
-        <div className="mb-12 border-b border-slate-900 pb-4 overflow-x-auto">
+        <div className="mb-8 md:mb-12 border-b border-slate-900 pb-4 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
           <div className="flex items-center gap-6 font-mono text-xs tracking-widest text-slate-500 min-w-max">
+            {isLoadingTypes &&
+              ["w-24", "w-36", "w-32", "w-40", "w-28"].map((width) => (
+                // Category tabs come from the database; hold their place until they arrive.
+                <Skeleton key={width} className={`h-4 ${width}`} />
+              ))}
             {CATEGORIES.map((cat) => (
               <button
                 type="button"
@@ -190,48 +198,82 @@ function ExamsPage() {
         {/* Monolithic Index List */}
         <div className="border-t-2 border-slate-900 border-b-2">
           {/* Table Header (Hidden on small screens) */}
-          <div className="hidden md:grid grid-cols-12 gap-6 p-4 border-b border-slate-900 font-mono text-[10px] text-slate-600 tracking-widest uppercase">
+          <div className="hidden lg:grid grid-cols-12 gap-6 p-4 border-b border-slate-900 font-mono text-[10px] text-slate-600 tracking-widest uppercase">
             <div className="col-span-2">NODE ID</div>
-            <div className="col-span-4">EXAMINATION NAME</div>
-            <div className="col-span-3">AUTHORITY</div>
+            <div className="col-span-5">EXAMINATION NAME</div>
+            <div className="col-span-2">AUTHORITY</div>
             <div className="col-span-2">CATEGORY</div>
             <div className="col-span-1 text-right">ACTION</div>
           </div>
 
           {isLoading ? (
-            <div className="font-mono text-xs text-slate-500 uppercase tracking-widest py-16 text-center animate-pulse">
-              FETCHING CATALOGUE FROM oRPC ENGINE...
-            </div>
+            <SkeletonRegion label="Loading exam directory…">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <div
+                  key={n}
+                  className="flex items-start gap-4 lg:grid lg:grid-cols-12 lg:gap-6 lg:items-center p-4 border-b border-slate-900/50"
+                >
+                  <Skeleton className="hidden lg:block lg:col-span-2 h-3 w-20" />
+                  <div className="flex-1 lg:col-span-5 flex items-start lg:items-center gap-3">
+                    <Skeleton className="w-10 h-10 lg:w-6 lg:h-6 shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="lg:hidden h-3 w-32" />
+                      <Skeleton className="h-5 w-full max-w-xs" />
+                    </div>
+                  </div>
+                  <Skeleton className="hidden lg:block lg:col-span-2 h-3 w-24" />
+                  <Skeleton className="hidden lg:block lg:col-span-2 h-5 w-24" />
+                  <Skeleton className="lg:col-span-1 h-3 w-4 lg:ml-auto self-center" />
+                </div>
+              ))}
+            </SkeletonRegion>
           ) : filteredExams.length > 0 ? (
             filteredExams.map((exam) => (
+              // Mobile-first: a compact card (logo, code · authority, the full name, category)
+              // below `lg`; the 12-column table row from `lg` up, where there's room for it. The
+              // table used to start at `md`, which cut every name to "Microsoft Certified: A…".
               <Link
                 key={exam.slug}
                 to="/exams/$examSlug"
                 params={{ examSlug: exam.slug }}
-                className="group flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-6 p-4 md:items-center border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors"
+                className="group flex items-start gap-4 lg:grid lg:grid-cols-12 lg:gap-6 lg:items-center p-4 border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors"
               >
-                <div className="col-span-2 font-mono text-xs text-slate-500 group-hover:text-white transition-colors">
+                <div className="hidden lg:block lg:col-span-2 font-mono text-xs text-slate-500 group-hover:text-white transition-colors">
                   {exam.code.toUpperCase()}
                 </div>
 
-                <div className="col-span-4 text-slate-300 group-hover:text-white transition-colors text-lg font-light truncate flex items-center gap-3">
+                <div className="flex-1 min-w-0 lg:col-span-5 flex items-start lg:items-center gap-3">
                   {exam.logoUrl && (
-                    <img src={exam.logoUrl} alt="" className="w-6 h-6 shrink-0 object-contain" />
+                    <img
+                      src={exam.logoUrl}
+                      alt=""
+                      className="w-10 h-10 lg:w-6 lg:h-6 shrink-0 object-contain"
+                    />
                   )}
-                  <span>{exam.name}</span>
+                  <div className="min-w-0">
+                    <div className="lg:hidden font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-1">
+                      {exam.code.toUpperCase()} · {exam.org}
+                    </div>
+                    <span className="block text-slate-300 group-hover:text-white transition-colors text-base sm:text-lg font-light leading-snug lg:truncate">
+                      {exam.name}
+                    </span>
+                    <span className="lg:hidden inline-block mt-2 font-mono text-[10px] text-slate-600 border border-slate-800 px-2 py-0.5 uppercase">
+                      {exam.category}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="col-span-3 font-mono text-[10px] text-slate-500 uppercase truncate">
+                <div className="hidden lg:block lg:col-span-2 font-mono text-[10px] text-slate-500 uppercase truncate">
                   {exam.org}
                 </div>
 
-                <div className="col-span-2">
+                <div className="hidden lg:block lg:col-span-2">
                   <span className="font-mono text-[10px] text-slate-600 border border-slate-800 px-2 py-1 uppercase">
                     {exam.category}
                   </span>
                 </div>
 
-                <div className="col-span-1 md:text-right font-mono text-xs text-slate-500 group-hover:text-sky-400 transition-colors mt-2 md:mt-0">
+                <div className="shrink-0 self-center lg:col-span-1 lg:text-right font-mono text-xs text-slate-500 group-hover:text-sky-400 transition-colors">
                   →
                 </div>
               </Link>

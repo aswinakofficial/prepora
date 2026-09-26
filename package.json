@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -c \"blue,green\" -n \"WEB,PYTHON\" \"pnpm --filter @prepora/web dev\" \"cd apps/scraper && ./venv/bin/uvicorn main:app --reload --port 8000\"",
+    "dev": "concurrently -c \"blue,green,magenta\" -n \"WEB,PYTHON,PIPELINE\" \"pnpm --filter @prepora/web dev\" \"cd apps/scraper && ./venv/bin/uvicorn main:app --reload --port 8000\" \"cd apps/pipeline && ./venv/bin/uvicorn prepora_pipeline.api:app --reload --port 8001\"",
     "build": "pnpm content:sitemap && pnpm content:rss && pnpm --filter @prepora/web build",
     "start": "pnpm --filter @prepora/web start",
     "lint": "biome check . && tsx scripts/check-no-fixture-imports.ts && tsx scripts/check-canonical-domain.ts",
@@ -17,7 +17,6 @@
     "db:check": "pnpm --filter @prepora/db db:check",
     "db:reset": "pnpm --filter @prepora/db db:reset",
     "db:studio": "pnpm --filter @prepora/db db:studio",
-    "db:seed-exams": "pnpm --filter @prepora/db db:seed-exams",
     "content:validate": "tsx scripts/validate-content.ts",
     "content:import": "cd apps/pipeline && ./venv/bin/python -m prepora_pipeline.cli import-markdown --content-dir ../../content",
     "content:duplicates": "tsx scripts/check-duplicates.ts",

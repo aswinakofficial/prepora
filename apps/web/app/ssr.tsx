@@ -5,6 +5,7 @@ import { getRouterManifest } from "@tanstack/react-start/router-manifest";
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { defineEventHandler, toWebRequest } from "vinxi/http";
 import { getAuth, setAuth } from "../lib/auth";
+import { serveMediaFile } from "../lib/media-files";
 import { createRouter } from "./router.ts";
 
 // createRouter must be called fresh per request — see the note on the
@@ -74,6 +75,13 @@ export default defineEventHandler(async (event) => {
       console.error("[ORPC] Unhandled exception:", err);
       return new Response("Internal Server Error", { status: 500 });
     }
+  }
+
+  // Question images — see lib/media-files.ts. Matched on the path prefix (not `includes`, like
+  // the handlers above) so no other URL can reach the file reader.
+  const { pathname: requestPath } = new URL(request.url);
+  if (request.method === "GET" && requestPath.startsWith("/api/media/")) {
+    return serveMediaFile(requestPath);
   }
 
   // A liveness check: is the process up, and can it reach the database?

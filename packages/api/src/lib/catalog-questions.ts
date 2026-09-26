@@ -1,6 +1,7 @@
 import type { getDb } from "@prepora/db";
 import { questions } from "@prepora/db/schema";
 import { inArray, sql } from "drizzle-orm";
+import { loadQuestionImages, type QuestionImage } from "./question-media.js";
 
 // docs/roadmap/engineering-roadmap.md item 24: shared catalog-traversal logic for every page that
 // lists or resolves published questions — extracted so exams.router.ts, topics.router.ts,
@@ -14,6 +15,8 @@ export interface QuestionOccurrenceContext {
   questionId: string;
   questionSetId: string;
   questionSetSlug: string;
+  /** Only populated by listPublishedOccurrencesForExam. */
+  questionSetTitle?: string;
   examSlug: string;
   examVariantSlug: string;
   year: number | null;
@@ -36,6 +39,7 @@ export async function listPublishedOccurrencesForExam(
       q.id AS "questionId",
       qs.id AS "questionSetId",
       qs.slug AS "questionSetSlug",
+      qs.title AS "questionSetTitle",
       e.slug AS "examSlug",
       ev.slug AS "examVariantSlug",
       es.year,
@@ -169,7 +173,12 @@ export interface QuestionWithAnswer {
   difficulty: string | null;
   topicName: string | null;
   options: { id: string; key: string; text: string }[];
+  /** Every correct option key, in option order — more than one for a "Choose N" question. */
+  correctKeys: string[];
+  /** The first of correctKeys, kept for single-answer callers. */
   correctKey: string | null;
+  questionType: string;
+  images: QuestionImage[];
 }
 
 /**
@@ -195,13 +204,19 @@ export async function loadQuestionsWithAnswers(
     },
   });
 
+  const imagesById = await loadQuestionImages(db, questionIds);
   const byId = new Map<string, QuestionWithAnswer>();
   for (const row of rows) {
     const sortedOptions = [...row.options].sort((a, b) => a.sequence - b.sequence);
-    const answer = row.answers[0];
-    const correctOption = answer
-      ? sortedOptions.find((o) => o.id === answer.correctOptionId)
-      : undefined;
+    // Every correct answer, not just the first: multiple_correct questions store one
+    // question_answers row per correct option, and taking answers[0] alone made practice mode
+    // treat them as single-choice ("Choose 3" revealed after one click).
+    const correctIds = new Set(
+      row.answers
+        .filter((a) => a.isCorrect !== false && a.correctOptionId)
+        .map((a) => a.correctOptionId as string),
+    );
+    const correctKeys = sortedOptions.filter((o) => correctIds.has(o.id)).map((o) => o.optionKey);
 
     byId.set(row.id, {
       id: row.id,
@@ -213,7 +228,10 @@ export async function loadQuestionsWithAnswers(
       // docs/roadmap/engineering-roadmap.md item 25: `id` is included so callers can pass a real
       // selectedOptionId straight into questions.submitAnswer instead of only having the display key.
       options: sortedOptions.map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
-      correctKey: correctOption?.optionKey ?? null,
+      correctKeys,
+      correctKey: correctKeys[0] ?? null,
+      questionType: row.questionType,
+      images: imagesById.get(row.id) ?? [],
     });
   }
   return byId;

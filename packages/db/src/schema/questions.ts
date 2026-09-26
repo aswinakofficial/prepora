@@ -148,8 +148,15 @@ export const media = pgTable("media", {
   mimeType: text("mime_type").notNull(),
   sizeBytes: integer("size_bytes"),
   altText: text("alt_text"),
-  questionId: text("question_id").references(() => questions.id),
+  // Cascades like question_options/question_answers do — an image belongs to its question, and
+  // without this any question with an image could never be deleted.
+  questionId: text("question_id").references(() => questions.id, { onDelete: "cascade" }),
   questionSetId: text("question_set_id").references(() => questionSets.id),
+  // Where a question's image appears: "question" (the stem), "option" (with optionKey), or
+  // "explanation"; position orders images within the same placement.
+  placement: text("placement"),
+  optionKey: text("option_key"),
+  position: integer("position").notNull().default(0),
   uploadedBy: text("uploaded_by"),
   ...timestamps,
 });

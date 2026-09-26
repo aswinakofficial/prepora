@@ -7,6 +7,7 @@ import { z } from "zod";
 import { trackEvent } from "../../lib/analytics";
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
+import { Skeleton, SkeletonRegion } from "../components/ui/Skeleton";
 
 const searchSchema = z.object({
   q: z.string().optional().default(""),
@@ -39,7 +40,7 @@ function SearchPage() {
 
   // docs/roadmap/engineering-roadmap.md item 23: real results from the database, behind the
   // SearchProvider interface (packages/api/src/search/) — no hardcoded results remain.
-  const { data } = useQuery({
+  const { data, isFetching } = useQuery({
     ...orpc.search.query.queryOptions({ input: { q } }),
     enabled: hasQuery,
   });
@@ -66,6 +67,9 @@ function SearchPage() {
     trackEvent("result_click", { entityType, entityId: resultId });
   };
 
+  // A new search keeps the previous results' shape until the new ones arrive, so only a search
+  // with no data yet shows skeletons (never "0 results" / "No results" while still loading).
+  const isSearching = isFetching && !data;
   const questions = data?.questions ?? [];
   const exams = data?.exams ?? [];
   const topics = data?.topics ?? [];
@@ -121,16 +125,41 @@ function SearchPage() {
               <h1 className="text-3xl text-white font-light tracking-tight mb-4">
                 Search results for "{q}"
               </h1>
-              <p className="font-mono text-xs text-slate-500 tracking-wider">
-                {questions.length} QUESTIONS · {exams.length} EXAMS · {topics.length} TOPICS
-              </p>
+              {isSearching ? (
+                <Skeleton className="h-3 w-64" />
+              ) : (
+                <p className="font-mono text-xs text-slate-500 tracking-wider">
+                  {questions.length} QUESTIONS · {exams.length} EXAMS · {topics.length} TOPICS
+                </p>
+              )}
             </div>
 
-            {questions.length === 0 && exams.length === 0 && topics.length === 0 && (
-              <div className="text-slate-500 font-mono text-sm">
-                No results. Try a different phrase.
-              </div>
+            {isSearching && (
+              <SkeletonRegion label="Searching…" className="flex flex-col gap-16">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="space-y-6">
+                    <Skeleton className="h-3 w-6" />
+                    <div className="space-y-3 max-w-2xl">
+                      <Skeleton className="h-7 w-full" />
+                      <Skeleton className="h-7 w-3/4" />
+                    </div>
+                    <div className="space-y-2">
+                      <Skeleton className="h-3 w-28" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </div>
+                ))}
+              </SkeletonRegion>
             )}
+
+            {!isSearching &&
+              questions.length === 0 &&
+              exams.length === 0 &&
+              topics.length === 0 && (
+                <div className="text-slate-500 font-mono text-sm">
+                  No results. Try a different phrase.
+                </div>
+              )}
 
             {/* QUESTIONS */}
             {questions.length > 0 && (

@@ -13,6 +13,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { isFeatureEnabled } from "@prepora/api/src/lib/feature-flags.js";
 import {
   buildSitemapIndexXml,
   buildSitemapXml,
@@ -42,7 +43,12 @@ async function main() {
 
   writeFileSync(
     `${OUT}/sitemap-pages.xml`,
-    buildSitemapXml([...getStaticSitemapUrls(BASE_URL), ...taxonomyUrls]),
+    buildSitemapXml([
+      ...getStaticSitemapUrls(BASE_URL, {
+        contributeEnabled: await isFeatureEnabled(db, "contribute"),
+      }),
+      ...taxonomyUrls,
+    ]),
   );
   writeFileSync(`${OUT}/sitemap-exams.xml`, buildSitemapXml(examUrls));
   writeFileSync(`${OUT}/sitemap-question-sets.xml`, buildSitemapXml(questionSetUrls));

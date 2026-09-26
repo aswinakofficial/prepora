@@ -4,6 +4,7 @@ import { ArrowUpRight, BookOpen, Search, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
+import { SkeletonListRows } from "../../components/ui/Skeleton";
 
 export const Route = createFileRoute("/topics/$topicSlug")({
   head: ({ params }) => {
@@ -220,9 +221,7 @@ function TopicPage() {
             {/* Questions Stream */}
             <div className="border-t-2 border-slate-900 border-b-2 divide-y divide-slate-900/60">
               {isLoading ? (
-                <div className="py-16 text-center">
-                  <p className="font-mono text-sm text-slate-500">Loading questions…</p>
-                </div>
+                <SkeletonListRows label="Loading questions…" withTagLine />
               ) : filteredQuestions.length === 0 ? (
                 <div className="py-16 text-center">
                   <p className="font-mono text-sm text-slate-500 mb-2">

@@ -1,6 +1,7 @@
 import type { getDb } from "@prepora/db";
 import { attempts, practiceSessions, questions } from "@prepora/db/schema";
 import { eq } from "drizzle-orm";
+import { loadQuestionImages, type QuestionImage } from "./question-media.js";
 
 /**
  * The logic behind questions.router.ts's `submitAnswer` procedure, extracted so it's directly
@@ -16,7 +17,9 @@ export async function recordAttempt(
   db: ReturnType<typeof getDb>,
   input: {
     questionId: string;
-    selectedOptionId: string;
+    /** Every option chosen. Single-answer callers may pass `selectedOptionId` instead. */
+    selectedOptionIds?: string[];
+    selectedOptionId?: string;
     userId?: string | null;
     sessionId?: string | null;
     practiceSessionId?: string | null;
@@ -24,8 +27,12 @@ export async function recordAttempt(
 ): Promise<{
   questionId: string;
   isCorrect: boolean;
+  /** Every correct option, for questions with more than one correct answer. */
+  correctOptionIds: string[];
+  /** The first correct option — kept for single-answer callers. */
   correctOptionId: string | null | undefined;
   explanation: string | null;
+  explanationImages: QuestionImage[];
 } | null> {
   const q = await db.query.questions.findFirst({
     where: eq(questions.id, input.questionId),
@@ -33,14 +40,26 @@ export async function recordAttempt(
   });
   if (!q) return null;
 
-  const correctAnswer = q.answers.find((a) => a.isCorrect);
-  const isCorrect = correctAnswer?.correctOptionId === input.selectedOptionId;
+  // Graded against the full set of correct answers: a "Choose 3" question is right only when
+  // exactly those three are chosen. This used to compare against the first correct answer alone,
+  // so a multi-answer question could never be scored correctly.
+  const correctOptionIds = q.answers
+    .filter((a) => a.isCorrect !== false && a.correctOptionId)
+    .map((a) => a.correctOptionId as string);
+  const selected = [
+    ...new Set(input.selectedOptionIds ?? (input.selectedOptionId ? [input.selectedOptionId] : [])),
+  ];
+  const isCorrect =
+    selected.length > 0 &&
+    selected.length === correctOptionIds.length &&
+    selected.every((id) => correctOptionIds.includes(id));
 
   await db.insert(attempts).values({
     userId: input.userId ?? null,
     sessionId: input.userId ? null : (input.sessionId ?? null),
     questionId: q.id,
-    selectedOptionId: input.selectedOptionId,
+    selectedOptionId: selected[0] ?? null,
+    selectedOptionIds: selected,
     isCorrect,
     practiceSessionId: input.practiceSessionId ?? null,
   });
@@ -48,8 +67,10 @@ export async function recordAttempt(
   return {
     questionId: q.id,
     isCorrect,
-    correctOptionId: correctAnswer?.correctOptionId,
+    correctOptionIds,
+    correctOptionId: correctOptionIds[0] ?? null,
     explanation: q.explanation,
+    explanationImages: (await loadQuestionImages(db, [q.id], ["explanation"])).get(q.id) ?? [],
   };
 }
 

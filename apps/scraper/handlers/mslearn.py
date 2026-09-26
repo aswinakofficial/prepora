@@ -56,7 +56,9 @@ class MsLearnHandler(BaseScraperHandler):
 
             # Rationale / Explanation
             rationale = fs.find(class_=re.compile(r'rationale|explanation|correct', re.I))
-            explanation_text = rationale.get_text(" ", strip=True) if rationale else f"Extracted directly from Microsoft Learn ({target_url})"
+            # No placeholder when there's no rationale: a missing explanation stays missing (the
+            # review queue flags it) rather than being filled with boilerplate text.
+            explanation_text = rationale.get_text(" ", strip=True) if rationale else None
             
             # Extract additional reading links - search for all links that might be resources
             additional_reading_links = []

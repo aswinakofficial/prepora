@@ -30,8 +30,13 @@ async def health_check():
     return {"status": "healthy", "service": "Prepora Pipeline Service"}
 
 
+# Plain `def`, not `async def`, for both endpoints below: publish_question() and check_duplicate()
+# are blocking psycopg2 code, and an `async def` endpoint runs them directly on the event loop —
+# serializing every request, so a caller publishing a review batch concurrently gained nothing.
+# FastAPI runs plain `def` endpoints in its threadpool instead; core/db.py's connection pool is
+# thread-safe and hands each thread its own connection.
 @app.post("/publish")
-async def publish(normalized: NormalizedQuestion):
+def publish(normalized: NormalizedQuestion):
     try:
         result = publish_question(normalized)
     except PublishError as exc:
@@ -40,7 +45,7 @@ async def publish(normalized: NormalizedQuestion):
 
 
 @app.post("/dedupe/check")
-async def dedupe_check(normalized: NormalizedQuestion):
+def dedupe_check(normalized: NormalizedQuestion):
     """
     docs/roadmap/engineering-roadmap.md item 20: the one deduplication implementation, reachable
     over HTTP for callers (packages/api's admin.router.ts) that used to run their own, weaker

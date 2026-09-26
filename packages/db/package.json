@@ -14,7 +14,6 @@
     "db:reset": "node reset.mjs",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
-    "db:seed-exams": "tsx seed-exams.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

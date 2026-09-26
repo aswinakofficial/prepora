@@ -65,6 +65,51 @@ describe.skipIf(!DATABASE_URL)("attempts", () => {
     return { questionId: q.id, correctOptionId: optA.id, wrongOptionId: optB.id };
   }
 
+  it('a "Choose 2" question is correct only for exactly its correct options', async () => {
+    const db = getDb();
+    const unique = randomUUID().slice(0, 8);
+    const [q] = await db
+      .insert(questions)
+      .values({
+        slug: `test-multi-${unique}`,
+        questionText: `Choose two ${unique}`,
+        questionType: "multiple_correct",
+        status: "published",
+      })
+      .returning({ id: questions.id });
+    seededQuestionIds.push(q.id);
+    const opts = await db
+      .insert(questionOptions)
+      .values(
+        ["A", "B", "C"].map((key, i) => ({
+          questionId: q.id,
+          optionKey: key,
+          optionText: `Option ${key}`,
+          sequence: i + 1,
+        })),
+      )
+      .returning({ id: questionOptions.id, key: questionOptions.optionKey });
+    const id = (key: string) => opts.find((o) => o.key === key)?.id as string;
+    await db.insert(questionAnswers).values([
+      { questionId: q.id, correctOptionId: id("A") },
+      { questionId: q.id, correctOptionId: id("C") },
+    ]);
+
+    const submit = (keys: string[]) =>
+      recordAttempt(db, { questionId: q.id, selectedOptionIds: keys.map(id) });
+
+    const exact = await submit(["C", "A"]);
+    expect(exact?.isCorrect).toBe(true);
+    expect(new Set(exact?.correctOptionIds)).toEqual(new Set([id("A"), id("C")]));
+    expect((await submit(["A"]))?.isCorrect).toBe(false); // too few
+    expect((await submit(["A", "B"]))?.isCorrect).toBe(false); // one wrong
+    expect((await submit(["A", "B", "C"]))?.isCorrect).toBe(false); // too many
+
+    const rows = await db.select().from(attempts).where(eq(attempts.questionId, q.id));
+    const stored = rows.find((r) => r.isCorrect);
+    expect(new Set(stored?.selectedOptionIds)).toEqual(new Set([id("A"), id("C")]));
+  });
+
   it("a correct submission writes exactly one attempt with isCorrect=true", async () => {
     const db = getDb();
     const { questionId, correctOptionId } = await seedQuestion();

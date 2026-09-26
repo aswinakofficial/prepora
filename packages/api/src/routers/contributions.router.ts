@@ -4,6 +4,7 @@ import { contributions } from "@prepora/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { publicProcedure } from "../context.js";
+import { requireFeature } from "../lib/feature-flags.js";
 import { adminProcedure } from "./admin.router.js";
 
 // docs/roadmap/engineering-roadmap.md item 24: admin/contributions.tsx and contribute.tsx both
@@ -33,6 +34,9 @@ export const contributionsRouter = {
     )
     .handler(async ({ input }) => {
       const db = getDb();
+      // Enforced here, not just by hiding the page's links: with the flag off, a direct POST to
+      // this endpoint must be refused too.
+      await requireFeature(db, "contribute", "Contributions are currently closed.");
       const [row] = await db
         .insert(contributions)
         .values({

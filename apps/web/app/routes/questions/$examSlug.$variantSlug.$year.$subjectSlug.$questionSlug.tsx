@@ -1,11 +1,15 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { splitExplanationAndReadings } from "../../../lib/additional-reading";
 import { trackEvent } from "../../../lib/analytics";
 import { getAnonymousSessionId } from "../../../lib/anonymous-session";
+import { isSelectionComplete, toggleSelection } from "../../../lib/answer-selection";
 import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
 import { CANONICAL_ORIGIN } from "../../../lib/site-config";
+import { QuestionImages } from "../../components/question/QuestionImages";
+import { Skeleton, SkeletonRegion } from "../../components/ui/Skeleton";
 
 export const Route = createFileRoute(
   "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug",
@@ -52,7 +56,8 @@ export const Route = createFileRoute(
 
 function QuestionPage() {
   const { examSlug, variantSlug, year, subjectSlug, questionSlug } = Route.useParams();
-  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  // Option ids chosen so far: one for a single-answer question, `answerCount` for "Choose N".
+  const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
 
   const examName = examSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -75,11 +80,14 @@ function QuestionPage() {
     }
   }, [question]);
 
+  const required = question?.answerCount ?? 1;
+  const isComplete = isSelectionComplete(selectedOptionIds, required);
+
   const handleReveal = () => {
-    if (selectedOptionId && question) {
+    if (isComplete && question) {
       submitAnswer({
         id: question.id,
-        selectedOptionId,
+        selectedOptionIds,
         sessionId: getAnonymousSessionId(),
       });
       trackEvent("answer_reveal", { entityType: "question", entityId: question.id });
@@ -87,12 +95,32 @@ function QuestionPage() {
   };
 
   const isRevealed = !!result;
-  const correctOption = question?.options.find((o) => o.id === result?.correctOptionId);
+  const correctOptions =
+    question?.options.filter((o) => result?.correctOptionIds?.includes(o.id)) ?? [];
 
   if (isLoading) {
+    // The question page's shape: breadcrumb, question text, options, reveal button.
     return (
-      <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans flex items-center justify-center">
-        <p className="font-mono text-sm text-slate-500">Loading question…</p>
+      <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans">
+        <SkeletonRegion
+          label="Loading question…"
+          className="max-w-4xl mx-auto px-4 sm:px-6 pt-16 pb-32"
+        >
+          <Skeleton className="h-3 w-72 max-w-full mb-16" />
+          <div className="space-y-4 mb-16 max-w-2xl">
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-4/5" />
+          </div>
+          <div className="space-y-6 mb-16">
+            {[1, 2, 3, 4].map((n) => (
+              <div key={n} className="flex gap-6">
+                <Skeleton className="h-6 w-6 shrink-0" />
+                <Skeleton className="h-6 w-2/3" />
+              </div>
+            ))}
+          </div>
+          <Skeleton className="h-12 w-44" />
+        </SkeletonRegion>
       </div>
     );
   }
@@ -139,12 +167,13 @@ function QuestionPage() {
               "@type": "Answer",
               text: opt.text,
             })),
-            ...(isRevealed && correctOption
+            ...(isRevealed && correctOptions.length > 0
               ? {
-                  acceptedAnswer: {
+                  // Every correct option — a "Choose N" question has more than one.
+                  acceptedAnswer: correctOptions.map((option) => ({
                     "@type": "Answer",
-                    text: correctOption.text,
-                  },
+                    text: option.text,
+                  })),
                 }
               : {}),
           }),
@@ -171,16 +200,27 @@ function QuestionPage() {
 
         {/* Question Reading Area */}
         <section className="mb-24">
-          <p className="text-3xl md:text-4xl text-white font-light leading-snug mb-16 max-w-2xl">
+          <p className="text-3xl md:text-4xl text-white font-light leading-snug mb-16 max-w-2xl whitespace-pre-line">
             {question.text}
           </p>
+          <QuestionImages images={question.images} placement="question" className="-mt-8 mb-16" />
+
+          {required > 1 && (
+            <p className="-mt-8 mb-10 font-mono text-xs uppercase tracking-widest text-slate-400">
+              Select {required} answers · {selectedOptionIds.length} of {required} selected
+            </p>
+          )}
 
           <div className="flex flex-col space-y-6 mb-16 text-xl">
             {question.options.map((opt) => (
               <button
                 type="button"
                 key={opt.id}
-                onClick={() => !isRevealed && setSelectedOptionId(opt.id)}
+                aria-pressed={selectedOptionIds.includes(opt.id)}
+                onClick={() =>
+                  !isRevealed &&
+                  setSelectedOptionIds((prev) => toggleSelection(prev, opt.id, required))
+                }
                 disabled={isRevealed}
                 className={`flex text-left transition-colors group ${
                   isRevealed ? "cursor-default" : "cursor-pointer"
@@ -188,7 +228,7 @@ function QuestionPage() {
               >
                 <span
                   className={`font-mono w-12 shrink-0 ${
-                    selectedOptionId === opt.id
+                    selectedOptionIds.includes(opt.id)
                       ? "text-white"
                       : "text-slate-600 group-hover:text-slate-400"
                   }`}
@@ -197,12 +237,18 @@ function QuestionPage() {
                 </span>
                 <span
                   className={`${
-                    selectedOptionId === opt.id
+                    selectedOptionIds.includes(opt.id)
                       ? "text-white"
                       : "text-slate-400 group-hover:text-slate-300"
                   }`}
                 >
                   {opt.text}
+                  <QuestionImages
+                    images={question.images}
+                    placement="option"
+                    optionKey={opt.key}
+                    className="mt-3"
+                  />
                 </span>
               </button>
             ))}
@@ -212,9 +258,9 @@ function QuestionPage() {
             <button
               type="button"
               onClick={handleReveal}
-              disabled={!selectedOptionId || isPending}
+              disabled={!isComplete || isPending}
               className={`font-mono text-sm tracking-widest uppercase border-b pb-1 transition-colors ${
-                selectedOptionId && !isPending
+                isComplete && !isPending
                   ? "text-slate-300 border-slate-500 hover:text-white hover:border-white"
                   : "text-slate-700 border-slate-900 cursor-not-allowed"
               }`}
@@ -229,27 +275,60 @@ function QuestionPage() {
                 <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
                   Answer
                 </h2>
-                <p className="text-xl text-white">
-                  {result.isCorrect ? "Correct" : "Incorrect"}
-                  {correctOption && (
-                    <>
-                      {" "}
-                      · {correctOption.key} · {correctOption.text}
-                    </>
-                  )}
-                </p>
+                <p className="text-xl text-white">{result.isCorrect ? "Correct" : "Incorrect"}</p>
+                <ul className="mt-3 space-y-1 text-lg text-slate-300">
+                  {correctOptions.map((option) => (
+                    <li key={option.id}>
+                      {option.key} · {option.text}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
-              {result.explanation && (
-                <div className="mb-24 border-l border-slate-800 pl-6">
-                  <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
-                    Why
-                  </h2>
-                  <p className="text-lg text-slate-400 leading-relaxed max-w-2xl whitespace-pre-line">
-                    {result.explanation}
-                  </p>
-                </div>
-              )}
+              {result.explanation &&
+                (() => {
+                  const { explanation, readings } = splitExplanationAndReadings(result.explanation);
+                  return (
+                    <div className="mb-24 border-l border-slate-800 pl-6">
+                      <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
+                        Why
+                      </h2>
+                      <p className="text-lg text-slate-400 leading-relaxed max-w-2xl whitespace-pre-line">
+                        {explanation}
+                      </p>
+                      <QuestionImages
+                        images={result.explanationImages}
+                        placement="explanation"
+                        className="mt-6"
+                      />
+                      {readings.length > 0 && (
+                        <div className="mt-8">
+                          <h3 className="font-mono text-xs tracking-widest text-slate-500 uppercase mb-3">
+                            Additional reading
+                          </h3>
+                          <ul className="space-y-2">
+                            {readings.map((reading) => (
+                              <li key={reading.url || reading.text} className="text-slate-400">
+                                {reading.url ? (
+                                  <a
+                                    href={reading.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sky-300 hover:text-white hover:underline"
+                                  >
+                                    {reading.text} ↗
+                                  </a>
+                                ) : (
+                                  reading.text
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
             </div>
           )}
 
