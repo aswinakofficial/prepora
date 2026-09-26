@@ -1,8 +1,8 @@
 """
 Parses one Microsoft Learn practice-assessment question from its rendered <fieldset> HTML.
 
-Kept free of Playwright so it can be tested against real captured pages
-(fixtures/ms_learn/*.html) — the crawler (ms_learn_catalog_crawler.py) only drives the browser
+Kept free of Playwright so it can be tested against captured page markup
+(fixtures/ms_learn/*.html: real Microsoft Learn markup, invented questions) — the crawler (ms_learn_catalog_crawler.py) only drives the browser
 and hands the fieldset's outerHTML to parse_question_fieldset().
 
 Every assessment renders the same structure:

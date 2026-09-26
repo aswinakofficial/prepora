@@ -16,7 +16,7 @@ connectors/<name>/
   connector.py         # discover(html, url) -> list[str]; fetch(url) -> bytes
   parser.py             # extract(content, artifact) -> list[ExtractedQuestion]
   normalizer.py        # normalize(extracted, ...) -> NormalizedQuestion
-  fixtures/             # real captured responses, not synthetic HTML
+  fixtures/             # real captured markup, with invented question content (see step 2)
   test_parser.py       # the contract test: fixture in, expected shape out, asserted exactly
   README.md             # what's in this directory and what's different from any prior handler
 ```
@@ -32,7 +32,7 @@ migrating. Note its `domain_patterns` (becomes `source.yaml`'s `base_url`), its 
 anything already implemented but dead — `discover_next_links()` exists on every handler and has
 never been called by anything. You're about to make it real.
 
-**2. Capture a real fixture — don't write synthetic HTML.** Use the artifact store (item 12) to
+**2. Capture a real fixture — don't hand-write the HTML.** Use the artifact store (item 12) to
 fetch and store a real page:
 
 ```python
@@ -47,11 +47,25 @@ artifact = store.store(
 )
 ```
 
-Copy the stored file (`artifact.storage_key`) into `connectors/<name>/fixtures/`. A real fixture is
+Copy the stored file (`artifact.storage_key`) into `connectors/<name>/fixtures/`. A real capture is
 what catches the site having actually changed shape since the handler was written — the indiabix
 migration found the live page's CSS classes had partially drifted from what the original handler's
 selectors expected, and that some questions render their options as images rather than text, which
-only a real fixture reveals. A hand-written synthetic fixture would have hidden both.
+only a real page reveals. Markup written from scratch would have hidden both.
+
+**Fixtures hold real markup, invented content.** This repository is public and never contains
+third-party questions, so before committing a capture:
+
+- keep the markup the parser reads exactly as captured — tags, classes, attributes, whitespace,
+  quirks like image-only options or inline `<strong>`;
+- replace every question, option, answer, explanation and link text with invented content of the
+  same shape (same number of paragraphs, list items and options; same position of the correct
+  answer);
+- remove what the parser never reads (site navigation, ads, footers, scripts) to keep it small.
+
+`apps/pipeline/prepora_pipeline/connectors/indiabix/fixtures/example_page.html` and
+`apps/scraper/fixtures/ms_learn/` are worked examples. Scraped questions live only in a database
+you run, never in git.
 
 **3. Write `parser.py`'s `extract()`.** Signature:
 `extract(content: bytes, artifact: RawArtifact, *, exam_hint=None, subject_hint=None) ->
