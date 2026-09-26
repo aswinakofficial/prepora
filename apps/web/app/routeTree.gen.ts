@@ -11,7 +11,6 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
-import { Route as SettingsImport } from './routes/settings'
 import { Route as SearchImport } from './routes/search'
 import { Route as PracticeImport } from './routes/practice'
 import { Route as ContributeImport } from './routes/contribute'
@@ -35,12 +34,6 @@ import { Route as ExamsExamSlugSubjectsSubjectSlugImport } from './routes/exams/
 import { Route as QuestionsExamSlugVariantSlugYearSubjectSlugQuestionSlugImport } from './routes/questions/$examSlug.$variantSlug.$year.$subjectSlug.$questionSlug'
 
 // Create/Update Routes
-
-const SettingsRoute = SettingsImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRoute,
-} as any)
 
 const SearchRoute = SearchImport.update({
   id: '/search',
@@ -209,13 +202,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchImport
       parentRoute: typeof rootRoute
     }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsImport
-      parentRoute: typeof rootRoute
-    }
     '/admin/analytics': {
       id: '/admin/analytics'
       path: '/analytics'
@@ -361,7 +347,6 @@ export interface FileRoutesByFullPath {
   '/contribute': typeof ContributeRoute
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
   '/admin/exam-types': typeof AdminExamTypesRoute
@@ -385,7 +370,6 @@ export interface FileRoutesByTo {
   '/contribute': typeof ContributeRoute
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
   '/admin/exam-types': typeof AdminExamTypesRoute
@@ -411,7 +395,6 @@ export interface FileRoutesById {
   '/contribute': typeof ContributeRoute
   '/practice': typeof PracticeRoute
   '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/contributions': typeof AdminContributionsRoute
   '/admin/exam-types': typeof AdminExamTypesRoute
@@ -438,7 +421,6 @@ export interface FileRouteTypes {
     | '/contribute'
     | '/practice'
     | '/search'
-    | '/settings'
     | '/admin/analytics'
     | '/admin/contributions'
     | '/admin/exam-types'
@@ -461,7 +443,6 @@ export interface FileRouteTypes {
     | '/contribute'
     | '/practice'
     | '/search'
-    | '/settings'
     | '/admin/analytics'
     | '/admin/contributions'
     | '/admin/exam-types'
@@ -485,7 +466,6 @@ export interface FileRouteTypes {
     | '/contribute'
     | '/practice'
     | '/search'
-    | '/settings'
     | '/admin/analytics'
     | '/admin/contributions'
     | '/admin/exam-types'
@@ -511,7 +491,6 @@ export interface RootRouteChildren {
   ContributeRoute: typeof ContributeRoute
   PracticeRoute: typeof PracticeRoute
   SearchRoute: typeof SearchRoute
-  SettingsRoute: typeof SettingsRoute
   AuthSigninRoute: typeof AuthSigninRoute
   QuestionSetsSlugRoute: typeof QuestionSetsSlugRoute
   SubjectsSubjectSlugRoute: typeof SubjectsSubjectSlugRoute
@@ -529,7 +508,6 @@ const rootRouteChildren: RootRouteChildren = {
   ContributeRoute: ContributeRoute,
   PracticeRoute: PracticeRoute,
   SearchRoute: SearchRoute,
-  SettingsRoute: SettingsRoute,
   AuthSigninRoute: AuthSigninRoute,
   QuestionSetsSlugRoute: QuestionSetsSlugRoute,
   SubjectsSubjectSlugRoute: SubjectsSubjectSlugRoute,
@@ -557,7 +535,6 @@ export const routeTree = rootRoute
         "/contribute",
         "/practice",
         "/search",
-        "/settings",
         "/auth/signin",
         "/question-sets/$slug",
         "/subjects/$subjectSlug",
@@ -592,9 +569,6 @@ export const routeTree = rootRoute
     },
     "/search": {
       "filePath": "search.tsx"
-    },
-    "/settings": {
-      "filePath": "settings.tsx"
     },
     "/admin/analytics": {
       "filePath": "admin/analytics.tsx",
