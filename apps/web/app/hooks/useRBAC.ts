@@ -1,6 +1,7 @@
-import { isAdminUser } from "@prepora/auth";
 import { createServerFn } from "@tanstack/react-start";
+import { getWebRequest } from "@tanstack/react-start/server";
 import { useEffect, useState } from "react";
+import { requireAdmin } from "../../lib/auth";
 import { authClient } from "../../lib/auth-client";
 
 export type UserRole = "admin" | "user" | "guest";
@@ -14,16 +15,16 @@ export interface RBACState {
   hasRole: (allowedRoles: UserRole[]) => boolean;
 }
 
-// Delegates to the one canonical authorization rule (packages/auth's
-// isAdminUser) instead of re-parsing ADMIN_USERS itself — a second,
-// independent copy of that rule previously lived here and could drift
-// from the version packages/api's adminProcedure actually enforces. See
-// docs/architecture/prepora-next-level-plan.md finding #20.
-const checkAdminRightsServerFn = createServerFn({ method: "POST" })
-  .validator((email: string) => email)
-  .handler(async (ctx) => {
-    return { authorized: isAdminUser({ email: ctx.data }) };
-  });
+// Is the *signed-in* user an admin? Resolved from the session cookie on the server, through the
+// same rule packages/api's adminProcedure enforces (packages/auth's isAdminUser). It deliberately
+// takes no input: a previous version accepted any email from the browser and answered whether that
+// address was an admin, without requiring sign-in — which let anyone enumerate admin emails.
+const checkCurrentUserIsAdminFn = createServerFn({ method: "GET" }).handler(async () => {
+  const request = getWebRequest();
+  if (!request) return { authorized: false };
+  const result = await requireAdmin({ request: { headers: new Headers(request.headers) } });
+  return { authorized: result.authorized };
+});
 
 export function useRBAC(): RBACState {
   const { data: session, isPending: isLoadingSession } = authClient.useSession();
@@ -41,9 +42,9 @@ export function useRBAC(): RBACState {
         return;
       }
 
-      // Check against server ADMIN_USERS environment list
+      // Check against the server's ADMIN_USERS list, for this session
       setIsCheckingAdmin(true);
-      checkAdminRightsServerFn({ data: user.email })
+      checkCurrentUserIsAdminFn()
         .then((res) => setIsAdminServer(res.authorized))
         .catch(() => setIsAdminServer(false))
         .finally(() => setIsCheckingAdmin(false));
