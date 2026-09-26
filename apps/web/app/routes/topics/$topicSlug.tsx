@@ -77,7 +77,7 @@ function TopicPage() {
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Navigation & Context Action Header */}
-      <div className="px-6 pt-10 flex justify-between items-center max-w-[1300px] mx-auto mb-12">
+      <div className="px-6 pt-4 md:pt-8 flex justify-between items-center max-w-[1200px] mx-auto mb-4 md:mb-6">
         <Link
           to="/subjects"
           className="font-mono text-xs tracking-widest text-slate-500 hover:text-white transition-colors flex items-center gap-2"
@@ -93,9 +93,9 @@ function TopicPage() {
         </Link>
       </div>
 
-      <main className="max-w-[1300px] mx-auto px-6">
+      <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
-        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-16 border-b border-slate-900 pb-4 flex items-center flex-wrap gap-y-2">
+        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-8 md:mb-10 border-b border-slate-900 pb-4 flex items-center flex-wrap gap-y-2">
           <Link to="/" className="hover:text-white transition-colors">
             ROOT
           </Link>
@@ -120,14 +120,14 @@ function TopicPage() {
         </div>
 
         {/* Editorial Page Header */}
-        <div className="mb-16 border-b border-slate-800 pb-12">
+        <div className="mb-10 md:mb-12 border-b border-slate-800 pb-8">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
             <div className="max-w-4xl">
               <div className="font-mono text-xs tracking-[0.3em] text-blue-400 uppercase mb-4 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
                 <span>CORE ENGINE TAXONOMY</span>
               </div>
-              <h1 className="text-4xl md:text-6xl lg:text-7xl font-normal tracking-tighter text-white uppercase mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-normal tracking-tighter text-white uppercase mb-6 leading-tight">
                 {name}
               </h1>
               {topic?.description && (

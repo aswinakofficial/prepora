@@ -52,7 +52,7 @@ function ContributePage() {
     return (
       <SkeletonRegion
         label="Loading…"
-        className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 pt-6 md:pt-16 space-y-8"
+        className="max-w-[1200px] w-full mx-auto px-4 sm:px-6 pt-6 md:pt-16 space-y-8"
       >
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-3 w-80 max-w-full" />
@@ -114,7 +114,7 @@ function ContributePage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 selection:bg-slate-700 selection:text-white font-sans flex flex-col">
-      <main className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 pb-20 md:pb-32 flex-1 pt-6 md:pt-16">
+      <main className="max-w-[1200px] w-full mx-auto px-4 sm:px-6 pb-20 md:pb-32 flex-1 pt-6 md:pt-16">
         <section className="grid grid-cols-1 md:grid-cols-12 gap-12">
           {/* Asymmetric Spacer / Context Col */}
           <div className="col-span-1 md:col-span-3 lg:col-span-3 border-r border-slate-900/50 pr-6 space-y-12 h-full hidden md:block">

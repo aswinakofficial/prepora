@@ -29,31 +29,18 @@ An SEO-first exam preparation platform for Kerala PSC, GATE, SSC JE, UPSC and mo
 
 ## Getting Started
 
-### Prerequisites
-
-- Node.js 20+
-- pnpm 9+
-- PostgreSQL database
-
-### Setup
+You need **Node.js 22**, **pnpm 9**, **Python 3.12** and **PostgreSQL 14+** installed. Then:
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Copy environment variables
-cp .env.example .env
-# Edit .env with your DATABASE_URL and other secrets
-
-# Generate and run migrations
-pnpm db:generate
-pnpm db:migrate
-
-# Start dev server
-pnpm dev
+git clone https://github.com/aswinakofficial/prepora.git
+cd prepora
+pnpm bootstrap      # installs everything, creates a local database with demo data, writes .env
+pnpm dev            # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+`pnpm bootstrap` sets up a local admin account for the admin area (credentials in your `.env`). No
+admin rights for PostgreSQL? Use `pnpm bootstrap --project-db`. The full guide — per-OS installs,
+manual setup, troubleshooting, and how to contribute — is in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ---
 

@@ -104,7 +104,7 @@ function QuestionPage() {
       <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans">
         <SkeletonRegion
           label="Loading question…"
-          className="max-w-4xl mx-auto px-4 sm:px-6 pt-16 pb-32"
+          className="max-w-[1200px] mx-auto px-4 sm:px-6 pt-16 pb-32 *:max-w-[800px]"
         >
           <Skeleton className="h-3 w-72 max-w-full mb-16" />
           <div className="space-y-4 mb-16 max-w-2xl">
@@ -180,9 +180,11 @@ function QuestionPage() {
         }}
       />
 
-      <div className="px-6 pt-12 max-w-[800px] mx-auto mb-16"></div>
+      <div className="pt-12 mb-16"></div>
 
-      <main className="max-w-[800px] mx-auto px-6">
+      {/* Same 1200px grid as every page, so the text starts under the header brand; the
+          reading column itself stays 800px wide. */}
+      <main className="max-w-[1200px] mx-auto px-6 *:max-w-[800px]">
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-widest text-slate-500 uppercase mb-24 cursor-default">
           <Link

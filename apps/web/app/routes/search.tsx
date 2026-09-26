@@ -77,7 +77,7 @@ function SearchPage() {
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Breadcrumb */}
-      <div className="px-6 pt-12 flex justify-between items-center max-w-[1000px] mx-auto">
+      <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto">
         <Link
           to="/"
           className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors cursor-pointer"
@@ -86,7 +86,7 @@ function SearchPage() {
         </Link>
       </div>
 
-      <main className="max-w-[1000px] mx-auto px-6 pt-12">
+      <main className="max-w-[1200px] mx-auto px-6 pt-12">
         {/* Search Input - Command Surface */}
         <div className="mb-24">
           <form onSubmit={handleSearchSubmit} className="relative">

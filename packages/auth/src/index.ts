@@ -30,6 +30,16 @@ const getBaseUrl = () => {
 
 let runtimeAuthInstance: ReturnType<typeof betterAuth> | null = null;
 
+// Email/password accounts exist so contributors can sign in to a local instance without setting
+// up Google OAuth (CONTRIBUTING.md → "Local development"). They are off everywhere else — fails
+// closed: only NODE_ENV "development" or "test" turns them on, and an unset NODE_ENV (a deployed
+// Worker may not have one) keeps them off. In production there is no email verification, and admin
+// rights are granted by email address (ADMIN_USERS), so open email sign-up there would let anyone
+// register an admin's (or any not-yet-registered user's) address with a password of their choosing.
+export function isEmailPasswordEnabled(): boolean {
+  return ["development", "test"].includes(process.env.NODE_ENV ?? "");
+}
+
 export const createBetterAuthInstance = () => {
   const secret = process.env.BETTER_AUTH_SECRET || (globalThis as any)?.BETTER_AUTH_SECRET || "";
   const clientId = process.env.GOOGLE_CLIENT_ID || (globalThis as any)?.GOOGLE_CLIENT_ID || "";
@@ -48,7 +58,8 @@ export const createBetterAuthInstance = () => {
     );
   }
 
-  // Google sign-in is optional — email/password (enabled below) works without it. But *one*
+  // Google sign-in is optional locally — email/password (see isEmailPasswordEnabled) works without
+  // it there. But *one*
   // credential set without the other is a real misconfiguration, not an intentional choice, so
   // that specific case still fails loudly rather than producing a Google provider that's half wired.
   const hasClientId = Boolean(clientId);
@@ -62,7 +73,9 @@ export const createBetterAuthInstance = () => {
   const googleConfigured = hasClientId && hasClientSecret;
   if (!googleConfigured) {
     console.warn(
-      "[AUTH] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set — Google sign-in is disabled; email/password sign-in still works.",
+      isEmailPasswordEnabled()
+        ? "[AUTH] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set — Google sign-in is disabled; local email/password sign-in still works."
+        : "[AUTH] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set — Google sign-in is disabled, and email/password is development-only, so nobody can sign in.",
     );
   }
 
@@ -89,7 +102,7 @@ export const createBetterAuthInstance = () => {
       },
     }),
     emailAndPassword: {
-      enabled: true,
+      enabled: isEmailPasswordEnabled(),
     },
     socialProviders: googleConfigured ? { google: { clientId, clientSecret } } : {},
   });
