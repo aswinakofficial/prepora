@@ -2,54 +2,73 @@
 /**
  * pnpm content:sitemap
  *
- * Generates sitemap XML files from published content in the database.
- * Splits into: sitemap-pages.xml, sitemap-exams.xml, sitemap-question-sets.xml, sitemap-questions.xml
+ * Generates sitemap XML files from published content in the database, split into:
+ * sitemap-pages.xml, sitemap-exams.xml, sitemap-question-sets.xml, sitemap-questions.xml.
  *
- * TODO: Wire up DB queries once DATABASE_URL is configured.
+ * docs/roadmap/engineering-roadmap.md item 26: this used to emit three hardcoded demo exam URLs
+ * and reference sitemap-question-sets.xml/sitemap-questions.xml from the index without ever
+ * creating them — a broken sitemap in production. The real, database-backed logic lives in
+ * packages/api/src/lib/sitemap.ts (also directly unit-tested there); this script just calls it and
+ * writes files. Requires DATABASE_URL.
  */
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { isFeatureEnabled } from "@prepora/api/src/lib/feature-flags.js";
+import {
+  buildSitemapIndexXml,
+  buildSitemapXml,
+  getExamSitemapUrls,
+  getQuestionSetSitemapUrls,
+  getQuestionSitemapUrls,
+  getStaticSitemapUrls,
+  getTaxonomySitemapUrls,
+} from "@prepora/api/src/lib/sitemap.js";
+import { getDb } from "@prepora/db";
 
-const BASE_URL = process.env.APP_URL ?? "https://prepora.in";
+// The canonical production domain (apps/web/lib/site-config.ts) — hardcoded, not read from
+// APP_URL, so a stray environment variable can never make a generated sitemap disagree with the
+// domain every canonical tag and JSON-LD block on the site itself uses.
+const BASE_URL = "https://prepora.xpar.in";
 const OUT = resolve(import.meta.dirname, "../apps/web/public");
 
-function makeSitemap(urls: { loc: string; changefreq?: string; priority?: string }[]): string {
-  const items = urls.map(({ loc, changefreq = "weekly", priority = "0.7" }) =>
-    `  <url>\n    <loc>${loc}</loc>\n    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`
-  ).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${items}\n</urlset>`;
+async function main() {
+  const db = getDb();
+
+  const [examUrls, taxonomyUrls, questionSetUrls, questionUrls] = await Promise.all([
+    getExamSitemapUrls(db, BASE_URL),
+    getTaxonomySitemapUrls(db, BASE_URL),
+    getQuestionSetSitemapUrls(db, BASE_URL),
+    getQuestionSitemapUrls(db, BASE_URL),
+  ]);
+
+  writeFileSync(
+    `${OUT}/sitemap-pages.xml`,
+    buildSitemapXml([
+      ...getStaticSitemapUrls(BASE_URL, {
+        contributeEnabled: await isFeatureEnabled(db, "contribute"),
+      }),
+      ...taxonomyUrls,
+    ]),
+  );
+  writeFileSync(`${OUT}/sitemap-exams.xml`, buildSitemapXml(examUrls));
+  writeFileSync(`${OUT}/sitemap-question-sets.xml`, buildSitemapXml(questionSetUrls));
+  writeFileSync(`${OUT}/sitemap-questions.xml`, buildSitemapXml(questionUrls));
+  writeFileSync(
+    `${OUT}/sitemap.xml`,
+    buildSitemapIndexXml(BASE_URL, [
+      "sitemap-pages.xml",
+      "sitemap-exams.xml",
+      "sitemap-question-sets.xml",
+      "sitemap-questions.xml",
+    ]),
+  );
+
+  console.log(
+    `✅ Sitemaps generated in apps/web/public/ (${examUrls.length} exams, ${questionSetUrls.length} question sets, ${questionUrls.length} questions, ${taxonomyUrls.length} topics/subjects)`,
+  );
 }
 
-function makeSitemapIndex(sitemaps: string[]): string {
-  const items = sitemaps.map((s) =>
-    `  <sitemap>\n    <loc>${BASE_URL}/${s}</loc>\n  </sitemap>`
-  ).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${items}\n</sitemapindex>`;
-}
-
-const staticRoutes = [
-  { loc: `${BASE_URL}/`, priority: "1.0", changefreq: "daily" },
-  { loc: `${BASE_URL}/exams`, priority: "0.9", changefreq: "daily" },
-  { loc: `${BASE_URL}/subjects`, priority: "0.8", changefreq: "weekly" },
-  { loc: `${BASE_URL}/practice`, priority: "0.8", changefreq: "monthly" },
-  { loc: `${BASE_URL}/search`, priority: "0.5", changefreq: "monthly" },
-  { loc: `${BASE_URL}/contribute`, priority: "0.5", changefreq: "monthly" },
-];
-
-// Demo data — replace with DB queries after database is wired
-const examUrls = [
-  { loc: `${BASE_URL}/exams/kerala-psc`, priority: "0.9", changefreq: "weekly" },
-  { loc: `${BASE_URL}/exams/gate`, priority: "0.9", changefreq: "weekly" },
-  { loc: `${BASE_URL}/exams/ssc-je`, priority: "0.9", changefreq: "weekly" },
-];
-
-writeFileSync(`${OUT}/sitemap-pages.xml`, makeSitemap(staticRoutes));
-writeFileSync(`${OUT}/sitemap-exams.xml`, makeSitemap(examUrls));
-writeFileSync(`${OUT}/sitemap.xml`, makeSitemapIndex([
-  "sitemap-pages.xml",
-  "sitemap-exams.xml",
-  "sitemap-question-sets.xml",
-  "sitemap-questions.xml",
-]));
-
-console.log("✅ Sitemaps generated in apps/web/public/");
+main().catch((err) => {
+  console.error("❌ Sitemap generation failed:", err);
+  process.exit(1);
+});

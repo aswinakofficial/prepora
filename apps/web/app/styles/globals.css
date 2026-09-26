@@ -132,3 +132,13 @@
 .animate-fade-up {
   animation: fadeUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* Horizontally scrollable strips (the exam directory's category tabs, practice sidebars) scroll by
+   touch/trackpad without showing a raw scrollbar. Used as `scrollbar-hide`; it was referenced
+   before but never defined. */
+@utility scrollbar-hide {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,224 +1,228 @@
-import React, { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CheckCircle2, XCircle, FileText, ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { orpc } from "../../../lib/orpc";
 
 export const Route = createFileRoute("/admin/contributions")({
   head: () => ({ meta: [{ title: "Contribution Queue — Admin — Prepora" }] }),
   component: AdminContributionsPage,
 });
 
-interface Submission {
-  id: string;
-  exam: string;
-  variant: string;
-  year: number;
-  subject: string;
-  submittedBy: string;
-  submittedAt: string;
-  type: "markdown" | "pdf";
-  status: "pending" | "approved" | "rejected";
-  content: string;
-}
-
-const mockSubmissions: Submission[] = [
-  {
-    id: "sub-101",
-    exam: "Kerala PSC",
-    variant: "Assistant Engineer",
-    year: 2025,
-    subject: "Civil Engineering",
-    submittedBy: "Rahul V. (rahul@example.com)",
-    submittedAt: "10 mins ago",
-    type: "markdown",
-    status: "pending",
-    content: `# Question 1\nWhat is the SI unit of modulus of elasticity (Young's Modulus)?\nA) Newton (N)\nB) N/mm² (or Pascal, Pa)\nC) mm / N\nD) N · mm\n\nAnswer: B\nExplanation: Young's Modulus is defined as stress over strain. Unit is N/mm² or Pa.`,
-  },
-  {
-    id: "sub-102",
-    exam: "SSC CGL",
-    variant: "Tier 1 General Awareness",
-    year: 2024,
-    subject: "Indian Polity",
-    submittedBy: "Anonymous",
-    submittedAt: "1 hour ago",
-    type: "pdf",
-    status: "pending",
-    content: "[PDF File Attached: SSC_CGL_2024_Polity.pdf - 4.2 MB]",
-  },
-  {
-    id: "sub-103",
-    exam: "GATE",
-    variant: "Computer Science",
-    year: 2025,
-    subject: "Algorithms",
-    submittedBy: "Ananya S.",
-    submittedAt: "2 hours ago",
-    type: "markdown",
-    status: "approved",
-    content: `# GATE CS 2025 Q14\nWhat is the worst-case time complexity of QuickSort?\nA) O(n log n)\nB) O(n²)\nC) O(n)\nD) O(log n)\n\nAnswer: B`,
-  },
-];
+// docs/roadmap/engineering-roadmap.md item 24: this page used to hold three fake submissions in
+// local state with no persistence at all — approving or rejecting one just updated React state and
+// vanished on refresh. It now reads and writes the real `contributions` table via
+// contributions.list / contributions.updateStatus. The fabricated "System Diagnostics" panel
+// ("Structural integrity verified", "0 historical matches") has been removed rather than kept as
+// placeholder content, since it never reflected any real check.
 
 function AdminContributionsPage() {
-  const [submissions, setSubmissions] = useState<Submission[]>(mockSubmissions);
-  const [selectedId, setSelectedId] = useState<string>("sub-101");
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "pending" | "approved">("pending");
+
+  const { data: submissions = [], isLoading } = useQuery(
+    orpc.contributions.list.queryOptions({
+      input: { status: filter === "all" ? undefined : filter },
+    }),
+  );
+
+  const { mutateAsync: updateStatus, isPending: isUpdating } = useMutation(
+    orpc.contributions.updateStatus.mutationOptions(),
+  );
 
   const selectedSubmission = submissions.find((s) => s.id === selectedId) || submissions[0];
 
-  const handleAction = (id: string, newStatus: "approved" | "rejected") => {
-    setSubmissions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s))
-    );
+  const handleAction = async (id: string, newStatus: "approved" | "rejected") => {
+    await updateStatus({ id, status: newStatus });
+    queryClient.invalidateQueries({ queryKey: orpc.contributions.list.queryKey() });
   };
 
-  const filteredSubmissions = submissions.filter((s) => {
-    if (filter === "all") return true;
-    return s.status === filter;
-  });
+  const pendingCount = submissions.filter((s) => s.status === "pending").length;
 
   return (
-    <div className="min-h-screen bg-[#080c14] text-slate-100 p-6 space-y-6">
-      {/* Top Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white flex flex-col">
+      {/* Top Protocol Header */}
+      <div className="px-8 py-10 flex items-center justify-between border-b border-slate-900 sticky top-0 bg-[#06080a] z-20">
+        <div className="flex items-center gap-8">
           <Link
             to="/admin"
-            className="p-2 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200 transition-colors"
+            className="font-mono text-[10px] uppercase text-slate-500 hover:text-white border-b border-transparent hover:border-slate-500 transition-colors pb-1 flex items-center gap-2"
           >
-            <ArrowLeft className="w-4 h-4" />
+            ← Root
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-white flex items-center gap-2">
-              Contribution Review Queue
-              <span className="px-2 py-0.5 rounded-full bg-amber-950 border border-amber-800 text-amber-400 text-xs font-mono">
-                {submissions.filter((s) => s.status === "pending").length} Pending
+            <h1 className="text-2xl font-light text-white uppercase tracking-widest mb-1 flex items-center gap-4">
+              Ingestion Queue
+              <span className="font-mono text-[10px] tracking-widest px-2 py-0.5 border border-amber-900 bg-amber-950/20 text-amber-500">
+                {pendingCount} ACTIVE PENDING
               </span>
             </h1>
-            <p className="text-xs text-slate-400">Review community submissions, diff check, and approve for publishing.</p>
+            <p className="font-mono text-[10px] text-slate-600 tracking-widest uppercase">
+              Community Contributions / Review Queue
+            </p>
           </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
+        {/* Filter Matrix */}
+        <div className="flex items-center gap-2">
           {(["pending", "approved", "all"] as const).map((f) => (
             <button
+              type="button"
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono capitalize transition-all ${
-                filter === f ? "bg-slate-950 text-white shadow-sm border border-slate-800" : "text-slate-400 hover:text-slate-200"
+              className={`px-4 py-1.5 text-[10px] font-mono uppercase tracking-widest transition-all ${
+                filter === f
+                  ? "bg-slate-200 text-black border border-slate-200"
+                  : "bg-transparent border border-slate-800 text-slate-500 hover:text-white hover:border-slate-600"
               }`}
             >
-              {f}
+              / {f}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Main Split Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Main Matrix Split */}
+      <div className="flex-1 w-full grid grid-cols-1 lg:grid-cols-12">
         {/* Submissions List Sidebar */}
-        <div className="lg:col-span-4 space-y-3">
-          <div className="text-xs font-mono uppercase text-slate-400 tracking-wider">Submissions Queue</div>
-          <div className="space-y-2">
-            {filteredSubmissions.map((sub) => (
-              <button
-                key={sub.id}
-                onClick={() => setSelectedId(sub.id)}
-                className={`w-full text-left p-4 rounded-xl border transition-all space-y-2 ${
-                  selectedId === sub.id
-                    ? "border-blue-500/80 bg-slate-900/90 shadow-md shadow-blue-500/5"
-                    : "border-slate-800/80 bg-slate-900/40 hover:bg-slate-900/70"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-blue-400">{sub.exam}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono capitalize border ${
-                      sub.status === "pending"
-                        ? "bg-amber-950/60 border-amber-800/60 text-amber-400"
-                        : sub.status === "approved"
-                        ? "bg-emerald-950/60 border-emerald-800/60 text-emerald-400"
-                        : "bg-rose-950/60 border-rose-800/60 text-rose-400"
+        <div className="lg:col-span-4 border-r border-slate-900 flex flex-col h-[calc(100vh-109px)]">
+          <div className="flex-1 overflow-y-auto scrollbar-hide divide-y divide-slate-900">
+            {isLoading ? (
+              <div className="p-8 font-mono text-sm text-slate-500">Loading…</div>
+            ) : submissions.length === 0 ? (
+              <div className="p-8 font-mono text-sm text-slate-500">No contributions found.</div>
+            ) : (
+              submissions.map((sub) => {
+                const isSelected = (selectedId || submissions[0]?.id) === sub.id;
+                return (
+                  <button
+                    type="button"
+                    key={sub.id}
+                    onClick={() => setSelectedId(sub.id)}
+                    className={`w-full text-left p-8 transition-colors group ${
+                      isSelected ? "bg-slate-900/40" : "hover:bg-slate-900/20"
                     }`}
                   >
-                    {sub.status}
-                  </span>
-                </div>
-                <div className="text-xs font-semibold text-slate-200">{sub.variant} ({sub.year})</div>
-                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 font-mono">
-                  <span>{sub.subject}</span>
-                  <span>{sub.submittedAt}</span>
-                </div>
-              </button>
-            ))}
+                    <div className="flex flex-col gap-6">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono tracking-widest text-[#00ff9d] uppercase truncate max-w-[60%]">
+                          {sub.id}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono uppercase tracking-widest ${
+                            sub.status === "pending"
+                              ? "text-amber-500"
+                              : sub.status === "approved"
+                                ? "text-emerald-500"
+                                : sub.status === "rejected"
+                                  ? "text-red-500"
+                                  : "text-slate-500"
+                          }`}
+                        >
+                          [{sub.status}]
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="text-lg text-white font-light uppercase tracking-wide group-hover:text-white transition-colors mb-2">
+                          {sub.title || sub.examSlug || "Untitled contribution"}
+                        </h3>
+                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 tracking-widest uppercase">
+                          <span>{sub.subjectSlug || "—"}</span>
+                          <span>{sub.year || ""}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Selected Submission Inspector & Diff Viewer */}
-        <div className="lg:col-span-8 space-y-4">
-          <div className="p-6 rounded-2xl border border-slate-800 bg-slate-900/50 space-y-6">
-            {/* Metadata bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
-              <div>
-                <div className="text-xs font-mono text-slate-400">Submission ID: {selectedSubmission.id}</div>
-                <h2 className="text-base font-bold text-white mt-0.5">
-                  {selectedSubmission.exam} - {selectedSubmission.variant} ({selectedSubmission.year})
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Submitted by {selectedSubmission.submittedBy}</p>
-              </div>
-
-              {/* Action Buttons */}
-              {selectedSubmission.status === "pending" && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleAction(selectedSubmission.id, "rejected")}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-950/80 border border-rose-800/80 text-rose-300 text-xs font-mono hover:bg-rose-900 transition-colors"
-                  >
-                    <XCircle className="w-3.5 h-3.5" /> Reject
-                  </button>
-                  <button
-                    onClick={() => handleAction(selectedSubmission.id, "approved")}
-                    className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition-all"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Approve & Publish
-                  </button>
-                </div>
-              )}
+        {/* Selected Submission Inspector */}
+        <div className="lg:col-span-8 bg-[#06080a] h-[calc(100vh-109px)] overflow-y-auto">
+          {!selectedSubmission ? (
+            <div className="p-12 font-mono text-sm text-slate-500">
+              Select a contribution to review.
             </div>
+          ) : (
+            <>
+              {/* Metadata Matrix */}
+              <div className="p-8 md:p-12 border-b border-slate-900">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-12">
+                  <div>
+                    <h2 className="text-3xl md:text-5xl font-light text-white uppercase tracking-tighter leading-none mb-6">
+                      {selectedSubmission.title || selectedSubmission.examSlug || "Untitled"}
+                    </h2>
+                    <div className="flex flex-col gap-4">
+                      <span className="text-[10px] font-mono tracking-widest uppercase border-b border-slate-900/50 pb-2">
+                        <span className="text-slate-600">SRC: </span>
+                        <span className="text-slate-300">
+                          {selectedSubmission.contributorName ||
+                            selectedSubmission.contributorEmail ||
+                            "Anonymous"}
+                        </span>
+                      </span>
+                      <span className="text-[10px] font-mono tracking-widest uppercase">
+                        <span className="text-slate-600">SUBMITTED: </span>
+                        <span className="text-slate-300">
+                          {new Date(selectedSubmission.createdAt).toLocaleString()}
+                        </span>
+                      </span>
+                      {selectedSubmission.reviewNote && (
+                        <span className="text-[10px] font-mono tracking-widest uppercase">
+                          <span className="text-slate-600">REVIEW NOTE: </span>
+                          <span className="text-slate-300">{selectedSubmission.reviewNote}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
-            {/* Content Comparator / Inspector */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
-                <span className="flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-blue-400" /> Submitted Raw Format ({selectedSubmission.type.toUpperCase()})
-                </span>
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> Auto-validated syntax
-                </span>
+                  {/* Protocol Actions */}
+                  <div className="shrink-0 flex flex-col gap-4 min-w-[240px]">
+                    {selectedSubmission.status === "pending" ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={isUpdating}
+                          onClick={() => handleAction(selectedSubmission.id, "approved")}
+                          className="w-full px-6 py-4 border border-emerald-500 hover:bg-emerald-500 text-emerald-500 hover:text-black font-mono text-xs tracking-widest uppercase transition-colors text-center disabled:opacity-40"
+                        >
+                          APPROVE
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isUpdating}
+                          onClick={() => handleAction(selectedSubmission.id, "rejected")}
+                          className="w-full px-6 py-4 border border-red-900 hover:border-red-500 hover:bg-red-950/20 text-red-500 font-mono text-xs tracking-widest uppercase transition-colors text-center disabled:opacity-40"
+                        >
+                          REJECT
+                        </button>
+                      </>
+                    ) : (
+                      <div className="px-6 py-4 border border-slate-800 bg-slate-900/30 text-slate-500 font-mono text-xs tracking-widest uppercase text-center cursor-not-allowed">
+                        {selectedSubmission.status.toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-slate-800 bg-slate-950 font-mono text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
-                {selectedSubmission.content}
-              </div>
-            </div>
+              <div className="p-8 md:p-12">
+                <div className="flex items-center justify-between text-[10px] font-mono tracking-[0.3em] text-slate-600 uppercase mb-8 border-b border-slate-900 pb-4">
+                  <span>{selectedSubmission.markdownContent ? "MARKDOWN" : "PDF"}</span>
+                </div>
 
-            {/* System Parser Verification Log */}
-            <div className="p-4 rounded-xl border border-slate-800/60 bg-slate-950/50 space-y-2">
-              <div className="text-xs font-mono text-slate-400 uppercase tracking-wider">Automated Verification Log</div>
-              <div className="space-y-1 font-mono text-[11px]">
-                <div className="text-emerald-400 flex items-center gap-2">
-                  <CheckCircle2 className="w-3 h-3" /> Question Structure Validated (1 Question extracted)
-                </div>
-                <div className="text-emerald-400 flex items-center gap-2">
-                  <CheckCircle2 className="w-3 h-3" /> Answer Key Present & Mapped to Option B
-                </div>
-                <div className="text-slate-400 flex items-center gap-2">
-                  <Sparkles className="w-3 h-3 text-blue-400" /> Duplicate Check Passed (0 match found in Database)
+                <div className="p-8 border border-slate-900 bg-black text-slate-300 font-mono text-sm leading-8 whitespace-pre-wrap">
+                  {selectedSubmission.markdownContent ||
+                    (selectedSubmission.pdfStorageKey
+                      ? `[PDF: ${selectedSubmission.pdfStorageKey}]`
+                      : "No content.")}
                 </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>

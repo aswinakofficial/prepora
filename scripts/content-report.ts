@@ -4,7 +4,7 @@
  *
  * Generates a summary report of all content files.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parsePreporaMarkdown, validateParsedQuestionSet } from "@prepora/content";
 
@@ -16,18 +16,25 @@ function findMarkdownFiles(dir: string): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) files.push(...findMarkdownFiles(full));
-    else if (entry.endsWith(".md")) files.push(full);
+    // content/README.md documents the directory for humans, not a Prepora Markdown file itself.
+    else if (entry.endsWith(".md") && entry.toLowerCase() !== "readme.md") files.push(full);
   }
   return files;
 }
 
 const files = findMarkdownFiles(CONTENT_DIR);
-let totalQuestions = 0, validQuestions = 0, needsReview = 0, invalidFiles = 0;
+let totalQuestions = 0,
+  validQuestions = 0,
+  needsReview = 0,
+  invalidFiles = 0;
 
 for (const filePath of files) {
   const content = readFileSync(filePath, "utf-8");
   const result = parsePreporaMarkdown(content, filePath);
-  if (!result.data) { invalidFiles++; continue; }
+  if (!result.data) {
+    invalidFiles++;
+    continue;
+  }
   const report = validateParsedQuestionSet(result.data, filePath);
   totalQuestions += report.totalQuestions;
   validQuestions += report.validQuestions;

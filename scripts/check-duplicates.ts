@@ -5,9 +5,9 @@
  * Detects exact and near-duplicate questions across all content files.
  * Reports candidates for human review — never auto-merges.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { parsePreporaMarkdown, findDuplicates } from "@prepora/content";
+import { findDuplicates, parsePreporaMarkdown } from "@prepora/content";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const CONTENT_DIR = join(ROOT, "content");
@@ -17,7 +17,8 @@ function findMarkdownFiles(dir: string): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) files.push(...findMarkdownFiles(full));
-    else if (entry.endsWith(".md")) files.push(full);
+    // content/README.md documents the directory for humans, not a Prepora Markdown file itself.
+    else if (entry.endsWith(".md") && entry.toLowerCase() !== "readme.md") files.push(full);
   }
   return files;
 }

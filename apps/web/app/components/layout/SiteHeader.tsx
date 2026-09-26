@@ -1,111 +1,192 @@
-import React, { useState } from "react";
+import { Trans } from "@lingui/react";
 import { Link } from "@tanstack/react-router";
-import { Search, LogIn, Menu, X } from "lucide-react";
+import { Menu, Search, ShieldCheck, X } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { authClient } from "../../../lib/auth-client";
+import { useFeatureFlag } from "../../hooks/useFeatureFlag";
+import { useRBAC } from "../../hooks/useRBAC";
+import { RoleGuard } from "../auth/RoleGuard";
 import { SearchCommandModal } from "../search/SearchCommandModal";
 
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const { user, isAdmin, isAuthenticated } = useRBAC();
+  const { enabled: contributeEnabled } = useFeatureFlag("contribute");
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 gap-4">
-            {/* Logo */}
-            <Link
-              to="/"
-              className="flex items-center gap-2 font-bold text-xl tracking-tight text-slate-100 hover:text-blue-400 transition-colors shrink-0"
-              aria-label="Prepora home"
-            >
-              <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 font-extrabold text-base">
-                P
-              </div>
-              <span>Prepora</span>
-            </Link>
-
-            {/* Quick ⌘K Search Trigger (Center) */}
+      <header className="border-b border-slate-900/80 mb-6 md:mb-12 shrink-0 w-full z-40 bg-[#06080a]">
+        {/* Mobile: one compact row — brand, search, menu. The desktop grid below used to stack
+            into three full-width rows here, taking a quarter of a phone screen. */}
+        <div className="md:hidden flex items-center justify-between px-4 py-4 text-xs font-mono tracking-widest uppercase">
+          <Link
+            to="/"
+            onClick={() => setMenuOpen(false)}
+            className="text-white font-bold tracking-[0.3em]"
+          >
+            PREPORA
+          </Link>
+          <div className="flex items-center gap-1">
             <button
+              type="button"
               onClick={() => setSearchModalOpen(true)}
-              className="hidden md:flex items-center gap-3 px-3.5 py-1.5 rounded-xl border border-slate-800 bg-slate-900/60 
-                         hover:border-slate-700 hover:bg-slate-900 text-slate-400 text-sm transition-all flex-1 max-w-md"
+              aria-label="Search"
+              className="p-2.5 text-slate-400 hover:text-white transition-colors"
             >
-              <Search className="w-4 h-4 text-slate-400" />
-              <span className="text-slate-400 text-xs sm:text-sm">Search exams, questions, topics...</span>
-              <kbd className="ml-auto px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
+              <Search className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+              aria-controls="mobile-menu"
+              className="p-2.5 text-slate-400 hover:text-white transition-colors"
+            >
+              {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
+        {menuOpen && (
+          <nav
+            id="mobile-menu"
+            className="md:hidden border-t border-slate-900/80 px-4 pb-4 flex flex-col text-xs font-mono tracking-widest uppercase"
+          >
+            {[
+              { to: "/exams", label: <Trans id="Exams">Exams</Trans> },
+              ...(contributeEnabled
+                ? [{ to: "/contribute", label: <Trans id="Contribute">Contribute</Trans> }]
+                : []),
+            ].map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                onClick={() => setMenuOpen(false)}
+                className="py-3 border-b border-slate-900/60 text-slate-300 hover:text-white"
+              >
+                {item.label}
+              </Link>
+            ))}
+            <RoleGuard requireAdmin>
+              <Link
+                to="/admin"
+                onClick={() => setMenuOpen(false)}
+                className="py-3 border-b border-slate-900/60 text-emerald-400 flex items-center gap-2"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Dashboard
+              </Link>
+            </RoleGuard>
+            {isAuthenticated ? (
+              <div className="py-3 flex items-center justify-between gap-4">
+                <span className="text-[10px] text-slate-500 normal-case tracking-normal truncate">
+                  {user?.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setMenuOpen(false);
+                    await authClient.signOut();
+                  }}
+                  className="text-slate-400 hover:text-white uppercase tracking-widest shrink-0"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/auth/signin"
+                onClick={() => setMenuOpen(false)}
+                className="py-3 text-slate-300 hover:text-white"
+              >
+                Sign In
+              </Link>
+            )}
+          </nav>
+        )}
+
+        <div className="hidden max-w-[1400px] mx-auto md:grid md:grid-cols-12 text-xs font-mono tracking-widest uppercase">
+          {/* Brand Col */}
+          <div className="md:col-span-3 md:border-r border-slate-900/50 p-6 flex flex-col justify-center">
+            <Link to="/" className="text-white font-bold tracking-[0.3em]">
+              PREPORA
+            </Link>
+          </div>
+
+          {/* Main Nav Col */}
+          <div className="md:col-span-6 p-6 flex items-center gap-12 overflow-x-auto md:border-r border-slate-900/50">
+            <Link
+              to="/exams"
+              className="text-slate-500 hover:text-white transition-colors shrink-0"
+            >
+              <Trans id="Exams">Exams</Trans>
+            </Link>
+            {contributeEnabled && (
+              <Link
+                to="/contribute"
+                className="text-slate-500 hover:text-white transition-colors shrink-0"
+              >
+                <Trans id="Contribute">Contribute</Trans>
+              </Link>
+            )}
+          </div>
+
+          {/* Action Col */}
+          <div className="md:col-span-3 p-6 flex items-center justify-end gap-6">
+            <RoleGuard requireAdmin>
+              <Link
+                to="/admin"
+                className="text-emerald-400 font-bold hover:text-emerald-300 transition-colors shrink-0 flex items-center gap-1.5 border border-emerald-950 bg-emerald-950/30 px-2.5 py-1 rounded-sm"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                Dashboard
+              </Link>
+            </RoleGuard>
+
+            {isAuthenticated ? (
+              <div className="flex items-center gap-4">
+                {!isAdmin && (
+                  <span className="hidden sm:inline font-mono text-[10px] text-slate-500 tracking-wider truncate max-w-[120px]">
+                    {user?.email}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={async () => await authClient.signOut()}
+                  className="text-slate-500 hover:text-white transition-colors shrink-0 font-mono uppercase tracking-widest text-xs"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/auth/signin"
+                className="text-slate-500 hover:text-white transition-colors shrink-0"
+              >
+                Sign In
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={() => setSearchModalOpen(true)}
+              className="text-slate-500 hover:text-white transition-colors flex items-center gap-2 shrink-0 group"
+            >
+              Scan{" "}
+              <kbd className="text-[9px] px-1.5 py-0.5 border border-slate-800 text-slate-600 group-hover:border-slate-500 transition-colors">
                 ⌘K
               </kbd>
             </button>
-
-            {/* Desktop nav */}
-            <nav className="hidden lg:flex items-center gap-1" aria-label="Main navigation">
-              <NavLink to="/exams">Exams</NavLink>
-              <NavLink to="/subjects">Subjects</NavLink>
-              <NavLink to="/practice">Practice</NavLink>
-            </nav>
-
-            {/* Desktop actions */}
-            <div className="hidden md:flex items-center gap-3 shrink-0">
-              <Link
-                to="/contribute"
-                className="text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors px-2.5 py-1.5 rounded-lg"
-              >
-                Contribute
-              </Link>
-              <Link
-                to={"/auth/signin" as any}
-                className="flex items-center gap-1.5 text-sm font-medium px-3.5 py-1.5 rounded-xl 
-                           border border-slate-800 bg-slate-900 text-slate-200 hover:border-slate-700 hover:bg-slate-800 hover:text-white transition-all shadow-sm"
-              >
-                <LogIn className="w-4 h-4 text-slate-400" aria-hidden="true" />
-                Sign in
-              </Link>
-            </div>
-
-            {/* Mobile menu & search toggle */}
-            <div className="flex items-center gap-2 md:hidden">
-              <button
-                onClick={() => setSearchModalOpen(true)}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 transition-colors"
-                aria-label="Search"
-              >
-                <Search className="w-5 h-5" />
-              </button>
-              <button
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 transition-colors"
-                onClick={() => setMenuOpen(!menuOpen)}
-                aria-expanded={menuOpen}
-                aria-label="Toggle menu"
-              >
-                {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
-            </div>
           </div>
-
-          {/* Mobile nav */}
-          {menuOpen && (
-            <nav
-              className="md:hidden py-3 border-t border-slate-800 flex flex-col gap-1 animate-fade-up"
-              aria-label="Mobile navigation"
-            >
-              <MobileNavLink to="/exams" onClick={() => setMenuOpen(false)}>Exams</MobileNavLink>
-              <MobileNavLink to="/subjects" onClick={() => setMenuOpen(false)}>Subjects</MobileNavLink>
-              <MobileNavLink to="/practice" onClick={() => setMenuOpen(false)}>Practice</MobileNavLink>
-              <MobileNavLink to="/search" onClick={() => setMenuOpen(false)}>Search</MobileNavLink>
-              <MobileNavLink to="/contribute" onClick={() => setMenuOpen(false)}>Contribute</MobileNavLink>
-              <MobileNavLink to={"/auth/signin" as any} onClick={() => setMenuOpen(false)}>Sign in</MobileNavLink>
-            </nav>
-          )}
         </div>
       </header>
 
-      {/* ⌘K Command Modal */}
       <SearchCommandModal isOpen={searchModalOpen} onClose={() => setSearchModalOpen(false)} />
     </>
   );
 }
 
-function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+function _NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link
       to={to}
@@ -118,7 +199,7 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   );
 }
 
-function MobileNavLink({
+function _MobileNavLink({
   to,
   children,
   onClick,

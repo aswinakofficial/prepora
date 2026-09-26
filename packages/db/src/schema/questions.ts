@@ -1,23 +1,15 @@
+import { relations, sql } from "drizzle-orm";
+import { boolean, index, integer, pgTable, text, unique } from "drizzle-orm/pg-core";
+import { questionSets, topics } from "./catalog.ts";
 import {
-  pgTable,
-  text,
-  integer,
-  boolean,
-  index,
-  unique,
-} from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import {
+  aiSourceEnum,
+  difficultyEnum,
   id,
-  timestamps,
   publishingStatusEnum,
   questionTypeEnum,
-  difficultyEnum,
-  sourceTypeEnum,
-  aiSourceEnum,
+  timestamps,
+  tsvector,
 } from "./shared.ts";
-import { questionSets } from "./catalog.ts";
-import { topics, subjects } from "./catalog.ts";
 
 // ─── Questions (canonical) ────────────────────────────────────────────────────
 
@@ -25,9 +17,18 @@ export const questions = pgTable(
   "questions",
   {
     id: id(),
-    stableContentId: text("stable_content_id").unique(), // e.g. KPSC-AE-2025-CIVIL-Q001
+    stableContentId: text("stable_content_id").unique(), // e.g. KPSC-AE-2025-CIVIL-Q001 — a
+    // per-*appearance* id (it embeds year), so it alone cannot tell "the same question in a
+    // different year's paper" from a genuinely new question — see contentHash below.
     slug: text("slug").notNull(),
     questionText: text("question_text").notNull(),
+    // Exact-duplicate content hash — the same normalize+djb2 algorithm as
+    // packages/content/src/duplicates.ts's contentHash(), ported to Python in
+    // apps/pipeline/prepora_pipeline/stages/publish.py. This is what lets the same question
+    // republished under a different stable_content_id (a different exam year) reuse the existing
+    // canonical row instead of creating a duplicate — an exact-match-only precursor to the fuzzy
+    // near-duplicate detection docs/roadmap/engineering-roadmap.md item 20 adds on top.
+    contentHash: text("content_hash"),
     questionType: questionTypeEnum("question_type").notNull().default("mcq"),
     explanation: text("explanation"),
     sourceLabel: aiSourceEnum("source_label").notNull().default("verified"),
@@ -35,13 +36,23 @@ export const questions = pgTable(
     difficultySource: text("difficulty_source"), // 'official' | 'editorial' | 'community'
     topicId: text("topic_id").references(() => topics.id),
     status: publishingStatusEnum("status").notNull().default("draft"),
+    // docs/roadmap/engineering-roadmap.md item 23 — generated, not maintained by application code:
+    // Postgres recomputes it on every insert/update of question_text or explanation, so it can
+    // never silently drift out of sync the way a manually-updated column could. Question text is
+    // weighted 'A' (highest), explanation 'B' — a match in the question itself should always rank
+    // above a match that only appears in its explanation.
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(question_text, '')), 'A') || setweight(to_tsvector('english', coalesce(explanation, '')), 'B')`,
+    ),
     ...timestamps,
   },
   (t) => [
     index("questions_slug_idx").on(t.slug),
     index("questions_stable_id_idx").on(t.stableContentId),
+    index("questions_content_hash_idx").on(t.contentHash),
     index("questions_topic_id_idx").on(t.topicId),
     index("questions_status_idx").on(t.status),
+    index("questions_search_vector_idx").using("gin", t.searchVector),
   ],
 );
 
@@ -137,8 +148,15 @@ export const media = pgTable("media", {
   mimeType: text("mime_type").notNull(),
   sizeBytes: integer("size_bytes"),
   altText: text("alt_text"),
-  questionId: text("question_id").references(() => questions.id),
+  // Cascades like question_options/question_answers do — an image belongs to its question, and
+  // without this any question with an image could never be deleted.
+  questionId: text("question_id").references(() => questions.id, { onDelete: "cascade" }),
   questionSetId: text("question_set_id").references(() => questionSets.id),
+  // Where a question's image appears: "question" (the stem), "option" (with optionKey), or
+  // "explanation"; position orders images within the same placement.
+  placement: text("placement"),
+  optionKey: text("option_key"),
+  position: integer("position").notNull().default(0),
   uploadedBy: text("uploaded_by"),
   ...timestamps,
 });
@@ -160,10 +178,28 @@ export const questionOptionsRelations = relations(questionOptions, ({ one }) => 
 
 export const questionAnswersRelations = relations(questionAnswers, ({ one }) => ({
   question: one(questions, { fields: [questionAnswers.questionId], references: [questions.id] }),
-  correctOption: one(questionOptions, { fields: [questionAnswers.correctOptionId], references: [questionOptions.id] }),
+  correctOption: one(questionOptions, {
+    fields: [questionAnswers.correctOptionId],
+    references: [questionOptions.id],
+  }),
 }));
 
 export const questionOccurrencesRelations = relations(questionOccurrences, ({ one }) => ({
-  question: one(questions, { fields: [questionOccurrences.questionId], references: [questions.id] }),
-  questionSet: one(questionSets, { fields: [questionOccurrences.questionSetId], references: [questionSets.id] }),
+  question: one(questions, {
+    fields: [questionOccurrences.questionId],
+    references: [questions.id],
+  }),
+  questionSet: one(questionSets, {
+    fields: [questionOccurrences.questionSetId],
+    references: [questionSets.id],
+  }),
 }));
+
+// ─── Zod Schemas ──────────────────────────────────────────────────────────────
+
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+
+export const insertQuestionSchema = createInsertSchema(questions);
+export const selectQuestionSchema = createSelectSchema(questions);
+export const insertQuestionOptionSchema = createInsertSchema(questionOptions);
+export const selectQuestionOptionSchema = createSelectSchema(questionOptions);

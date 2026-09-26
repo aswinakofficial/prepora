@@ -1,7 +1,6 @@
-import { pgTable, text, integer, boolean, index } from "drizzle-orm/pg-core";
-import { id, timestamps, redirectStatusEnum } from "./shared.ts";
+import { index, integer, pgTable, text } from "drizzle-orm/pg-core";
+import { id, redirectStatusEnum, timestamps } from "./shared.ts";
 import { users } from "./users.ts";
-import { questions } from "./questions.ts";
 
 // ─── Analytics Events ─────────────────────────────────────────────────────────
 
@@ -93,7 +92,5 @@ export const contentVersions = pgTable(
     changeNote: text("change_note"),
     ...timestamps,
   },
-  (t) => [
-    index("content_versions_entity_idx").on(t.entityType, t.entityId),
-  ],
+  (t) => [index("content_versions_entity_idx").on(t.entityType, t.entityId)],
 );

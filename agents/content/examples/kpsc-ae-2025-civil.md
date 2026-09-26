@@ -1,7 +1,8 @@
 ---
 id: KPSC-AE-2025-CIVIL
-exam: kerala-psc
-exam_variant: assistant-engineer
+organization: kerala-psc
+exam: assistant-engineer
+exam_variant: civil
 year: 2025
 subject: civil-engineering
 title: Kerala PSC Assistant Engineer 2025 Civil Engineering
@@ -66,6 +67,8 @@ For a simply supported beam with UDL, the maximum bending moment occurs at
 mid-span and equals wL²/8.
 
 **Topic:** Theory of Structures
+
+**Tags:** beam-design, bending-moment, udl
 
 ---
 

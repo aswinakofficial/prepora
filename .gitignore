@@ -1,6 +1,46 @@
 .env
 .env.local
+.dev.vars
+.dev.vars.*
 node_modules/
 dist/
 .vinxi/
 .output/
+.wrangler/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# apps/pipeline's local raw artifact store (item 12) — content-addressed, regenerable from source,
+# and can grow large; never belongs in git.
+.data/
+
+# Vendored reference clones — never commit third-party source into this repo
+reactive-resume-repo/
+
+# Stray build artifacts occasionally left by vinxi/vite in apps/web
+apps/web/app.config.timestamp_*.js
+
+# Playwright e2e output (tests/e2e, item 21) — regenerated per run, never belongs in git.
+test-results/
+playwright-report/
+
+# Dev-server output captured for live/agentic debugging (see CLAUDE.md) — local scratch, never
+# belongs in git.
+.dev-logs/
+
+# Generated sitemap/RSS files (docs/roadmap/engineering-roadmap.md item 26) — database-backed and
+# wired into `pnpm build` (content:sitemap, content:rss) so they can't drift; committing a
+# generated snapshot would just go stale the moment new content is published.
+apps/web/public/sitemap.xml
+apps/web/public/sitemap-pages.xml
+apps/web/public/sitemap-exams.xml
+apps/web/public/sitemap-question-sets.xml
+apps/web/public/sitemap-questions.xml
+apps/web/public/rss.xml
+
+# Local installer downloads (e.g. a desktop app .deb) — never repository content.
+*.deb

@@ -4,6 +4,12 @@
 
 An SEO-first exam preparation platform for Kerala PSC, GATE, SSC JE, UPSC and more.
 
+> **Project status.** Prepora is under active development and is not yet a finished product.
+> [`docs/architecture/prepora-next-level-plan.md`](docs/architecture/prepora-next-level-plan.md) is
+> an honest, evidence-based audit of what currently works versus what is UI/schema only, and
+> [`docs/roadmap/engineering-roadmap.md`](docs/roadmap/engineering-roadmap.md) is the plan to close
+> the gap. Read those before assuming a feature described below is fully wired end to end.
+
 ---
 
 ## Stack
@@ -11,12 +17,13 @@ An SEO-first exam preparation platform for Kerala PSC, GATE, SSC JE, UPSC and mo
 | Layer | Technology |
 |---|---|
 | Framework | TanStack Start + TanStack Router |
-| UI | React + Tailwind CSS + shadcn/ui |
-| Database | PostgreSQL + Drizzle ORM |
-| Validation | Zod + Conform |
-| Content | Markdown → Parser → Zod → PostgreSQL |
+| UI | React + Tailwind CSS + Radix UI |
+| Database | PostgreSQL (Neon) + Drizzle ORM |
+| Validation | Zod |
+| Scraping / ingestion | Python + FastAPI (`apps/scraper/`) — being replaced by the pipeline in the roadmap above |
+| Content format | A Markdown spec (`agents/content/schema.md`) with a parser and validator in `packages/content/`; not yet wired to the database — see the roadmap |
 | Auth | Better Auth |
-| Language | TypeScript (throughout) |
+| Language | TypeScript (web + packages), Python (scraper) |
 
 ---
 
@@ -79,14 +86,18 @@ See `agents/content/schema.md` for the Prepora Markdown format.
 
 ```
 prepora/
-├── apps/web/           # TanStack Start web application
-│   └── app/
-│       ├── routes/     # File-based routes (public + admin)
-│       ├── components/ # React components
-│       └── styles/     # Global CSS
+├── apps/
+│   ├── web/            # TanStack Start web application
+│   │   └── app/
+│   │       ├── routes/     # File-based routes (public + admin)
+│   │       ├── components/ # React components
+│   │       └── styles/     # Global CSS
+│   └── scraper/        # Python FastAPI scraping service (local-only; see roadmap)
 │
 ├── packages/
 │   ├── db/             # Drizzle ORM schema + client
+│   ├── api/            # oRPC routers (exams, questions, admin)
+│   ├── auth/           # Better Auth instance + authorization helpers
 │   ├── content/        # Markdown parser + Zod schemas + validation
 │   └── config/         # Shared TypeScript config
 │
@@ -95,6 +106,10 @@ prepora/
 │   ├── schema.md       # Markdown format spec
 │   ├── rules.md        # Content rules
 │   └── examples/       # Example content files
+│
+├── docs/
+│   ├── architecture/   # Evidence-based architecture audit
+│   └── roadmap/        # Dependency-ordered engineering roadmap
 │
 ├── scripts/            # Developer CLI tools
 ├── content/            # Source Markdown content files
@@ -107,17 +122,21 @@ prepora/
 
 - [x] Phase 1 — Foundation (monorepo, TanStack Start, Tailwind, TypeScript)
 - [x] Phase 2 — Domain model (PostgreSQL + Drizzle schema)
-- [x] Phase 3 — Content engine (parser + Zod + validation)
+- [ ] Phase 3 — Content engine (parser + Zod + validation exist in `packages/content/`; not yet wired to write to the database — see the roadmap's "Markdown as a connector")
 - [x] Phase 4 — Content Agent (agent docs + examples)
 - [x] Phase 5 — Admin CMS (dashboard, layout)
-- [x] Phase 6 — Public platform (homepage, exam/question/subject/topic pages)
-- [x] Phase 7 — Practice mode
-- [x] Phase 8 — Community (contributions, reports)
+- [ ] Phase 6 — Public platform (pages exist; several still render fixture data rather than the database — see the roadmap's "Retire the mock datasets")
+- [ ] Phase 7 — Practice mode (UI works; results are not yet persisted to the database)
+- [ ] Phase 8 — Community (contribution/comment/report UI exists; not yet wired to the database)
 - [ ] Phase 9 — User accounts (Better Auth integration)
 - [ ] Phase 10 — AI features
 - [ ] Phase 11 — Full SEO (structured data, sitemaps live)
 - [ ] Phase 12 — Analytics
 - [ ] Phase 13 — Hardening + E2E tests
+
+See the [architecture audit](docs/architecture/prepora-next-level-plan.md) for the evidence behind
+each of these statuses, and the [roadmap](docs/roadmap/engineering-roadmap.md) for the plan to
+complete them.
 
 ---
 
@@ -127,3 +146,9 @@ Use an AI model (Claude, Gemini, GPT) with the prompt in `agents/content/AGENT.m
 to convert raw question papers into valid Prepora Markdown.
 
 The agent **never invents answers** — it flags ambiguous content for human review.
+
+---
+
+## License
+
+[MIT](LICENSE)

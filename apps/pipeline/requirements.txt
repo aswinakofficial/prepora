@@ -1,0 +1,11 @@
+pydantic
+psycopg2-binary
+python-dotenv
+PyYAML
+rapidfuzz
+beautifulsoup4
+requests
+fastapi
+uvicorn
+pytest
+ruff

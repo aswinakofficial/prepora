@@ -1,0 +1,11 @@
+name: indiabix
+base_url: https://www.indiabix.com
+source_type: educational
+connector_name: indiabix
+requires_auth: false
+crawl_policy:
+  max_depth: 1
+  max_pages: 100
+rate_limit:
+  requests_per_minute: 20
+robots_review_status: not_reviewed

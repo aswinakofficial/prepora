@@ -1,10 +1,5 @@
 import matter from "gray-matter";
-import type {
-  ParsedQuestionSet,
-  Question,
-  QuestionOption,
-  Answer,
-} from "./schema.ts";
+import type { Answer, ParsedQuestionSet, Question, QuestionOption } from "./schema.ts";
 import { QuestionSetFrontmatterSchema } from "./schema.ts";
 
 // ─── Markdown parser helpers ──────────────────────────────────────────────────
@@ -31,12 +26,10 @@ function parseAnswerLine(line: string): Answer | null {
       .split(/[,\s]+and\s+|,\s*/)
       .map((k) => k.trim().toUpperCase())
       .filter((k) => /^[A-Z]$/.test(k));
-    if (keys.length > 1)
-      return { type: "multiple_correct", correctKeys: keys };
+    if (keys.length > 1) return { type: "multiple_correct", correctKeys: keys };
   }
   // Single letter MCQ
-  if (/^[A-Za-z]$/.test(raw))
-    return { type: "mcq", correctKey: raw.toUpperCase() };
+  if (/^[A-Za-z]$/.test(raw)) return { type: "mcq", correctKey: raw.toUpperCase() };
   // Numerical
   if (/^[-\d.]+$/.test(raw)) return { type: "numerical", answer: raw };
   // Text fallback
@@ -46,7 +39,7 @@ function parseAnswerLine(line: string): Answer | null {
 /**
  * Extract explanation following "**Explanation:**" until next heading or HR
  */
-function extractExplanation(lines: string[], fromIndex: number): string {
+function _extractExplanation(lines: string[], fromIndex: number): string {
   const parts: string[] = [];
   for (let i = fromIndex; i < lines.length; i++) {
     const l = lines[i];
@@ -66,6 +59,7 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
   let explanation: string | undefined;
   let topic: string | undefined;
   let difficulty: Question["difficulty"];
+  let tags: string[] | undefined;
   let needsReview = false;
   let reviewNote: string | undefined;
 
@@ -82,12 +76,25 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
     // Answer line
     const answerMatch = line.match(/^\*{0,2}Answer[:\s*]*\*{0,2}:?\s*(.+)/i);
     if (answerMatch) {
-      const parsed = parseAnswerLine(line);
-      if (parsed) {
-        answer = parsed;
-      } else {
+      // The documented content convention (agents/content/rules.md's Flagging section) mandates
+      // the literal string "FLAG FOR HUMAN REVIEW" — optionally followed by "— <reason>" — as the
+      // answer whenever the source material doesn't support one. This used to fall through to
+      // parseAnswerLine's text-fallback branch and parse as an ordinary answer, so the documented
+      // safety net never fired (docs/architecture/prepora-next-level-plan.md finding #12,
+      // docs/roadmap/engineering-roadmap.md item 19). Checked before parseAnswerLine so it can
+      // never be mistaken for a real answer.
+      const flagMatch = answerMatch[1].trim().match(/^FLAG FOR HUMAN REVIEW\b\s*[-—]*\s*(.*)$/i);
+      if (flagMatch) {
         needsReview = true;
-        reviewNote = `Could not parse answer: "${line}"`;
+        reviewNote = flagMatch[1].trim() || "Flagged for human review by content agent";
+      } else {
+        const parsed = parseAnswerLine(line);
+        if (parsed) {
+          answer = parsed;
+        } else {
+          needsReview = true;
+          reviewNote = `Could not parse answer: "${line}"`;
+        }
       }
       mode = "explanation";
       continue;
@@ -109,11 +116,25 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
 
     // Difficulty line
     if (line.match(/^\*{0,2}Difficulty[:\s*]*\*{0,2}:?\s*/i)) {
-      const d = line
+      const rawDifficulty = line
         .replace(/^\*{0,2}Difficulty[:\s*]*\*{0,2}:?\s*/i, "")
         .trim()
-        .toLowerCase() as Question["difficulty"];
-      if (["easy", "medium", "hard", "expert"].includes(d!)) difficulty = d;
+        .toLowerCase();
+      if (["easy", "medium", "hard", "expert"].includes(rawDifficulty)) {
+        difficulty = rawDifficulty as Question["difficulty"];
+      }
+      continue;
+    }
+
+    // Tags line — specified in agents/content/schema.md's Tags section but never parsed until
+    // docs/roadmap/engineering-roadmap.md item 22.
+    if (line.match(/^\*{0,2}Tags[:\s*]*\*{0,2}:?\s*/i)) {
+      const rawTags = line.replace(/^\*{0,2}Tags[:\s*]*\*{0,2}:?\s*/i, "").trim();
+      const parsedTags = rawTags
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+      if (parsedTags.length > 0) tags = parsedTags;
       continue;
     }
 
@@ -160,6 +181,7 @@ function parseQuestionBlock(rawLines: string[], questionNumber: number): Questio
     explanation: explanation?.trim(),
     topic,
     difficulty,
+    tags,
     needsReview,
     reviewNote,
   };
@@ -177,7 +199,7 @@ export interface ParseResult {
  * Returns errors if frontmatter validation fails; partial question data when
  * individual question blocks have issues (flagged as needsReview).
  */
-export function parsePreporaMarkdown(markdown: string, filePath = "<input>"): ParseResult {
+export function parsePreporaMarkdown(markdown: string, _filePath = "<input>"): ParseResult {
   const errors: string[] = [];
 
   // 1. Parse frontmatter
@@ -204,18 +226,26 @@ export function parsePreporaMarkdown(markdown: string, filePath = "<input>"): Pa
   const allLines = content.split("\n");
   let currentBlock: string[] = [];
   let currentNumber = 0;
+  // A block only has real content once it has a non-blank line — a blank line between a trailing
+  // "---" and the next "# Question N" heading (exactly what agents/content/schema.md's own File
+  // Structure example, and both files in agents/content/examples/, look like) otherwise gets
+  // counted as "content" by a bare `.length > 0` check, producing a phantom empty, needsReview
+  // question between every real pair. Found by actually running the real example files through
+  // this parser rather than trusting only synthetic unit-test snippets — see
+  // docs/roadmap/engineering-roadmap.md item 22.
+  const hasContent = (block: string[]) => block.some((l) => l.trim().length > 0);
 
   for (const line of allLines) {
     const heading = line.match(/^#\s+Question\s+(\d+)/i);
     if (heading) {
-      if (currentBlock.length > 0 && currentNumber > 0) {
+      if (hasContent(currentBlock) && currentNumber > 0) {
         questionBlocks.push({ number: currentNumber, lines: currentBlock });
       }
       currentNumber = parseInt(heading[1], 10);
       currentBlock = [];
     } else if (line.trim() === "---") {
       // HR as question separator
-      if (currentBlock.length > 0 && currentNumber > 0) {
+      if (hasContent(currentBlock) && currentNumber > 0) {
         questionBlocks.push({ number: currentNumber, lines: currentBlock });
         currentBlock = [];
         currentNumber++;
@@ -224,7 +254,7 @@ export function parsePreporaMarkdown(markdown: string, filePath = "<input>"): Pa
       currentBlock.push(line);
     }
   }
-  if (currentBlock.length > 0 && currentNumber > 0) {
+  if (hasContent(currentBlock) && currentNumber > 0) {
     questionBlocks.push({ number: currentNumber, lines: currentBlock });
   }
 
@@ -234,9 +264,7 @@ export function parsePreporaMarkdown(markdown: string, filePath = "<input>"): Pa
   }
 
   // 3. Parse each block
-  const questions = questionBlocks.map(({ number, lines }) =>
-    parseQuestionBlock(lines, number),
-  );
+  const questions = questionBlocks.map(({ number, lines }) => parseQuestionBlock(lines, number));
 
   return {
     data: {

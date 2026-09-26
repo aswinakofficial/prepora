@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 100
+exclude = ["venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+# E501 (line length) is off: this codebase predates a line-length convention and much of the
+# overage is long log/f-string messages, not something worth reformatting wholesale here.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]

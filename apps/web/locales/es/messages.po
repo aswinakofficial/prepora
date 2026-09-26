@@ -1,0 +1,24 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-09-10 15:37+0530\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: es\n"
+
+#: app/components/layout/SiteHeader.tsx:73
+msgid "Contribute"
+msgstr ""
+
+#: app/components/layout/SiteHeader.tsx:70
+msgid "Exams"
+msgstr ""
+
+#: app/components/layout/SiteHeader.tsx:72
+msgid "Practice"
+msgstr ""
+
+#: app/components/layout/SiteHeader.tsx:71
+msgid "Subjects"
+msgstr ""

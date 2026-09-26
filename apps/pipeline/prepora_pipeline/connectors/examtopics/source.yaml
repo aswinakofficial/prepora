@@ -1,0 +1,11 @@
+name: examtopics
+base_url: https://www.examtopics.com
+source_type: certification
+connector_name: examtopics
+requires_auth: false
+crawl_policy:
+  max_depth: 1
+  max_pages: 100
+rate_limit:
+  requests_per_minute: 20
+robots_review_status: not_reviewed

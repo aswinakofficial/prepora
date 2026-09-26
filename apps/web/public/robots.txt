@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://prepora.in/sitemap.xml
+Sitemap: https://prepora.xpar.in/sitemap.xml

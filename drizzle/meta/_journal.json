@@ -8,6 +8,97 @@
       "when": 1788261354417,
       "tag": "0000_crazy_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788604097315,
+      "tag": "0001_flowery_thor",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789835776885,
+      "tag": "0002_violet_clea",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789835966824,
+      "tag": "0003_goofy_secret_warriors",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789837783688,
+      "tag": "0004_moaning_shockwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789840929392,
+      "tag": "0005_wise_wiccan",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789862434593,
+      "tag": "0006_acoustic_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789869459786,
+      "tag": "0007_damp_vertigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789872717091,
+      "tag": "0008_chief_madelyne_pryor",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789880556290,
+      "tag": "0009_flaky_pepper_potts",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789898767636,
+      "tag": "0010_fair_forge",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790326274175,
+      "tag": "0011_sudden_thunderball",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790358828609,
+      "tag": "0012_nifty_lorna_dane",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790385067857,
+      "tag": "0013_messy_vindicator",
+      "breakpoints": true
     }
   ]
 }

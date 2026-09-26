@@ -4,9 +4,20 @@ import { z } from "zod";
 
 export const QuestionSetFrontmatterSchema = z.object({
   id: z.string().min(1, "Stable content ID is required"),
+  // NEW, optional — organization slug; resolved against the organizations table at publish time.
+  // Not required: content authored before an organization is registered still parses; the connector
+  // fails at normalize/publish time if the slug doesn't resolve, not here at parse time.
+  organization: z.string().optional(),
   exam: z.string().min(1, "exam slug is required"),
   exam_variant: z.string().min(1, "exam_variant slug is required"),
   year: z.number().int().min(1900).max(2100).optional(),
+  // NEW, optional — for sessions where `year` alone is ambiguous or absent (a certification
+  // version, a university semester string). Resolves into the exam_session's label.
+  session_label: z.string().optional(),
+  // NEW, optional — GATE-style shift disambiguation (e.g. "Forenoon Shift 1").
+  shift: z.string().optional(),
+  // NEW, optional — university/school only; resolves a `courses` row by (exam_variant, subject).
+  course: z.string().optional(),
   subject: z.string().min(1, "subject slug is required"),
   title: z.string().min(1, "title is required"),
   source_type: z
@@ -32,16 +43,12 @@ export type QuestionOption = z.infer<typeof QuestionOptionSchema>;
 
 export const MCQAnswerSchema = z.object({
   type: z.literal("mcq"),
-  correctKey: z
-    .string()
-    .regex(/^[A-Za-z]$/, "Correct key must be a single letter"),
+  correctKey: z.string().regex(/^[A-Za-z]$/, "Correct key must be a single letter"),
 });
 
 export const MultipleCorrectAnswerSchema = z.object({
   type: z.literal("multiple_correct"),
-  correctKeys: z
-    .array(z.string().regex(/^[A-Za-z]$/))
-    .min(1, "At least one correct key required"),
+  correctKeys: z.array(z.string().regex(/^[A-Za-z]$/)).min(1, "At least one correct key required"),
 });
 
 export const TextAnswerSchema = z.object({

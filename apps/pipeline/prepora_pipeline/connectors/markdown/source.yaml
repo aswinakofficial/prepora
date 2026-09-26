@@ -1,0 +1,13 @@
+name: markdown
+# Not a real remote host — content/**/*.md lives in this repository. base_url is required by the
+# sources table (item 14) and by get_allowed_base_urls()'s hostname parsing, but this connector's
+# fetch() never calls prepora_pipeline.core.http_client, so no outbound-fetch allowlist entry is
+# actually needed for it to work; this value exists only to satisfy the schema and to be
+# self-explanatory to anyone reading the sources table.
+base_url: file://content
+source_type: contribution
+connector_name: markdown
+requires_auth: false
+# robots.txt has no meaning for local files — not_reviewed (rather than reviewed_allowed) because
+# nothing was actually reviewed; there's nothing to review.
+robots_review_status: not_reviewed
