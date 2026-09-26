@@ -77,7 +77,7 @@ function TopicPage() {
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Navigation & Context Action Header */}
-      <div className="px-6 pt-10 flex justify-between items-center max-w-[1300px] mx-auto mb-12">
+      <div className="px-6 pt-10 flex justify-between items-center max-w-[1200px] mx-auto mb-12">
         <Link
           to="/subjects"
           className="font-mono text-xs tracking-widest text-slate-500 hover:text-white transition-colors flex items-center gap-2"
@@ -93,7 +93,7 @@ function TopicPage() {
         </Link>
       </div>
 
-      <main className="max-w-[1300px] mx-auto px-6">
+      <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
         <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-16 border-b border-slate-900 pb-4 flex items-center flex-wrap gap-y-2">
           <Link to="/" className="hover:text-white transition-colors">
