@@ -40,23 +40,7 @@ import { explanationWithReadingLinks } from "../lib/reading-links.js";
 import { answerKeysForReviewElement } from "../lib/review-answers.js";
 import { countNewQuestions, loadExamQuestionTexts } from "../lib/review-dedupe.js";
 import { reviewQualityIssues } from "../lib/review-quality.js";
-
-// Typed confirmation required before wipeDatabase executes — see docs/roadmap/engineering-roadmap.md
-// item 6. Exported so the frontend prompts for exactly this string rather than hardcoding a second
-// copy that could drift from what the server actually checks.
-export const WIPE_DATABASE_CONFIRMATION_PHRASE = "WIPE DATABASE";
-
-// The only tables wipeDatabase leaves intact — see the handler for why each one is kept. Exported
-// so the settings page lists exactly what the server keeps.
-export const WIPE_DATABASE_KEEP_TABLES = [
-  "users",
-  "accounts",
-  "sessions",
-  "verifications",
-  "exam_types",
-  "sources",
-  "feature_flags",
-];
+import { WIPE_DATABASE_CONFIRMATION_PHRASE, WIPE_DATABASE_KEEP_TABLES } from "../shared.js";
 
 // The one write path into auditLogs — see docs/architecture/prepora-next-level-plan.md finding #17.
 // Every privileged, content-affecting or destructive admin action should go through this rather than

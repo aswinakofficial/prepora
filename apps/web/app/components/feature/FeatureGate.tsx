@@ -1,4 +1,4 @@
-import type { FeatureFlagKey } from "@prepora/api";
+import type { FeatureFlagKey } from "@prepora/api/src/shared";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useFeatureFlag } from "../../hooks/useFeatureFlag";

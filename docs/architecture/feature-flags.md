@@ -5,7 +5,7 @@ deploy. The first flag is `contribute` (public question-paper contributions).
 
 ## How it works
 
-- **The registry is code.** `packages/api/src/lib/feature-flags.ts` defines every flag: its key,
+- **The registry is code.** `packages/api/src/shared.ts` defines every flag: its key,
   label, description and `defaultEnabled`.
 - **The database stores only overrides.** The `feature_flags` table holds a row only for a flag an
   admin has changed from its default, plus who changed it and when. A fresh or wiped database
@@ -18,7 +18,7 @@ deploy. The first flag is `contribute` (public question-paper contributions).
 
 ## Adding a flag for a new feature
 
-1. **Register it.** Add an entry to `FEATURE_FLAGS` in `packages/api/src/lib/feature-flags.ts`:
+1. **Register it.** Add an entry to `FEATURE_FLAGS` in `packages/api/src/shared.ts`:
 
    ```ts
    myFeature: {

@@ -2,27 +2,11 @@ import { ORPCError } from "@orpc/server";
 import type { getDb } from "@prepora/db";
 import { featureFlags } from "@prepora/db/schema";
 
-// Every feature flag the app knows about, with its default. The feature_flags table only stores
-// admin overrides, so adding a flag is one entry here — no migration — and a fresh or wiped
-// database behaves exactly like these defaults. How to add one: docs/architecture/feature-flags.md.
-// A new entry automatically appears (with a toggle) on the admin Settings page and in the public
-// featureFlags.list the web app reads.
-export const FEATURE_FLAGS = {
-  contribute: {
-    label: "Contributions",
-    description:
-      "Public question-paper contributions: the Contribute page, its links in the header, footer " +
-      "and home page, and the submission API. When off, submissions are refused and the page " +
-      "says contributions are closed. Already-submitted contributions stay reviewable in admin.",
-    defaultEnabled: true,
-  },
-} as const satisfies Record<
-  string,
-  { label: string; description: string; defaultEnabled: boolean }
->;
+// The registry itself lives in ../shared.ts (no server imports) so the web app's client bundle can
+// read the defaults too; this module adds the database-backed state on top.
+import { FEATURE_FLAG_KEYS, FEATURE_FLAGS, type FeatureFlagKey } from "../shared.js";
 
-export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;
-export const FEATURE_FLAG_KEYS = Object.keys(FEATURE_FLAGS) as FeatureFlagKey[];
+export { FEATURE_FLAG_KEYS, FEATURE_FLAGS, type FeatureFlagKey };
 
 export function isFeatureFlagKey(key: string): key is FeatureFlagKey {
   return key in FEATURE_FLAGS;

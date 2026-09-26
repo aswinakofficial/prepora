@@ -14,11 +14,9 @@ export {
   FEATURE_FLAG_KEYS,
   FEATURE_FLAGS,
   type FeatureFlagKey,
-} from "./lib/feature-flags.js";
-export {
   WIPE_DATABASE_CONFIRMATION_PHRASE,
   WIPE_DATABASE_KEEP_TABLES,
-} from "./routers/admin.router.js";
+} from "./shared.js";
 
 export const appRouter = {
   health: publicProcedure

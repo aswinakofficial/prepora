@@ -1,4 +1,7 @@
-import { WIPE_DATABASE_CONFIRMATION_PHRASE, WIPE_DATABASE_KEEP_TABLES } from "@prepora/api";
+import {
+  WIPE_DATABASE_CONFIRMATION_PHRASE,
+  WIPE_DATABASE_KEEP_TABLES,
+} from "@prepora/api/src/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle, CheckCircle, Database, ShieldAlert, ToggleRight } from "lucide-react";

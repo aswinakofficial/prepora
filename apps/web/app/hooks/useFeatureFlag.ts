@@ -1,4 +1,4 @@
-import { FEATURE_FLAGS, type FeatureFlagKey } from "@prepora/api";
+import { FEATURE_FLAGS, type FeatureFlagKey } from "@prepora/api/src/shared";
 import { useQuery } from "@tanstack/react-query";
 import { orpc } from "../../lib/orpc";
 
