@@ -4,8 +4,9 @@ import { getDb, sql } from "@prepora/db";
 import { getRouterManifest } from "@tanstack/react-start/router-manifest";
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { defineEventHandler, toWebRequest } from "vinxi/http";
-import { getAuth, setAuth } from "../lib/auth";
+import { getAuth } from "../lib/auth";
 import { serveMediaFile } from "../lib/media-files";
+import { syncRuntimeEnv } from "../lib/runtime-env";
 import { createRouter } from "./router.ts";
 
 // createRouter must be called fresh per request — see the note on the
@@ -45,22 +46,9 @@ const rpcHandler = new RPCHandler(appRouter);
 export default defineEventHandler(async (event) => {
   const request = toWebRequest(event);
 
-  // Cloudflare Workers pass per-request environment bindings to the fetch
-  // handler rather than exposing them at module-load time, so anything
-  // below that reads process.env needs these synced first.
-  const envSources = [
-    (event?.context as any)?.cloudflare?.env,
-    (event?.node?.req as any)?.cf?.env,
-    (request as any)?.cf?.env,
-    (globalThis as any)?.env,
-    process.env,
-  ];
-
-  for (const src of envSources) {
-    if (src && typeof src === "object") {
-      setAuth(src);
-    }
-  }
+  // Cloudflare passes environment bindings per request; copy them into process.env before anything
+  // below reads it. Server functions get the same from app/global-middleware.ts.
+  syncRuntimeEnv(event, request);
 
   if (request.url.includes("/api/orpc")) {
     try {

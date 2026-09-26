@@ -21,8 +21,6 @@ export const verifyAdminFn = createServerFn({ method: "GET" }).handler(async () 
   // Explicitly reconstruct Headers to ensure compatibility with Better Auth
   const headers = new Headers(req.headers as any);
 
-  console.log("[verifyAdminFn] Cookie header:", headers.get("cookie"));
-
   // We can manually fake an event object with the correct headers instance
   const eventParams = { request: { headers } };
   const result = await requireAdmin(eventParams);

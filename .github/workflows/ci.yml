@@ -167,3 +167,41 @@ jobs:
           curl -sf -X POST http://localhost:3000/api/orpc/exams/list \
             -H 'Content-Type: application/json' -d '{}' | tee exams.json | grep -q demo-cloud-basics \
             || { echo "--- response:"; cat exams.json; echo; cat web.log; exit 1; }
+
+  # Builds the Cloudflare Pages bundle exactly as a deploy does (minus the database-backed sitemap
+  # and RSS steps), so a bundling or Workers-compatibility problem fails the PR instead of the
+  # production deploy. The built site is kept as an artifact for local testing with
+  # `wrangler pages dev`.
+  web-build:
+    name: Production build (Cloudflare)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from package.json's "packageManager" (setting it here too is an error).
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the web app for Cloudflare Pages
+        run: pnpm --filter @prepora/web build 2>&1 | tee build.log
+        env:
+          NODE_ENV: production
+
+      - name: Node.js compatibility is enabled in the bundle
+        run: |
+          if grep -q "Node.js compatibility is not enabled" build.log; then
+            echo "::error::Nitro built without Node.js compatibility — server functions would fail on Cloudflare (see apps/web/app.config.ts)."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-pages-dist
+          path: apps/web/dist
+          retention-days: 7
