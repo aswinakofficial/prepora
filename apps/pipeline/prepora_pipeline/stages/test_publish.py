@@ -504,7 +504,10 @@ def test_concurrent_pool_appends_get_distinct_numbers(test_exam, test_subject):
     first = publish_question(
         _pooled(test_exam, test_subject, question_text="Seed question for the set?", number=1)
     )
-    texts = [f"Concurrent pool question number {n} about topic {n * 7}?" for n in range(8)]
+    # Texts must be clearly distinct: near-identical ones ("... number 3 ...", "... number 4 ...")
+    # can trip the near-duplicate gate depending on which lands first — a flaky failure that has
+    # nothing to do with numbering, which is all this test is about.
+    texts = [f"{uuid.uuid4().hex} {uuid.uuid4().hex}?" for _ in range(8)]
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(
             pool.map(

@@ -27,6 +27,12 @@ import {
   isFeatureFlagKey,
 } from "../lib/feature-flags.js";
 import {
+  assertPublishingAvailable,
+  assertScrapingAvailable,
+  publishingLockReason,
+  scrapingLockReason,
+} from "../lib/local-only-services.js";
+import {
   computeSourceHealthStats,
   EMPTY_SOURCE_HEALTH_STATS,
   isSourceDegraded,
@@ -35,7 +41,6 @@ import { explanationWithReadingLinks } from "../lib/reading-links.js";
 import { answerKeysForReviewElement } from "../lib/review-answers.js";
 import { countNewQuestions, loadExamQuestionTexts } from "../lib/review-dedupe.js";
 import { reviewQualityIssues } from "../lib/review-quality.js";
-import { assertScrapingAvailable, scrapingLockReason } from "../lib/scraping-lock.js";
 import { WIPE_DATABASE_CONFIRMATION_PHRASE, WIPE_DATABASE_KEEP_TABLES } from "../shared.js";
 
 // The one write path into auditLogs — see docs/architecture/prepora-next-level-plan.md finding #17.
@@ -95,7 +100,7 @@ function getScraperAuthHeaders(): Record<string, string> {
   if (!token) {
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
       message:
-        "PIPELINE_SERVICE_TOKEN is not configured. Set it in the environment (see .env.example) to enable scraping.",
+        "PIPELINE_SERVICE_TOKEN is not configured. Set it in the environment (see .env.example) — the scraper and the publishing pipeline both require it.",
     });
   }
   return { Authorization: `Bearer ${token}` };
@@ -103,7 +108,7 @@ function getScraperAuthHeaders(): Record<string, string> {
 
 async function fetchScraper(path: string, init: RequestInit = {}): Promise<Response> {
   // The one gateway to apps/scraper, so the local-only lock lives here: outside local development
-  // no request to the scraper ever leaves this server (lib/scraping-lock.ts).
+  // no request to the scraper ever leaves this server (lib/local-only-services.ts).
   assertScrapingAvailable();
   const headers = {
     ...getScraperAuthHeaders(),
@@ -123,6 +128,9 @@ function getPipelineBaseUrl(): string {
 }
 
 async function fetchPipeline(path: string, init: RequestInit = {}): Promise<Response> {
+  // The one gateway to apps/pipeline — local-only like the scraper (lib/local-only-services.ts):
+  // outside local development no request to it ever leaves this server.
+  assertPublishingAvailable();
   const headers = {
     ...getScraperAuthHeaders(),
     "Content-Type": "application/json",
@@ -401,7 +409,9 @@ async function processOneReviewItem(
     return { success: true, message: `Rejected batch ${input.id.substring(0, 8)}...` };
   }
 
-  // Approve logic
+  // Approve logic. Approving publishes every question through the pipeline service, which only
+  // exists in local development — refuse up front rather than failing each question one by one.
+  assertPublishingAvailable();
   const item = await db
     .select()
     .from(scrapedQuestions)
@@ -510,6 +520,30 @@ async function processOneReviewItem(
     await Promise.all(Array.from({ length: PUBLISH_CONCURRENCY }, worker));
   }
 
+  const alreadyCount = publishCount - addedCount;
+  const summary =
+    `${addedCount} new question${addedCount === 1 ? "" : "s"} added` +
+    (alreadyCount > 0 ? ` · ${alreadyCount} already in the exam` : "");
+
+  // A batch is approved only when every question published. If any failed it stays pending, so it
+  // remains in the review queue and approving again retries — publishing is idempotent, so the
+  // questions that did publish are simply reported as already in the exam. (Marking it approved
+  // regardless once dropped 25 batches from the queue with nothing published.)
+  if (failures.length > 0) {
+    await writeAuditLog(db, {
+      actorId,
+      action: "approve_scraped_question_failed",
+      entityType: "scraped_question",
+      entityId: input.id,
+      oldValue: { status: "pending" },
+      newValue: { status: "pending", publishCount, addedCount, failures },
+    });
+    return {
+      success: false,
+      message: `Not approved — ${failures.length} of ${publishable.length} questions failed to publish, so the batch stays in the queue (approving again retries; ${summary}). ${failures.join("; ")}`,
+    };
+  }
+
   await db
     .update(scrapedQuestions)
     .set({ status: "approved" })
@@ -524,15 +558,7 @@ async function processOneReviewItem(
     newValue: { status: "approved", publishCount, addedCount, failures },
   });
 
-  const alreadyCount = publishCount - addedCount;
-  const summary =
-    `${addedCount} new question${addedCount === 1 ? "" : "s"} added` +
-    (alreadyCount > 0 ? ` · ${alreadyCount} already in the exam` : "");
-  const message =
-    failures.length > 0
-      ? `${summary}; ${failures.length} failed: ${failures.join("; ")}`
-      : `Approved: ${summary}.`;
-  return { success: true, message };
+  return { success: true, message: `Approved: ${summary}.` };
 }
 
 export const adminRouter = {
@@ -888,7 +914,8 @@ export const adminRouter = {
           const first = elements[0];
 
           let hasCollision = false;
-          if (first?.questionText && first?.options && first?.answer) {
+          // The dedupe check lives in the pipeline service — skip it where that's locked.
+          if (first?.questionText && first?.options && first?.answer && !publishingLockReason()) {
             try {
               const normalized = reviewElementToNormalizedQuestion(first, meta, 1);
               const res = await fetchPipeline("/dedupe/check", {
@@ -1094,6 +1121,19 @@ export const adminRouter = {
         };
       });
     }),
+
+  // Which local-only services are locked in this environment (null = available), so admin pages
+  // can show why instead of offering buttons that can only fail — see lib/local-only-services.ts.
+  getLocalOnlyStatus: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/local-only-status",
+      summary: "Whether scraping and publishing are available in this environment",
+    })
+    .handler(() => ({
+      scrapingLockedReason: scrapingLockReason(),
+      publishingLockedReason: publishingLockReason(),
+    })),
 
   getScraperHealth: adminProcedure
     .route({
