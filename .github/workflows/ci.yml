@@ -16,13 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -37,13 +36,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -104,13 +102,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -130,3 +127,43 @@ jobs:
         working-directory: apps/pipeline
       - run: pytest
         working-directory: apps/pipeline
+
+  # Proves the contributor setup in CONTRIBUTING.md still works from a clean checkout: the same
+  # `pnpm bootstrap` a newcomer runs (project-local Postgres, so no service container or sudo), then
+  # the health check, then the website actually serving the seeded demo data.
+  bootstrap:
+    name: Fresh setup (pnpm bootstrap)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from package.json's "packageManager" (setting it here too is an error).
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: pnpm bootstrap (project-local database)
+        run: pnpm bootstrap --project-db --yes
+
+      - name: pnpm bootstrap:check
+        run: pnpm bootstrap:check
+
+      - name: The website serves the demo data
+        run: |
+          pnpm dev:web > web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/ >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:3000/ >/dev/null || { cat web.log; exit 1; }
+          # The exam directory's API returns the two seeded demo exams.
+          curl -sf -X POST http://localhost:3000/api/orpc/exams/list \
+            -H 'Content-Type: application/json' -d '{}' | tee exams.json | grep -q demo-cloud-basics \
+            || { echo "--- response:"; cat exams.json; echo; cat web.log; exit 1; }
