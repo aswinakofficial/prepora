@@ -3,16 +3,16 @@ import { Link } from "@tanstack/react-router";
 import { Menu, Search, ShieldCheck, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import { authClient } from "../../../lib/auth-client";
 import { useFeatureFlag } from "../../hooks/useFeatureFlag";
 import { useRBAC } from "../../hooks/useRBAC";
 import { RoleGuard } from "../auth/RoleGuard";
+import { MobileAccountSection, UserMenu } from "../auth/UserMenu";
 import { SearchCommandModal } from "../search/SearchCommandModal";
 
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const { user, isAdmin, isAuthenticated } = useRBAC();
+  const { isAuthenticated } = useRBAC();
   const { enabled: contributeEnabled } = useFeatureFlag("contribute");
 
   return (
@@ -79,21 +79,7 @@ export function SiteHeader() {
               </Link>
             </RoleGuard>
             {isAuthenticated ? (
-              <div className="py-3 flex items-center justify-between gap-4">
-                <span className="text-[10px] text-slate-500 normal-case tracking-normal truncate">
-                  {user?.email}
-                </span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setMenuOpen(false);
-                    await authClient.signOut();
-                  }}
-                  className="text-slate-400 hover:text-white uppercase tracking-widest shrink-0"
-                >
-                  Sign out
-                </button>
-              </div>
+              <MobileAccountSection onNavigate={() => setMenuOpen(false)} />
             ) : (
               <Link
                 to="/auth/signin"
@@ -144,22 +130,7 @@ export function SiteHeader() {
               </Link>
             </RoleGuard>
 
-            {isAuthenticated ? (
-              <div className="flex items-center gap-4">
-                {!isAdmin && (
-                  <span className="hidden sm:inline font-mono text-[10px] text-slate-500 tracking-wider truncate max-w-[120px]">
-                    {user?.email}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={async () => await authClient.signOut()}
-                  className="text-slate-500 hover:text-white transition-colors shrink-0 font-mono uppercase tracking-widest text-xs"
-                >
-                  Sign out
-                </button>
-              </div>
-            ) : (
+            {!isAuthenticated && (
               <Link
                 to="/auth/signin"
                 className="text-slate-500 hover:text-white transition-colors shrink-0"
@@ -177,6 +148,8 @@ export function SiteHeader() {
                 ⌘K
               </kbd>
             </button>
+            {/* Signed in: the avatar, whose menu shows who is signed in — never the email here. */}
+            <UserMenu />
           </div>
         </div>
       </header>
