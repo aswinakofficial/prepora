@@ -54,7 +54,7 @@ jobs:
       # (see docs/roadmap/engineering-roadmap.md item 7).
       - run: pnpm db:check
         env:
-          DATABASE_URL: postgresql://user:pass@localhost:5432/dummy
+          DATABASE_URL: postgresql://localhost:5432/dummy
 
   scraper:
     name: Lint, test (scraper)
@@ -88,7 +88,9 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: prepora
-          POSTGRES_PASSWORD: prepora
+          # No password at all: the container only lives for this job and is reachable only from
+          # it, and a literal password here gets flagged by secret scanners (GitGuardian).
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: prepora_test
         ports:
           - 5432:5432
@@ -98,7 +100,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://prepora:prepora@localhost:5432/prepora_test
+      DATABASE_URL: postgresql://prepora@localhost:5432/prepora_test
     steps:
       - uses: actions/checkout@v4
 
