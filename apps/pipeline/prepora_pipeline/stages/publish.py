@@ -36,7 +36,7 @@ from prepora_pipeline.contracts import (
 
 from ..core.db import get_db_connection
 from .content_hash import content_hash, normalize_question_text
-from .dedupe import check_duplicate
+from .dedupe import DedupeDecision, check_duplicate
 from .stable_id import derive_question_set_slug, derive_stable_content_id
 from .validate import validate_question
 
@@ -55,11 +55,35 @@ class PublishResult:
     dedupe_outcome: str
 
 
+@dataclass
+class HeldResult:
+    """publish_question(..., on_near_duplicate="hold") found a possible duplicate: nothing was
+    written, and `decision` carries what a reviewer needs to decide (see dedupe.DedupeDecision)."""
+
+    decision: DedupeDecision
+
+
 def _humanize(slug: str) -> str:
     return " ".join(word.capitalize() for word in slug.replace("_", "-").split("-"))
 
 
-def publish_question(normalized: NormalizedQuestion) -> PublishResult:
+def publish_question(
+    normalized: NormalizedQuestion,
+    *,
+    on_near_duplicate: str = "refuse",
+    link_to_question_id: str | None = None,
+    publish_as_new: bool = False,
+) -> PublishResult | HeldResult:
+    """Publish one question.
+
+    A near duplicate (very similar to, but not the same as, a published question) is never merged
+    or published silently. By default it's refused with PublishError; with
+    on_near_duplicate="hold" nothing is written and a HeldResult describes the match, so the caller
+    can queue it for a person. That person's decision then comes back as either
+    link_to_question_id (same question: add this set as another occurrence of it, and remember
+    the wording as a variant) or publish_as_new=True (a different question: skip the near-duplicate
+    gate).
+    """
     # docs/roadmap/engineering-roadmap.md item 19: nothing publishes without passing the
     # deterministic quality gate first — this replaces the narrower needs_review/answer-None
     # checks this function used to do inline, since validate_question() covers both plus every
@@ -79,9 +103,22 @@ def publish_question(normalized: NormalizedQuestion) -> PublishResult:
     # content_hash lookup below is what actually reuses the canonical question or absorbs an
     # in-set repeat as a no-op occurrence; this decision is what makes that reuse an intentional,
     # reportable outcome rather than an unexamined side effect.
-    dedupe_decision = check_duplicate(validated)
-    if dedupe_decision.outcome == "near_duplicate":
-        raise PublishError(f"Question failed the deduplication gate ({dedupe_decision.reason})")
+    if link_to_question_id is not None:
+        # A reviewer decided this is the same question as an existing one — no dedupe check left
+        # to make; the existing question is reused below.
+        dedupe_decision = DedupeDecision(
+            outcome="exact_duplicate_cross_set",
+            reason=f"Linked by a reviewer to existing question {link_to_question_id}.",
+            existing_question_id=link_to_question_id,
+        )
+    else:
+        dedupe_decision = check_duplicate(validated)
+        if dedupe_decision.outcome == "near_duplicate" and not publish_as_new:
+            if on_near_duplicate == "hold":
+                return HeldResult(decision=dedupe_decision)
+            raise PublishError(
+                f"Question failed the deduplication gate ({dedupe_decision.reason})"
+            )
 
     conn = get_db_connection()
     try:
@@ -107,9 +144,14 @@ def publish_question(normalized: NormalizedQuestion) -> PublishResult:
                 stable_content_id = derive_stable_content_id(validated)
             except ValueError as exc:
                 raise PublishError(str(exc)) from exc
-            question_id, question_created = _resolve_or_create_question(
-                cur, stable_content_id, validated, topic_id
-            )
+            if link_to_question_id is not None:
+                question_id, question_created = _link_to_existing_question(
+                    cur, link_to_question_id, validated
+                )
+            else:
+                question_id, question_created = _resolve_or_create_question(
+                    cur, stable_content_id, validated, topic_id
+                )
 
             occurrence_created = _resolve_or_create_occurrence(
                 cur,
@@ -306,6 +348,25 @@ def _resolve_or_create_question_set(
     )
 
 
+def _link_to_existing_question(
+    cur, question_id: str, normalized: NormalizedQuestion
+) -> tuple[str, bool]:
+    """A reviewer's "same question" decision: reuse `question_id`, and record this wording as a
+    variant of it (unless it's already the question's own wording) so the next time this wording is
+    collected it links automatically, without another review."""
+    cur.execute("SELECT question_text FROM questions WHERE id = %s", (question_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise PublishError(f"Can't link to question {question_id}: it no longer exists.")
+    if normalize_question_text(row[0]) != normalize_question_text(normalized.question_text):
+        cur.execute(
+            "INSERT INTO question_variants (question_id, question_text, content_hash) "
+            "VALUES (%s, %s, %s) ON CONFLICT (question_id, content_hash) DO NOTHING",
+            (question_id, normalized.question_text, content_hash(normalized.question_text)),
+        )
+    return question_id, False
+
+
 def _resolve_or_create_question(
     cur, stable_content_id: str, normalized: NormalizedQuestion, topic_id: str | None
 ) -> tuple[str, bool]:
@@ -318,12 +379,16 @@ def _resolve_or_create_question(
     # content_hash is a 32-bit djb2 — fast to index, but two different questions can share one. A
     # hash match is therefore only reused once the normalized text is confirmed equal; otherwise a
     # collision would silently merge a new question into an unrelated one.
+    # Recorded variants (question_variants) are other accepted wordings of a question, so they
+    # match here exactly like the question's own text.
     hash_ = content_hash(normalized.question_text)
     cur.execute(
         "SELECT id, question_text, stable_content_id = %s AS by_id FROM questions "
         "WHERE stable_content_id = %s OR content_hash = %s "
-        "ORDER BY (stable_content_id = %s) DESC",
-        (stable_content_id, stable_content_id, hash_, stable_content_id),
+        "UNION ALL "
+        "SELECT question_id, question_text, false FROM question_variants WHERE content_hash = %s "
+        "ORDER BY by_id DESC",
+        (stable_content_id, stable_content_id, hash_, hash_),
     )
     wanted = normalize_question_text(normalized.question_text)
     for existing_id, existing_text, by_id in cur.fetchall():

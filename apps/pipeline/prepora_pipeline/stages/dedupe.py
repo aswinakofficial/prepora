@@ -61,6 +61,13 @@ class DedupeDecision:
     existing_question_id: str | None = None
     existing_question_set_id: str | None = None
     similarity_score: float | None = None
+    # Near duplicates only — what a reviewer needs to decide "same question, reworded" vs "a
+    # different question that happens to be worded alike" (compare "What are the two types of
+    # GitHub Actions?" with "…three types…": 90% similar, different answer).
+    existing_question_text: str | None = None
+    options_match: bool | None = None
+    answer_match: bool | None = None
+    suggestion: Literal["same", "different"] | None = None
 
 
 def _normalize_text(text: str) -> str:
@@ -127,12 +134,19 @@ def _find_exact_duplicate(
     """Every (question_id, question_set_id) pair with this exact content, via the
     questions_content_hash_idx — a question with no occurrence yet still returns one row with a
     None set id. The hash is a 32-bit djb2 that different texts can share, so matches are
-    confirmed on the normalized text: a collision is not a duplicate."""
+    confirmed on the normalized text: a collision is not a duplicate.
+
+    Recorded variants count as exact matches too: once an admin has decided a rewording is the same
+    question (question_variants), that wording links to it from then on without another review."""
     cur.execute(
         "SELECT q.id, qo.question_set_id, q.question_text FROM questions q "
         "LEFT JOIN question_occurrences qo ON qo.question_id = q.id "
-        "WHERE q.content_hash = %s",
-        (hash_,),
+        "WHERE q.content_hash = %s "
+        "UNION ALL "
+        "SELECT v.question_id, qo.question_set_id, v.question_text FROM question_variants v "
+        "LEFT JOIN question_occurrences qo ON qo.question_id = v.question_id "
+        "WHERE v.content_hash = %s",
+        (hash_, hash_),
     )
     wanted = normalize_question_text(question_text)
     return [
@@ -142,7 +156,7 @@ def _find_exact_duplicate(
     ]
 
 
-def _find_near_duplicate(cur, normalized: NormalizedQuestion) -> tuple[str, float] | None:
+def _find_near_duplicate(cur, normalized: NormalizedQuestion) -> tuple[str, float, str] | None:
     normalized_text = _normalize_text(normalized.question_text)
     length = len(normalized_text)
     if length == 0:
@@ -160,12 +174,69 @@ def _find_near_duplicate(cur, normalized: NormalizedQuestion) -> tuple[str, floa
     )
     candidates = cur.fetchall()
 
-    best: tuple[str, float] | None = None
+    best: tuple[str, float, str] | None = None
     for candidate_id, candidate_text in candidates:
         score = similarity(normalized_text, _normalize_text(candidate_text))
         if NEAR_DUPLICATE_THRESHOLD <= score < 1 and (best is None or score > best[1]):
-            best = (candidate_id, score)
+            best = (candidate_id, score, candidate_text)
     return best
+
+
+_NUMBER_WORDS = {
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "first", "second", "third", "fourth", "fifth", "single", "double",
+    "triple", "once", "twice",
+}
+
+
+def _numbers_in(text: str) -> list[str]:
+    """Digits and number words, in order — one of them changing ("two types" → "three types")
+    usually means a different question, however similar the rest of the wording is."""
+    return [t for t in _normalize_text(text).split() if t.isdigit() or t in _NUMBER_WORDS]
+
+
+def _option_texts_and_answers(cur, question_id: str) -> tuple[set[str], set[str]]:
+    cur.execute(
+        "SELECT o.option_text, (a.id IS NOT NULL) FROM question_options o "
+        "LEFT JOIN question_answers a ON a.correct_option_id = o.id "
+        "WHERE o.question_id = %s",
+        (question_id,),
+    )
+    options: set[str] = set()
+    correct: set[str] = set()
+    for text, is_correct in cur.fetchall():
+        options.add(_normalize_text(text))
+        if is_correct:
+            correct.add(_normalize_text(text))
+    return options, correct
+
+
+def _candidate_options_and_answers(normalized: NormalizedQuestion) -> tuple[set[str], set[str]]:
+    options = {opt.key: _normalize_text(opt.text) for opt in normalized.options}
+    answer = normalized.answer
+    keys: list[str] = []
+    if getattr(answer, "correct_key", None):
+        keys = [answer.correct_key]
+    elif getattr(answer, "correct_keys", None):
+        keys = list(answer.correct_keys)
+    return set(options.values()), {options[k] for k in keys if k in options}
+
+
+def compare_with_existing(
+    cur, normalized: NormalizedQuestion, existing_question_id: str, existing_text: str
+) -> tuple[bool, bool, Literal["same", "different"]]:
+    """(options_match, answer_match, suggestion) for a near duplicate. "same" only when the options
+    and the correct answer are identical and no number in the wording changed; anything else leans
+    "different". Either way a person confirms — this only pre-selects the likely choice."""
+    existing_options, existing_correct = _option_texts_and_answers(cur, existing_question_id)
+    new_options, new_correct = _candidate_options_and_answers(normalized)
+    options_match = bool(new_options) and new_options == existing_options
+    answer_match = bool(new_correct) and new_correct == existing_correct
+    numbers_match = _numbers_in(normalized.question_text) == _numbers_in(existing_text)
+    suggestion: Literal["same", "different"] = (
+        "same" if options_match and answer_match and numbers_match else "different"
+    )
+    return options_match, answer_match, suggestion
 
 
 def check_duplicate(normalized: NormalizedQuestion) -> DedupeDecision:
@@ -186,6 +257,9 @@ def check_duplicate(normalized: NormalizedQuestion) -> DedupeDecision:
             hash_ = content_hash(normalized.question_text)
             matches = _find_exact_duplicate(cur, hash_, normalized.question_text)
             near = None if matches else _find_near_duplicate(cur, normalized)
+            comparison = (
+                compare_with_existing(cur, normalized, near[0], near[2]) if near else None
+            )
     finally:
         conn.close()
 
@@ -211,8 +285,9 @@ def check_duplicate(normalized: NormalizedQuestion) -> DedupeDecision:
             existing_question_id=existing_question_id,
         )
 
-    if near is not None:
-        existing_id, score = near
+    if near is not None and comparison is not None:
+        existing_id, score, existing_text = near
+        options_match, answer_match, suggestion = comparison
         return DedupeDecision(
             outcome="near_duplicate",
             reason=(
@@ -221,6 +296,10 @@ def check_duplicate(normalized: NormalizedQuestion) -> DedupeDecision:
             ),
             existing_question_id=existing_id,
             similarity_score=score,
+            existing_question_text=existing_text,
+            options_match=options_match,
+            answer_match=answer_match,
+            suggestion=suggestion,
         )
 
     return DedupeDecision(outcome="unique", reason="No duplicate or near-duplicate found.")
