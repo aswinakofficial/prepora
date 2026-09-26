@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type React from "react";
 import { useState } from "react";
 import { authClient } from "../../../lib/auth-client";
 
@@ -14,6 +15,37 @@ function SignInPage() {
   if (session) {
     console.log("✅ SUCCESSFUL LOGIN DETECTED. Session data:", session);
   }
+
+  // Local development only: email/password accounts (the seeded local admin, or throwaway test
+  // users). The server enables this only in development/test (packages/auth's
+  // isEmailPasswordEnabled), and import.meta.env.DEV keeps the form out of production builds.
+  const [devEmail, setDevEmail] = useState("");
+  const [devPassword, setDevPassword] = useState("");
+  const [devMode, setDevMode] = useState<"signin" | "signup">("signin");
+  const handleDevSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsLoading(true);
+    setErrorMsg(null);
+    const result =
+      devMode === "signin"
+        ? await authClient.signIn.email({
+            email: devEmail,
+            password: devPassword,
+            callbackURL: "/",
+          })
+        : await authClient.signUp.email({
+            email: devEmail,
+            password: devPassword,
+            name: devEmail.split("@")[0] || "Local user",
+            callbackURL: "/",
+          });
+    if (result.error) {
+      setErrorMsg(result.error.message || "Sign-in failed.");
+      setIsLoading(false);
+      return;
+    }
+    window.location.href = "/";
+  };
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -72,6 +104,54 @@ function SignInPage() {
             {isLoading ? "Initiating Gateway..." : "Authenticate via Google"}
           </button>
         </div>
+
+        {import.meta.env.DEV && (
+          <form
+            onSubmit={handleDevSubmit}
+            className="space-y-3 border-t-[0.5px] border-dashed border-amber-500/30 pt-6"
+          >
+            <p className="font-mono text-[10px] uppercase tracking-widest text-amber-300/80">
+              Local development · email sign-in
+            </p>
+            <p className="font-mono text-[10px] leading-relaxed text-white/40">
+              The local admin is DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD in your .env. Not available on
+              the deployed site.
+            </p>
+            <input
+              type="email"
+              required
+              autoComplete="username"
+              placeholder="email"
+              value={devEmail}
+              onChange={(e) => setDevEmail(e.target.value)}
+              className="w-full h-10 bg-transparent border-[0.5px] border-white/20 px-3 font-mono text-xs text-white outline-none focus:border-white/50"
+            />
+            <input
+              type="password"
+              required
+              minLength={8}
+              autoComplete={devMode === "signin" ? "current-password" : "new-password"}
+              placeholder="password"
+              value={devPassword}
+              onChange={(e) => setDevPassword(e.target.value)}
+              className="w-full h-10 bg-transparent border-[0.5px] border-white/20 px-3 font-mono text-xs text-white outline-none focus:border-white/50"
+            />
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full h-10 font-mono uppercase tracking-widest text-[10px] border-[0.5px] border-amber-500/40 text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+            >
+              {devMode === "signin" ? "Sign in" : "Create local account"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDevMode(devMode === "signin" ? "signup" : "signin")}
+              className="w-full font-mono text-[10px] uppercase tracking-widest text-white/40 hover:text-white"
+            >
+              {devMode === "signin" ? "Need a test user? Create one" : "Have an account? Sign in"}
+            </button>
+          </form>
+        )}
 
         <div className="pt-6 mt-6 border-t-[0.5px] border-white/5">
           <p className="font-mono text-[9px] text-white/20 uppercase tracking-widest text-center">
