@@ -84,7 +84,7 @@ function ExamPage() {
         />
       )}
       {/* Back Context */}
-      <div className="px-4 sm:px-6 pt-4 md:pt-8 lg:pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-6 md:mb-10 lg:mb-16">
+      <div className="px-4 sm:px-6 pt-4 md:pt-8 flex justify-between items-center max-w-[1200px] mx-auto mb-4 md:mb-6">
         <Link
           to="/exams"
           className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
@@ -95,7 +95,7 @@ function ExamPage() {
 
       <main className="max-w-[1200px] mx-auto px-4 sm:px-6">
         {/* Context Rail */}
-        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-10 md:mb-16 lg:mb-32 border-b border-slate-900 pb-4 break-words">
+        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-8 md:mb-10 border-b border-slate-900 pb-4 break-words">
           <Link to="/" className="hover:text-white transition-colors">
             ROOT
           </Link>
@@ -108,13 +108,15 @@ function ExamPage() {
         </div>
 
         {/* Top Header Section */}
-        <div className="mb-12 md:mb-20 border-b border-slate-800 pb-8 md:pb-12">
-          <div className="max-w-4xl w-full">
+        <div className="mb-10 md:mb-12 border-b border-slate-800 pb-8">
+          <div className="max-w-5xl w-full">
             {isLoading ? (
               // Mirrors the loaded header: logo, then title, then description.
-              <SkeletonRegion label="Loading exam…" className="space-y-6">
-                <Skeleton className="w-20 h-20 sm:w-24 sm:h-24" />
-                <Skeleton className="h-10 sm:h-14 md:h-16 lg:h-20 rounded-md w-3/4 max-w-3xl" />
+              <SkeletonRegion label="Loading exam…" className="space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+                  <Skeleton className="w-14 h-14 sm:w-16 sm:h-16 shrink-0" />
+                  <Skeleton className="h-9 sm:h-10 lg:h-12 rounded-md w-3/4 max-w-3xl" />
+                </div>
                 <div className="space-y-3">
                   <Skeleton className="h-4 w-full max-w-2xl" />
                   <Skeleton className="h-4 w-4/5 max-w-xl" />
@@ -122,20 +124,22 @@ function ExamPage() {
               </SkeletonRegion>
             ) : (
               <>
-                <div className="space-y-6 mb-6">
+                {/* Logo beside the title from sm up, so the header stays compact enough for the
+                    question sets to start on the first screen. */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 mb-5">
                   {realExam?.logoUrl && (
                     <img
                       src={realExam.logoUrl}
                       alt={examName}
-                      className="w-20 h-20 sm:w-24 sm:h-24 object-contain"
+                      className="w-14 h-14 sm:w-16 sm:h-16 object-contain shrink-0"
                     />
                   )}
-                  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-normal tracking-tighter text-white leading-[1.12] break-words">
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl font-normal tracking-tighter text-white leading-[1.1] break-words">
                     {examName.toUpperCase()}
                   </h1>
                 </div>
                 {realExam?.description && (
-                  <p className="text-slate-400 font-normal text-sm md:text-base lg:text-lg mb-0 max-w-3xl leading-relaxed font-sans">
+                  <p className="text-slate-400 font-normal text-sm md:text-base mb-0 max-w-3xl leading-relaxed font-sans">
                     {realExam.description}
                   </p>
                 )}
@@ -145,7 +149,7 @@ function ExamPage() {
         </div>
 
         {/* Index Main Content */}
-        <div className="space-y-16 md:space-y-24">
+        <div className="space-y-12 md:space-y-16">
           {/* Question Sets Section */}
           <section>
             <div className="flex justify-between items-end border-b border-slate-900 pb-2 mb-8">
