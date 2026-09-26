@@ -10,4 +10,5 @@ export default defineWorkspace([
   "packages/api",
   "packages/db",
   "packages/auth",
+  "apps/web",
 ]);

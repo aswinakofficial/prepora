@@ -17,7 +17,27 @@ import React, { useState } from "react";
 import { extractLabeledSection, mergeReadingResources } from "../../../lib/additional-reading";
 import { orpc } from "../../../lib/orpc";
 import { type QuestionImage, QuestionImages } from "../../components/question/QuestionImages";
+import { DuplicateDecisions } from "../../components/review/DuplicateDecisions";
 import { placeholderKeys } from "../../components/ui/Skeleton";
+
+interface ReviewResultLike {
+  status: "approved" | "needs_decisions" | "not_approved" | "rejected";
+  message: string;
+  pendingDecisions: number;
+  failed: { number: number; preview: string; reason: string }[];
+}
+
+function toneFor(result: ReviewResultLike): "success" | "attention" | "error" {
+  if (result.status === "not_approved") return "error";
+  if (result.status === "needs_decisions") return "attention";
+  return "success";
+}
+
+/** The server's summary plus, for failures, one readable line per question. */
+function describeForPage(result: ReviewResultLike): string {
+  const lines = result.failed.map((f) => `  Q${f.number} “${f.preview}” — ${f.reason}`);
+  return [result.message, ...lines].join("\n");
+}
 
 interface QuestionElement {
   questionText?: string;
@@ -176,7 +196,23 @@ function AdminReviewPage() {
     id: string;
     action: "approve" | "discard";
   } | null>(null);
-  const [lastResult, setLastResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // "attention" = needs a decision (possible duplicates), not an error.
+  const [lastResult, setLastResult] = useState<{
+    tone: "success" | "attention" | "error";
+    message: string;
+  } | null>(null);
+
+  // What approving did, for one batch: remove its card once it's done; otherwise keep it (with its
+  // open decisions) and say what's left.
+  const applyReviewResult = (id: string, result: ReviewResultLike) => {
+    if (result.status === "approved" || result.status === "rejected") {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } else {
+      setItems((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, pendingDecisions: result.pendingDecisions } : i)),
+      );
+    }
+  };
 
   React.useEffect(() => {
     if (queue) {
@@ -199,13 +235,12 @@ function AdminReviewPage() {
         id,
         action: action === "discard" ? "reject" : "approve",
       });
-      // A batch that didn't fully publish stays pending server-side, so keep its card too.
-      if (result.success) setItems((prev) => prev.filter((i) => i.id !== id));
-      setLastResult({ ok: result.success, message: result.message });
+      applyReviewResult(id, result);
+      setLastResult({ tone: toneFor(result), message: describeForPage(result) });
     } catch (err) {
       setLastResult({
-        ok: false,
-        message: `Error processing item in queue: ${(err instanceof Error ? err.message : undefined) ?? "check server logs"}`,
+        tone: "error",
+        message: `Couldn't process this batch: ${(err instanceof Error ? err.message : undefined) ?? "check the server logs"}`,
       });
     } finally {
       setIsProcessing(false);
@@ -240,19 +275,23 @@ function AdminReviewPage() {
     setLastResult(null);
     setBatchProgress({ done: 0, total: safeItems.length });
     const failures: string[] = [];
+    const needsDecisions: string[] = [];
     let published = 0;
+    let openDecisions = 0;
     let next = 0;
     const worker = async () => {
       while (next < safeItems.length) {
         const item = safeItems[next++];
         try {
           const result = await processReviewItem({ id: item.id, action: "approve" });
-          if (result.success) {
-            setItems((prev) => prev.filter((i) => i.id !== item.id));
+          applyReviewResult(item.id, result);
+          if (result.status === "approved") {
             published++;
+          } else if (result.status === "needs_decisions") {
+            openDecisions += result.pendingDecisions;
+            needsDecisions.push(`Batch ${item.id.slice(0, 8)}: ${result.message}`);
           } else {
-            // Not approved: it stays in the queue (and on the page) to retry.
-            failures.push(`Batch ${item.id.slice(0, 8)}: ${result.message}`);
+            failures.push(`Batch ${item.id.slice(0, 8)}: ${describeForPage(result)}`);
           }
         } catch (err) {
           failures.push(
@@ -270,11 +309,18 @@ function AdminReviewPage() {
     } finally {
       setIsProcessing(false);
       setBatchProgress(null);
+      const headline = [
+        `Published ${published} of ${safeItems.length} batches`,
+        needsDecisions.length > 0
+          ? `${needsDecisions.length} ${needsDecisions.length === 1 ? "batch has" : "batches have"} ${openDecisions} possible duplicate${openDecisions === 1 ? "" : "s"} to review below`
+          : null,
+        failures.length > 0 ? `${failures.length} couldn't be published` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       setLastResult({
-        ok: failures.length === 0,
-        message:
-          `Published ${published} of ${safeItems.length} batches.` +
-          (failures.length ? `\n${failures.join("\n")}` : ""),
+        tone: failures.length > 0 ? "error" : needsDecisions.length > 0 ? "attention" : "success",
+        message: [`${headline}.`, ...needsDecisions, ...failures].join("\n"),
       });
     }
   };
@@ -394,9 +440,11 @@ function AdminReviewPage() {
       {lastResult && (
         <div
           className={`mb-6 p-4 rounded-xl border font-mono text-xs whitespace-pre-wrap break-words ${
-            lastResult.ok
+            lastResult.tone === "success"
               ? "border-emerald-800 bg-emerald-950/40 text-emerald-300"
-              : "border-amber-800 bg-amber-950/30 text-amber-200"
+              : lastResult.tone === "attention"
+                ? "border-amber-800 bg-amber-950/30 text-amber-200"
+                : "border-rose-800 bg-rose-950/30 text-rose-200"
           }`}
         >
           {lastResult.message}
@@ -521,6 +569,13 @@ function AdminReviewPage() {
                         </span>
                       ))}
 
+                    {item.pendingDecisions > 0 && (
+                      <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> {item.pendingDecisions} possible
+                        duplicate{item.pendingDecisions === 1 ? "" : "s"} to review
+                      </span>
+                    )}
+
                     {item.hasCollision && (
                       <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-800 flex items-center gap-1">
                         <AlertCircle className="w-3.5 h-3.5" /> Similar Question Exists
@@ -586,6 +641,25 @@ function AdminReviewPage() {
                     </button>
                   </div>
                 </div>
+
+                {item.pendingDecisions > 0 && (
+                  <DuplicateDecisions
+                    batchId={item.id}
+                    disabledReason={publishingLockedReason}
+                    onBatchResult={(result) => {
+                      if (result.status === "approved") {
+                        setItems((prev) => prev.filter((i) => i.id !== item.id));
+                      }
+                      setLastResult({
+                        tone: result.status === "approved" ? "success" : "attention",
+                        message:
+                          result.status === "approved"
+                            ? `Batch ${item.id.slice(0, 8)} is complete — every possible duplicate is decided and the batch is approved.`
+                            : `Batch ${item.id.slice(0, 8)}: ${result.message}`,
+                      });
+                    }}
+                  />
+                )}
 
                 {/* Expanded Extracted Questions View */}
                 {isExpanded && (
