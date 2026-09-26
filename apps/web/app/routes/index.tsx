@@ -49,7 +49,7 @@ function HomePage() {
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 selection:bg-slate-700 selection:text-white font-sans">
-      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-10 md:pt-24 pb-20 md:pb-32">
+      <main className="max-w-[1200px] mx-auto px-4 sm:px-6 pt-10 md:pt-24 pb-20 md:pb-32">
         {/* HERO / ASYMMETRIC SEARCH */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-12 mb-16 md:mb-24">
           <div className="hidden md:block col-span-2 lg:col-span-3 border-l border-slate-900/50 pl-6 h-full"></div>

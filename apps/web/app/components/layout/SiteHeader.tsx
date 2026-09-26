@@ -92,7 +92,7 @@ export function SiteHeader() {
           </nav>
         )}
 
-        <div className="hidden max-w-[1400px] mx-auto md:grid md:grid-cols-12 text-xs font-mono tracking-widest uppercase">
+        <div className="hidden max-w-[1200px] mx-auto md:grid md:grid-cols-12 text-xs font-mono tracking-widest uppercase">
           {/* Brand Col */}
           <div className="md:col-span-3 md:border-r border-slate-900/50 p-6 flex flex-col justify-center">
             <Link to="/" className="text-white font-bold tracking-[0.3em]">

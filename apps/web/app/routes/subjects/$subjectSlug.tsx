@@ -48,7 +48,7 @@ function SubjectPage() {
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
       {/* Back Context */}
-      <div className="px-6 pt-12 flex justify-between items-center max-w-[1200px] mx-auto mb-16">
+      <div className="px-6 pt-4 md:pt-8 flex justify-between items-center max-w-[1200px] mx-auto mb-4 md:mb-6">
         <Link
           to="/subjects"
           className="font-mono text-sm tracking-widest text-slate-500 hover:text-white transition-colors"
@@ -59,7 +59,7 @@ function SubjectPage() {
 
       <main className="max-w-[1200px] mx-auto px-6">
         {/* Context Rail */}
-        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-24 border-b border-slate-900 pb-4">
+        <div className="font-mono text-xs tracking-[0.2em] text-slate-500 uppercase mb-8 md:mb-10 border-b border-slate-900 pb-4">
           <Link to="/" className="hover:text-white transition-colors">
             ROOT
           </Link>
@@ -72,9 +72,9 @@ function SubjectPage() {
         </div>
 
         {/* Page Header */}
-        <div className="mb-24 flex flex-col lg:flex-row lg:items-end justify-between gap-12 border-b border-slate-800 pb-12">
+        <div className="mb-10 md:mb-12 flex flex-col lg:flex-row lg:items-end justify-between gap-8 border-b border-slate-800 pb-8">
           <div className="max-w-3xl">
-            <h1 className="text-4xl md:text-5xl lg:text-7xl font-normal tracking-tighter text-white mb-6 leading-tight">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-normal tracking-tighter text-white mb-6 leading-tight">
               {name.toUpperCase()}
             </h1>
             {subject?.description && (
