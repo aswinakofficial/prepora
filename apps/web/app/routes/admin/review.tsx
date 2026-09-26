@@ -9,6 +9,7 @@ import {
   ChevronUp,
   ExternalLink,
   Loader2,
+  Lock,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -149,6 +150,10 @@ function AdminReviewPage() {
     error: queueError,
     refetch: refetchQueue,
   } = useQuery(orpc.admin.getReviewQueue.queryOptions());
+  // On the deployed site approving is locked — it publishes through the local-only pipeline
+  // service (packages/api/src/lib/local-only-services.ts). Rejecting still works everywhere.
+  const { data: localOnlyStatus } = useQuery(orpc.admin.getLocalOnlyStatus.queryOptions());
+  const publishingLockedReason = localOnlyStatus?.publishingLockedReason ?? null;
   // Until the queue has arrived the page shows skeletons — not "0 batches" and "queue is
   // completely clear", which is what an empty `items` used to render while it loaded. Set in the
   // same effect that copies the queue into `items`, so there's no render in between where the
@@ -194,8 +199,9 @@ function AdminReviewPage() {
         id,
         action: action === "discard" ? "reject" : "approve",
       });
-      setItems((prev) => prev.filter((i) => i.id !== id));
-      setLastResult({ ok: !result.message.includes(" failed: "), message: result.message });
+      // A batch that didn't fully publish stays pending server-side, so keep its card too.
+      if (result.success) setItems((prev) => prev.filter((i) => i.id !== id));
+      setLastResult({ ok: result.success, message: result.message });
     } catch (err) {
       setLastResult({
         ok: false,
@@ -241,11 +247,12 @@ function AdminReviewPage() {
         const item = safeItems[next++];
         try {
           const result = await processReviewItem({ id: item.id, action: "approve" });
-          setItems((prev) => prev.filter((i) => i.id !== item.id));
-          if (result.message.includes(" failed: ")) {
-            failures.push(`Batch ${item.id.slice(0, 8)}: ${result.message}`);
-          } else {
+          if (result.success) {
+            setItems((prev) => prev.filter((i) => i.id !== item.id));
             published++;
+          } else {
+            // Not approved: it stays in the queue (and on the page) to retry.
+            failures.push(`Batch ${item.id.slice(0, 8)}: ${result.message}`);
           }
         } catch (err) {
           failures.push(
@@ -348,7 +355,10 @@ function AdminReviewPage() {
           <button
             type="button"
             onClick={handleBatchApprove}
-            disabled={isQueueLoading || isProcessing || items.length === 0}
+            disabled={
+              isQueueLoading || isProcessing || items.length === 0 || !!publishingLockedReason
+            }
+            title={publishingLockedReason ?? undefined}
             className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-emerald-900/30 flex items-center gap-2 shrink-0"
           >
             {batchProgress ? (
@@ -365,6 +375,21 @@ function AdminReviewPage() {
           </button>
         </div>
       </div>
+
+      {publishingLockedReason && (
+        <div
+          role="status"
+          className="mb-6 flex items-start gap-3 rounded-xl border border-amber-900/60 bg-amber-950/30 p-4 font-mono text-xs text-amber-200"
+        >
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+          <div className="space-y-1 leading-relaxed">
+            <p className="uppercase tracking-widest text-amber-300">
+              Approving is locked on the deployed site
+            </p>
+            <p>{publishingLockedReason}</p>
+          </div>
+        </div>
+      )}
 
       {lastResult && (
         <div
@@ -534,7 +559,8 @@ function AdminReviewPage() {
 
                     <button
                       type="button"
-                      disabled={isProcessing}
+                      disabled={isProcessing || !!publishingLockedReason}
+                      title={publishingLockedReason ?? undefined}
                       onClick={() => handleAction(item.id, "approve")}
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-mono font-bold transition-all shadow-md flex items-center gap-1.5"
                     >

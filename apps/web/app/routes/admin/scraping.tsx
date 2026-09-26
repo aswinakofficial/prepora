@@ -166,7 +166,7 @@ function AdminScrapingPage() {
     refetchInterval: 15000,
   });
   // Set outside local development: the whole scraping engine is locked there, and the API never
-  // calls the scraper (packages/api/src/lib/scraping-lock.ts).
+  // calls the scraper (packages/api/src/lib/local-only-services.ts).
   const scrapingLockedReason = healthData?.status === "locked" ? healthData.reason : null;
   const initialQuestions = routeData || [];
   const [questions, setQuestions] = useState(initialQuestions);
