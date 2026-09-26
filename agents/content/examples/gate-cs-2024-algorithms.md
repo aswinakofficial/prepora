@@ -5,8 +5,11 @@ exam_variant: computer-science
 year: 2024
 subject: algorithms
 title: GATE CS 2024 — Algorithms
-source_type: official
+source_type: editorial
 ---
+
+<!-- Illustrative example written for the content agent: these are not questions from the
+     real exam paper, so source_type is "editorial", not "official". -->
 
 # Question 1
 

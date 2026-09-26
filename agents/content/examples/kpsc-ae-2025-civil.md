@@ -6,8 +6,11 @@ exam_variant: civil
 year: 2025
 subject: civil-engineering
 title: Kerala PSC Assistant Engineer 2025 Civil Engineering
-source_type: official
+source_type: editorial
 ---
+
+<!-- Illustrative example written for the content agent: these are not questions from the
+     real exam paper, so source_type is "editorial", not "official". -->
 
 # Question 1
 

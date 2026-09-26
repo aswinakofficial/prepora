@@ -1,0 +1,17 @@
+<fieldset aria-describedby="accessible-question-SingleSelect-description-1062.1.25243" aria-label="question-legend" class="field" disabled=""><div class="margin-bottom-lg content" id="question-legend"><p>You manage the following resources:</p>
+<ul>
+<li>Queue1: Message queue in the North region</li>
+<li>Queue2: Message queue in the South region</li>
+<li>worker1: Background worker in the North region</li>
+<li>worker2: Background worker in the South region</li>
+</ul>
+<p>You plan to deploy a new worker named worker3 in the North region.</p>
+<p>Which queues can worker3 read from, and which workers can it replace?</p>
+</div><span class="is-visually-hidden" id="accessible-question-SingleSelect-description-1062.1.25243">Select only one answer.</span><div class="control"><div class="display-flex flex-direction-column margin-top-xxs"><label class="radio margin-bottom-xxs padding-xxs quiz-choice is-incorrect"><input aria-describedby="1062.1.25243-106969-result" class="radio-dot" id="1062.1.25243-106969" name="1062.1.25243" required="" type="radio" value="106969"/><span class="radio-label-text"><p>Queue1 and worker1 only</p>
+</span></label><div class="margin-left-md" id="1062.1.25243-106969-result"> <span class="color-danger"><span class="docon docon-status-error"></span><strong>This answer is incorrect.</strong></span> </div><label class="radio margin-bottom-xxs padding-xxs quiz-choice is-correct"><input aria-describedby="1062.1.25243-106970-result" class="radio-dot" id="1062.1.25243-106970" name="1062.1.25243" required="" type="radio" value="106970"/><span class="radio-label-text"><p>Queue1 and worker1, or worker2 only</p>
+</span></label><div class="margin-left-md" id="1062.1.25243-106970-result"> <span class="color-success"><span class="docon docon-check-mark"></span><strong>This answer is correct.</strong></span> </div><label class="radio margin-bottom-xxs padding-xxs quiz-choice false"><input aria-describedby="1062.1.25243-106971-result" class="radio-dot" id="1062.1.25243-106971" name="1062.1.25243" required="" type="radio" value="106971"/><span class="radio-label-text"><p>Queue1 or Queue2, and worker1 or worker2</p>
+</span></label><div class="margin-left-md" id="1062.1.25243-106971-result"> </div><label class="radio margin-bottom-xxs padding-xxs quiz-choice false"><input aria-describedby="1062.1.25243-106972-result" class="radio-dot" id="1062.1.25243-106972" name="1062.1.25243" required="" type="radio" value="106972"/><span class="radio-label-text"><p>Queue2 and worker2 only</p>
+</span></label><div class="margin-left-md" id="1062.1.25243-106972-result"> </div><!--fast-uxwpzb:4--></div></div><section class="has-background-success-light padding-lg padding-top-xxs padding-bottom-xxs margin-top-md" id="rationale"><div><p>A worker must read from a queue in its own region but can replace a worker in any region.</p>
+<p><a href="https://learn.microsoft.com/training/modules/example-regional-queues/" target="_blank">Regional queues - Training | Microsoft Learn</a></p>
+<p><a href="https://learn.microsoft.com/example/background-workers-overview" target="_blank">What is a background worker? - Example Docs | Microsoft Learn</a></p>
+</div></section></fieldset>

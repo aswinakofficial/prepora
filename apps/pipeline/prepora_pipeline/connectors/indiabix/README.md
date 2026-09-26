@@ -31,9 +31,11 @@ site's `page-item` pager).
 
 ## Fixture
 
-`fixtures/strength_of_materials.html` is a real page —
-https://www.indiabix.com/civil-engineering/strength-of-materials/ — captured via the raw artifact
-store (item 12) on 2026-09-20. It has 5 questions on it: 3 have real text options, 2 render their
+`fixtures/example_page.html` keeps the real question and pagination markup of
+https://www.indiabix.com/civil-engineering/strength-of-materials/ (captured via the raw artifact
+store, item 12, on 2026-09-20), with every question, option, answer and link replaced by invented
+content and the site's navigation and footer removed — see "Fixtures hold real markup, invented
+content" in docs/connectors/README.md. It has 5 questions: 3 have text options, 2 render their
 options as images. `test_parser.py` asserts both outcomes.
 
 ## Running the connector directly

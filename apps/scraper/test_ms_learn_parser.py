@@ -1,8 +1,10 @@
 """
-Contract tests for ms_learn_parser against real captured Microsoft Learn assessment questions
-(fixtures/ms_learn/, the <fieldset> of each page with scripts stripped). Two layouts are covered:
-AZ-700 (unlabelled rationale followed by links) and AB-730 (labelled "Objective:" / "What This
-Item Tests:" / "Additional Reading:" / "Rationale:" sections).
+Contract tests for ms_learn_parser against Microsoft Learn assessment markup (fixtures/ms_learn/:
+the <fieldset> of a question page with scripts stripped). The markup — tags, classes, attributes,
+spacing — is exactly what Microsoft Learn serves, but every question, option, explanation and link
+is invented, so the repository holds no real exam content. Two layouts are covered: unlabelled
+(rationale paragraphs followed by reading links) and labelled ("Objective:" / "What This Item
+Tests:" / "Additional Reading:" / "Rationale:" sections).
 """
 from pathlib import Path
 
@@ -19,75 +21,72 @@ def parse(name: str):
 
 
 def test_unlabelled_rationale_is_split_out_of_the_question():
-    q = parse("az-700-q1-after.html")
+    q = parse("unlabelled-q1-after.html")
 
     assert q.question_text == (
-        "Your on-premises network and Azure subscription are connected via a Site-to-Site (S2S) "
-        "VPN.\n\n"
-        "You have an Azure Storage account named storage1 with a file share named share1.\n\n"
-        "You are configuring a private endpoint for storage1.\n\n"
-        "You need to ensure that the DNS name of storage1 will be resolvable to its private IP "
-        "address from the on-premises network. The solution must minimize the effort of "
-        "maintaining updates in case of private endpoint changes\n\n"
-        "What should you configure?"
+        "Your company runs a warehouse app named App1 on two servers in an on-premises "
+        "datacenter.\n\n"
+        "App1 stores barcode scans in a local database named DB1.\n\n"
+        "You are adding a nightly export of DB1 to cloud storage.\n\n"
+        "You need to ensure that the export can resume after a network failure. The solution must "
+        "minimize the amount of custom code that you maintain\n\n"
+        "What should you use?"
     )
     assert q.options == [
-        "a DNS forwarder and an Azure Private DNS zone",
-        "an Azure Private DNS zone linked to a virtual network",
-        "an on-premises forward lookup zone",
-        "an on-premises reverse lookup zone",
+        "a managed transfer service with checkpointing",
+        "a scheduled script that copies the whole database",
+        "a manual export run by an operator",
+        "an email-based file transfer",
     ]
-    assert q.correct_options == ["a DNS forwarder and an Azure Private DNS zone"]
+    assert q.correct_options == ["a managed transfer service with checkpointing"]
     assert q.explanation == (
         "Rationale:\n"
-        "A private DNS zone group creates an association between the private endpoint and the "
-        "zone, so if the endpoint is deleted it will remove it from DNS.\n"
-        "A forward lookup zone will work but needs to be updated manually for new endpoints or "
-        "removals. A private DNS zone group will only work for Azure virtual machines.\n\n"
+        "A managed transfer service records checkpoints, so an interrupted export resumes from the "
+        "last completed block.\n"
+        "A scheduled script would work but must be written and maintained by your team. Manual and "
+        "email-based transfers do not resume automatically.\n\n"
         "Additional Reading:\n"
-        "Design and implement private access to Azure Services - Training\n"
-        "Azure Private Endpoint DNS configuration"
+        "Resumable transfers - Training\n"
+        "Checkpoint configuration"
     )
     assert q.reading_links == [
         {
-            "text": "Design and implement private access to Azure Services - Training",
-            "url": "https://learn.microsoft.com/training/modules/"
-            "design-implement-private-access-to-azure-services/",
+            "text": "Resumable transfers - Training",
+            "url": "https://learn.microsoft.com/training/modules/example-resumable-transfers/",
         },
         {
-            "text": "Azure Private Endpoint DNS configuration",
-            "url": "https://learn.microsoft.com/azure/private-link/private-endpoint-dns"
-            "#on-premises-workloads-using-a-dns-forwarder",
+            "text": "Checkpoint configuration",
+            "url": "https://learn.microsoft.com/example/checkpoint-configuration"
+            "#resume-after-failure",
         },
     ]
 
 
 def test_labelled_rationale_sections_are_kept_in_order():
-    q = parse("ab-730-q1-after.html")
+    q = parse("labelled-q1-after.html")
 
-    assert q.correct_options == ["Copilot prioritized the data in the current workbook."]
-    assert q.explanation.split("\n\n")[0].startswith("Rationale:\nCopilot uses the context")
-    assert "\n\nObjective:\n1.1 Understand generative AI capabilities" in q.explanation
+    assert q.correct_options == ["The assistant prioritized the data in the open worksheet."]
+    assert q.explanation.split("\n\n")[0].startswith("Rationale:\nThe assistant uses the context")
+    assert "\n\nObjective:\n1.1 Understand how AI assistants use context" in q.explanation
     assert "\n\nWhat This Item Tests:\nUnderstand how the context" in q.explanation
-    assert q.explanation.endswith("Additional Reading:\nApplication card: Microsoft 365 Copilot")
+    assert q.explanation.endswith("Additional Reading:\nGrounding and context in AI assistants")
     assert q.reading_links == [
         {
-            "text": "Application card: Microsoft 365 Copilot",
-            "url": "https://learn.microsoft.com/en-us/microsoft-365/copilot/"
-            "microsoft-365-copilot-application-card#grounding-and-context",
+            "text": "Grounding and context in AI assistants",
+            "url": "https://learn.microsoft.com/example/assistant-grounding#grounding-and-context",
         }
     ]
 
 
 def test_inline_emphasis_keeps_word_spacing():
-    assert "does NOT reference industry benchmarks" in parse("ab-730-q1-after.html").question_text
+    assert "does NOT reference industry averages" in parse("labelled-q1-after.html").question_text
 
 
 def test_lists_in_the_question_stem_are_kept():
     # The old crawler read only <p> elements, silently dropping this list of resources.
-    q = parse("az-700-q2-after.html")
-    assert "- VNet1: Virtual network in the West Europe Azure region" in q.question_text
-    assert "- SQL1: Azure SQL server in the UK West region" in q.question_text
+    q = parse("unlabelled-q2-after.html")
+    assert "- Queue1: Message queue in the North region" in q.question_text
+    assert "- worker2: Background worker in the South region" in q.question_text
 
 
 @pytest.mark.parametrize("fixture", ANSWERED, ids=lambda p: p.name)
@@ -108,7 +107,7 @@ def test_unrevealed_answer_is_refused_not_guessed():
     # Before "Check Your Answer" no option is marked correct. The old crawler fell back to the
     # first option as "the answer"; this must refuse instead.
     with pytest.raises(MsLearnParseError, match="No option is marked correct"):
-        parse("az-700-q1-before.html")
+        parse("unlabelled-q1-before.html")
 
 
 def test_missing_options_are_refused_not_filled_in():
@@ -140,7 +139,7 @@ def test_clean_link_title():
 
 
 def test_unlinked_page_titles_are_reading_not_rationale():
-    # Seen live on AZ-700: reading resources listed as plain-text page titles with no <a>.
+    # Seen live on Microsoft Learn: reading resources listed as plain-text page titles with no <a>.
     html = (
         '<fieldset><div id="question-legend"><p>Which routing method?</p></div>'
         '<label class="quiz-choice is-correct"><span class="radio-label-text">Performance</span>'
@@ -196,5 +195,5 @@ def test_question_that_is_only_an_image_is_kept():
 
 
 @pytest.mark.parametrize("fixture", ANSWERED, ids=lambda p: p.name)
-def test_real_captured_questions_have_no_images(fixture):
+def test_fixture_questions_have_no_images(fixture):
     assert parse_question_fieldset(fixture.read_text()).images == []
