@@ -1,20 +1,16 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, Copy, GitCompare, Loader2, SkipForward, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { CheckCircle, GitCompare, Loader2, Sparkles } from "lucide-react";
+import type React from "react";
 import { orpc } from "../../../lib/orpc";
 import { type DiffToken, diffWords } from "../../../lib/word-diff";
 
 // Possible duplicates held while approving a batch (packages/api's listDuplicateReviews): each new
-// question side by side with the published question it resembles, so an admin can decide whether
-// it's the same question reworded or a different question. The suggested choice is pre-selected
-// (same options + same answer + no changed number → "same"); nothing merges without a click.
+// question side by side with the published question it resembles. The admin chooses per question —
+// keep the published version, keep the new version, keep both (they're different questions), or
+// skip the new one — and the batch's Approve & Publish applies those choices
+// (approveWithDuplicateChoices). A question without a choice stays here for review.
 
-type Decision = "same" | "different" | "skip";
-
-interface BatchResult {
-  status: "approved" | "needs_decisions" | "not_approved" | "rejected";
-  message: string;
-}
+export type DuplicateChoice = "keep_existing" | "keep_new" | "keep_both" | "skip";
 
 function Diffed({ tokens, tone }: { tokens: DiffToken[]; tone: "removed" | "added" }) {
   return (
@@ -62,102 +58,72 @@ function OptionList({ options }: { options: { key: string; text: string; correct
   );
 }
 
-// "Same question" keeps one of the two versions; the other wording is remembered either way.
-function KeepThisVersion({
+function Choice({
   name,
-  checked,
-  onChange,
+  value,
+  selected,
+  suggested,
+  disabled,
+  onChoose,
+  children,
 }: {
   name: string;
-  checked: boolean;
-  onChange: () => void;
+  value: DuplicateChoice;
+  selected: boolean;
+  suggested: boolean;
+  disabled: boolean;
+  onChoose: (value: DuplicateChoice) => void;
+  children: React.ReactNode;
 }) {
   return (
-    <label className="mb-2 flex w-fit cursor-pointer items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-400 hover:text-slate-200">
+    <label
+      className={`flex w-fit items-center gap-2 font-mono text-[11px] ${
+        selected ? "text-emerald-300" : "text-slate-400 hover:text-slate-200"
+      } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+    >
       <input
         type="radio"
-        name={`keep-${name}`}
-        checked={checked}
-        onChange={onChange}
+        name={name}
+        checked={selected}
+        disabled={disabled}
+        onChange={() => onChoose(value)}
         className="accent-emerald-500"
       />
-      Keep this version
+      {children}
+      {suggested && (
+        <span className="rounded bg-amber-900/50 px-1.5 py-px text-[9px] uppercase tracking-wider text-amber-200">
+          Suggested
+        </span>
+      )}
     </label>
   );
 }
 
 function panelClass(selected: boolean): string {
   return `rounded-lg border p-3 transition-colors ${
-    selected ? "border-emerald-700/80 bg-emerald-950/10" : "border-slate-800"
+    selected ? "border-emerald-600/80 bg-emerald-950/15" : "border-slate-800"
   }`;
 }
 
-const DECISION_LABEL: Record<Decision, string> = {
-  same: "Same question",
-  different: "Different question",
-  skip: "Skip",
-};
-
-const STATUS_LABEL = {
-  same: "Same question — kept the published version",
-  same_new: "Same question — now shows the new version",
-  different: "Published as a new question",
-  skipped: "Skipped — not published",
-} as const;
+const suggestedChoice = (suggestion: "same" | "different"): DuplicateChoice =>
+  suggestion === "same" ? "keep_existing" : "keep_both";
 
 export function DuplicateDecisions({
   batchId,
+  choices,
+  onChoose,
   disabledReason,
-  onBatchResult,
 }: {
   batchId: string;
-  /** Why decisions can't be made here (e.g. publishing is locked on the deployed site). */
+  /** The admin's choice per decision id (unset = not decided yet). */
+  choices: Record<string, DuplicateChoice>;
+  onChoose: (decisionId: string, choice: DuplicateChoice) => void;
+  /** Why choices can't be made here (e.g. publishing is locked on the deployed site). */
   disabledReason?: string | null;
-  /** Called when a decision finished the batch, or with any other outcome worth announcing. */
-  onBatchResult: (result: BatchResult) => void;
 }) {
-  const queryClient = useQueryClient();
-  const listQuery = orpc.admin.listDuplicateReviews.queryOptions({ input: { batchId } });
-  const { data: decisions = [], isPending } = useQuery(listQuery);
-  const [busy, setBusy] = useState<string | null>(null);
-  // For "Same question": which version to keep, per decision. The published one unless changed.
-  const [keepNew, setKeepNew] = useState<Record<string, boolean>>({});
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = () => queryClient.invalidateQueries({ queryKey: listQuery.queryKey });
-  const { mutateAsync: resolve } = useMutation(orpc.admin.resolveDuplicateReview.mutationOptions());
-  const { mutateAsync: acceptAll } = useMutation(
-    orpc.admin.acceptSuggestedDecisions.mutationOptions(),
+  const { data: decisions = [], isPending } = useQuery(
+    orpc.admin.listDuplicateReviews.queryOptions({ input: { batchId } }),
   );
-
-  const decide = async (id: string, decision: Decision) => {
-    const keep = decision === "same" && keepNew[id] ? ("new" as const) : ("existing" as const);
-    setBusy(id);
-    setError(null);
-    try {
-      const outcome = await resolve({ id, decision, keep });
-      if (outcome.batch) onBatchResult(outcome.batch);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't save that decision.");
-    } finally {
-      setBusy(null);
-      await refresh();
-    }
-  };
-
-  const acceptSuggestions = async () => {
-    setBusy("all");
-    setError(null);
-    try {
-      const outcome = await acceptAll({ batchId });
-      if (outcome.batch) onBatchResult(outcome.batch);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't apply the suggestions.");
-    } finally {
-      setBusy(null);
-      await refresh();
-    }
-  };
 
   if (isPending) {
     return (
@@ -167,61 +133,64 @@ export function DuplicateDecisions({
     );
   }
   const open = decisions.filter((d) => d.status === "pending");
-  if (decisions.length === 0) return null;
+  if (open.length === 0) return null;
+
+  const chosen = open.filter((d) => choices[d.id]).length;
+  const disabled = !!disabledReason;
 
   return (
     <section className="space-y-4 border-b border-amber-900/40 bg-amber-950/10 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h3 className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-amber-300">
+          <h3 className="flex flex-wrap items-center gap-2 font-mono text-xs uppercase tracking-widest text-amber-300">
             <GitCompare className="h-4 w-4" />
-            {open.length > 0
-              ? `${open.length} possible duplicate${open.length === 1 ? "" : "s"} to review`
-              : "Possible duplicates — all decided"}
+            {open.length} possible duplicate{open.length === 1 ? "" : "s"} to review
+            {chosen > 0 && (
+              <span className="normal-case tracking-normal text-emerald-300">
+                · {chosen} of {open.length} chosen
+              </span>
+            )}
           </h3>
           <p className="max-w-2xl text-xs leading-relaxed text-slate-400">
-            These look very like questions already published. Decide whether each is the same
-            question — pick which version to keep; the other wording is remembered so it's
-            recognised next time — or a different one (published as new). The rest of the batch is
-            already published.
+            The rest of this batch is already published. For each question below, choose which
+            version to keep — or keep both if they're different questions — then click{" "}
+            <span className="text-slate-200">Approve &amp; Publish</span>. Questions you leave
+            unchosen stay here for later. The wording you don't keep is remembered, so it's
+            recognised next time.
           </p>
         </div>
-        {open.length > 1 && (
-          <button
-            type="button"
-            onClick={acceptSuggestions}
-            disabled={!!busy || !!disabledReason}
-            title={disabledReason ?? undefined}
-            className="flex items-center gap-1.5 rounded-lg border border-amber-700/70 bg-amber-900/30 px-3 py-2 font-mono text-xs text-amber-200 transition-colors hover:bg-amber-900/60 disabled:opacity-50"
-          >
-            {busy === "all" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            Accept all {open.length} suggestions
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            for (const d of open) onChoose(d.id, suggestedChoice(d.suggestion));
+          }}
+          disabled={disabled}
+          title={disabledReason ?? undefined}
+          className="flex items-center gap-1.5 rounded-lg border border-amber-700/70 bg-amber-900/30 px-3 py-2 font-mono text-xs text-amber-200 transition-colors hover:bg-amber-900/60 disabled:opacity-50"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Use suggestions
+        </button>
       </div>
 
-      {error && (
-        <p className="rounded-lg border border-rose-900/60 bg-rose-950/30 p-3 font-mono text-xs text-rose-200">
-          {error}
-        </p>
-      )}
-
-      {decisions.map((d) => {
+      {open.map((d) => {
         const diff = diffWords(d.existing.text, d.candidate.text);
-        const decided = d.status !== "pending";
-        return (
-          <article
-            key={d.id}
-            className={`rounded-xl border p-4 ${
-              decided
-                ? "border-slate-800 bg-slate-950/40 opacity-70"
-                : "border-slate-700 bg-slate-950/70"
-            }`}
+        const choice = choices[d.id];
+        const suggestion = suggestedChoice(d.suggestion);
+        const radio = (value: DuplicateChoice, label: React.ReactNode) => (
+          <Choice
+            name={`dup-${d.id}`}
+            value={value}
+            selected={choice === value}
+            suggested={suggestion === value}
+            disabled={disabled}
+            onChoose={(v) => onChoose(d.id, v)}
           >
+            {label}
+          </Choice>
+        );
+        return (
+          <article key={d.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-4">
             <header className="mb-3 flex flex-wrap items-center gap-2 font-mono text-[11px]">
               <span className="rounded bg-slate-800 px-2 py-0.5 text-slate-200">
                 Question {d.questionNumber}
@@ -238,18 +207,12 @@ export function DuplicateDecisions({
             </header>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className={panelClass(!decided && !keepNew[d.id])}>
-                {!decided && (
-                  <KeepThisVersion
-                    name={d.id}
-                    checked={!keepNew[d.id]}
-                    onChange={() => setKeepNew((k) => ({ ...k, [d.id]: false }))}
-                  />
-                )}
+              <div className={panelClass(choice === "keep_existing")}>
+                <div className="mb-2">{radio("keep_existing", "Keep this version")}</div>
                 <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">
                   Already published
                   {d.existing.appearsIn.length > 0 && (
-                    <span className="normal-case tracking-normal text-slate-500">
+                    <span className="normal-case tracking-normal">
                       {" "}
                       — in {d.existing.appearsIn.join("; ")}
                     </span>
@@ -260,14 +223,8 @@ export function DuplicateDecisions({
                 </p>
                 <OptionList options={d.existing.options} />
               </div>
-              <div className={panelClass(!decided && !!keepNew[d.id])}>
-                {!decided && (
-                  <KeepThisVersion
-                    name={d.id}
-                    checked={!!keepNew[d.id]}
-                    onChange={() => setKeepNew((k) => ({ ...k, [d.id]: true }))}
-                  />
-                )}
+              <div className={panelClass(choice === "keep_new")}>
+                <div className="mb-2">{radio("keep_new", "Keep this version")}</div>
                 <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">
                   New in this batch
                 </p>
@@ -278,50 +235,10 @@ export function DuplicateDecisions({
               </div>
             </div>
 
-            <footer className="mt-4 flex flex-wrap items-center gap-2">
-              {decided ? (
-                <span className="flex items-center gap-1.5 font-mono text-xs text-slate-300">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-                  {STATUS_LABEL[d.status as keyof typeof STATUS_LABEL]}
-                </span>
-              ) : (
-                (["same", "different", "skip"] as const).map((choice) => {
-                  const suggested = d.suggestion === choice;
-                  return (
-                    <button
-                      key={choice}
-                      type="button"
-                      onClick={() => decide(d.id, choice)}
-                      disabled={!!busy || !!disabledReason}
-                      title={disabledReason ?? undefined}
-                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors disabled:opacity-50 ${
-                        suggested
-                          ? "border-emerald-600 bg-emerald-700/80 text-white hover:bg-emerald-600"
-                          : "border-slate-700 bg-slate-900 text-slate-300 hover:text-white"
-                      }`}
-                    >
-                      {busy === d.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : choice === "same" ? (
-                        <Copy className="h-3.5 w-3.5" />
-                      ) : choice === "skip" ? (
-                        <SkipForward className="h-3.5 w-3.5" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      {choice === "same"
-                        ? `Same question · keep ${keepNew[d.id] ? "new" : "published"} version`
-                        : DECISION_LABEL[choice]}
-                      {suggested && (
-                        <span className="rounded bg-black/25 px-1 text-[9px] uppercase tracking-wider">
-                          Suggested
-                        </span>
-                      )}
-                    </button>
-                  );
-                })
-              )}
-            </footer>
+            <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+              {radio("keep_both", "Keep both — they're different questions")}
+              {radio("skip", "Skip the new one — don't publish it")}
+            </div>
           </article>
         );
       })}
