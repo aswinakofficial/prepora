@@ -640,3 +640,99 @@ def _count(query, params):
             return cur.fetchone()[0]
     finally:
         conn.close()
+
+
+class TestKeepingTheNewVersion:
+    """"Same question" can keep either version. Keeping the new one rewrites the published
+    question in place — same id, same options (ids), new wording — and remembers the old wording."""
+
+    def test_new_version_replaces_the_wording_and_remembers_the_old(self, test_exam, test_subject):
+        marker = uuid.uuid4().hex[:8]
+        old_text = f"What's the appropriate repository permission role for pushers {marker}?"
+        new_text = f"What's the appropriate repository permission level for pushers {marker}?"
+        original = publish_question(
+            _with_options(
+                _normalized(test_exam, test_subject, question_text=old_text, number=1),
+                GITHUB_OPTIONS,
+                "A",
+            )
+        )
+        option_ids_before = _rows(
+            "SELECT id FROM question_options WHERE question_id = %s ORDER BY sequence",
+            (original.question_id,),
+        )
+        new_options = [("A", "JavaScript and Docker containers"), ("B", "Workflows and runners"),
+                       ("C", "Both of these")]
+        newer = _with_options(
+            _normalized(test_exam, test_subject, question_text=new_text, number=2, year=2026),
+            new_options,
+            "C",
+        )
+
+        linked = publish_question(
+            newer, link_to_question_id=original.question_id, use_new_wording=True
+        )
+
+        assert linked.question_id == original.question_id
+        assert linked.occurrence_created is True
+        assert _rows("SELECT question_text FROM questions WHERE id = %s",
+                     (original.question_id,)) == [(new_text,)]
+        # Same option rows (practice attempts point at these ids), new text, answer moved to C.
+        assert _rows(
+            "SELECT id FROM question_options WHERE question_id = %s ORDER BY sequence",
+            (original.question_id,),
+        ) == option_ids_before
+        assert _rows(
+            "SELECT o.option_key, o.option_text FROM question_options o "
+            "JOIN question_answers a ON a.correct_option_id = o.id WHERE o.question_id = %s",
+            (original.question_id,),
+        ) == [("C", "Both of these")]
+        # The old wording is remembered, so it still links automatically if collected again.
+        again = publish_question(
+            _with_options(
+                _normalized(test_exam, test_subject, question_text=old_text, number=3, year=2027),
+                new_options,
+                "C",
+            ),
+            on_near_duplicate="hold",
+        )
+        assert not isinstance(again, HeldResult)
+        assert again.question_id == original.question_id
+
+    def test_new_version_with_a_different_number_of_options_is_refused(
+        self, test_exam, test_subject
+    ):
+        marker = uuid.uuid4().hex[:8]
+        original = publish_question(
+            _with_options(
+                _normalized(
+                    test_exam,
+                    test_subject,
+                    question_text=f"Pick the runner type {marker}?",
+                    number=1,
+                ),
+                GITHUB_OPTIONS,
+                "A",
+            )
+        )
+        two_options = _with_options(
+            _normalized(
+                test_exam, test_subject, question_text=f"Pick a runner type {marker}?", number=2
+            ),
+            [("A", "Hosted"), ("B", "Self-hosted")],
+            "A",
+        )
+        with pytest.raises(PublishError, match="has 2 options and the published question has 3"):
+            publish_question(
+                two_options, link_to_question_id=original.question_id, use_new_wording=True
+            )
+
+
+def _rows(query, params):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+    finally:
+        conn.close()

@@ -72,6 +72,7 @@ def publish_question(
     *,
     on_near_duplicate: str = "refuse",
     link_to_question_id: str | None = None,
+    use_new_wording: bool = False,
     publish_as_new: bool = False,
 ) -> PublishResult | HeldResult:
     """Publish one question.
@@ -82,7 +83,9 @@ def publish_question(
     can queue it for a person. That person's decision then comes back as either
     link_to_question_id (same question: add this set as another occurrence of it, and remember
     the wording as a variant) or publish_as_new=True (a different question: skip the near-duplicate
-    gate).
+    gate). With use_new_wording=True, "same question" keeps this version instead: the existing
+    question takes this wording, explanation and option text, and its old wording becomes the
+    remembered variant.
     """
     # docs/roadmap/engineering-roadmap.md item 19: nothing publishes without passing the
     # deterministic quality gate first — this replaces the narrower needs_review/answer-None
@@ -146,7 +149,7 @@ def publish_question(
                 raise PublishError(str(exc)) from exc
             if link_to_question_id is not None:
                 question_id, question_created = _link_to_existing_question(
-                    cur, link_to_question_id, validated
+                    cur, link_to_question_id, validated, use_new_wording=use_new_wording
                 )
             else:
                 question_id, question_created = _resolve_or_create_question(
@@ -348,22 +351,80 @@ def _resolve_or_create_question_set(
     )
 
 
+def _record_variant(cur, question_id: str, text: str) -> None:
+    cur.execute(
+        "INSERT INTO question_variants (question_id, question_text, content_hash) "
+        "VALUES (%s, %s, %s) ON CONFLICT (question_id, content_hash) DO NOTHING",
+        (question_id, text, content_hash(text)),
+    )
+
+
 def _link_to_existing_question(
-    cur, question_id: str, normalized: NormalizedQuestion
+    cur, question_id: str, normalized: NormalizedQuestion, *, use_new_wording: bool = False
 ) -> tuple[str, bool]:
-    """A reviewer's "same question" decision: reuse `question_id`, and record this wording as a
-    variant of it (unless it's already the question's own wording) so the next time this wording is
-    collected it links automatically, without another review."""
+    """A reviewer's "same question" decision: reuse `question_id`, and remember the wording that
+    isn't shown as a variant, so the next time either wording is collected it links automatically.
+
+    By default the published question keeps its wording and this one is remembered. With
+    use_new_wording=True the reviewer preferred this version: the question takes this text,
+    explanation and option text — updated in place, so its id, slug (URL), occurrences and the
+    option ids practice attempts point to are all unchanged — and the old wording is remembered.
+    """
     cur.execute("SELECT question_text FROM questions WHERE id = %s", (question_id,))
     row = cur.fetchone()
     if row is None:
         raise PublishError(f"Can't link to question {question_id}: it no longer exists.")
-    if normalize_question_text(row[0]) != normalize_question_text(normalized.question_text):
-        cur.execute(
-            "INSERT INTO question_variants (question_id, question_text, content_hash) "
-            "VALUES (%s, %s, %s) ON CONFLICT (question_id, content_hash) DO NOTHING",
-            (question_id, normalized.question_text, content_hash(normalized.question_text)),
+    old_text = row[0]
+    if normalize_question_text(old_text) == normalize_question_text(normalized.question_text):
+        return question_id, False
+    if not use_new_wording:
+        _record_variant(cur, question_id, normalized.question_text)
+        return question_id, False
+
+    cur.execute(
+        "SELECT id, option_key FROM question_options WHERE question_id = %s ORDER BY sequence",
+        (question_id,),
+    )
+    existing_options = cur.fetchall()
+    if len(existing_options) != len(normalized.options):
+        raise PublishError(
+            f"Can't use the new version: it has {len(normalized.options)} options and the "
+            f"published question has {len(existing_options)}. Keep the published version, or "
+            "publish it as a different question."
         )
+    # Option ids stay; only their text and keys move to the new version's, in order. Keys go via
+    # temporary values first so renaming can't collide with the (question_id, option_key) unique.
+    for position, (option_id, _) in enumerate(existing_options):
+        cur.execute(
+            "UPDATE question_options SET option_key = %s WHERE id = %s",
+            (f"~{position}", option_id),
+        )
+    option_id_by_key = {}
+    for (option_id, _), option in zip(existing_options, normalized.options, strict=True):
+        cur.execute(
+            "UPDATE question_options SET option_key = %s, option_text = %s WHERE id = %s",
+            (option.key, option.text, option_id),
+        )
+        option_id_by_key[option.key] = option_id
+    cur.execute("DELETE FROM question_answers WHERE question_id = %s", (question_id,))
+    _insert_answers(cur, question_id, normalized.answer, option_id_by_key)
+
+    cur.execute(
+        "UPDATE questions SET question_text = %s, content_hash = %s, "
+        "explanation = COALESCE(%s, explanation), updated_at = now() WHERE id = %s",
+        (
+            normalized.question_text,
+            content_hash(normalized.question_text),
+            normalized.explanation,
+            question_id,
+        ),
+    )
+    # The new wording is now the question's own text; the old one becomes the remembered variant.
+    cur.execute(
+        "DELETE FROM question_variants WHERE question_id = %s AND content_hash = %s",
+        (question_id, content_hash(normalized.question_text)),
+    )
+    _record_variant(cur, question_id, old_text)
     return question_id, False
 
 
