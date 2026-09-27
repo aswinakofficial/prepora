@@ -8,6 +8,7 @@ Worker and therefore cannot spawn subprocesses — it must reach this pipeline o
 way it already reaches apps/scraper (see fetchScraper() and PIPELINE_SERVICE_TOKEN).
 """
 import dataclasses
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -15,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from .contracts import NormalizedQuestion
 from .core.security import require_service_token
 from .stages.dedupe import check_duplicate
-from .stages.publish import PublishError, publish_question
+from .stages.publish import HeldResult, PublishError, publish_question
 
 load_dotenv()
 
@@ -36,12 +37,30 @@ async def health_check():
 # FastAPI runs plain `def` endpoints in its threadpool instead; core/db.py's connection pool is
 # thread-safe and hands each thread its own connection.
 @app.post("/publish")
-def publish(normalized: NormalizedQuestion):
+def publish(
+    normalized: NormalizedQuestion,
+    on_near_duplicate: Literal["refuse", "hold"] = "refuse",
+    link_to_question_id: str | None = None,
+    use_new_wording: bool = False,
+    publish_as_new: bool = False,
+):
+    """Publish one question. Query parameters (all optional, see publish_question()):
+    on_near_duplicate=hold returns {"held": true, "decision": {...}} for a possible duplicate
+    instead of a 422; link_to_question_id (+ use_new_wording) / publish_as_new carry a reviewer's
+    decision."""
     try:
-        result = publish_question(normalized)
+        result = publish_question(
+            normalized,
+            on_near_duplicate=on_near_duplicate,
+            link_to_question_id=link_to_question_id,
+            use_new_wording=use_new_wording,
+            publish_as_new=publish_as_new,
+        )
     except PublishError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return dataclasses.asdict(result)
+    if isinstance(result, HeldResult):
+        return {"held": True, "decision": dataclasses.asdict(result.decision)}
+    return {"held": False, **dataclasses.asdict(result)}
 
 
 @app.post("/dedupe/check")
