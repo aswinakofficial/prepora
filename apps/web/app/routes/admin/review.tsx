@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertCircle,
@@ -17,7 +17,30 @@ import React, { useState } from "react";
 import { extractLabeledSection, mergeReadingResources } from "../../../lib/additional-reading";
 import { orpc } from "../../../lib/orpc";
 import { type QuestionImage, QuestionImages } from "../../components/question/QuestionImages";
+import {
+  type DuplicateChoice,
+  DuplicateDecisions,
+} from "../../components/review/DuplicateDecisions";
 import { placeholderKeys } from "../../components/ui/Skeleton";
+
+interface ReviewResultLike {
+  status: "approved" | "needs_decisions" | "not_approved" | "rejected";
+  message: string;
+  pendingDecisions: number;
+  failed: { number: number; preview: string; reason: string }[];
+}
+
+function toneFor(result: ReviewResultLike): "success" | "attention" | "error" {
+  if (result.status === "not_approved") return "error";
+  if (result.status === "needs_decisions") return "attention";
+  return "success";
+}
+
+/** The server's summary plus, for failures, one readable line per question. */
+function describeForPage(result: ReviewResultLike): string {
+  const lines = result.failed.map((f) => `  Q${f.number} “${f.preview}” — ${f.reason}`);
+  return [result.message, ...lines].join("\n");
+}
 
 interface QuestionElement {
   questionText?: string;
@@ -176,7 +199,23 @@ function AdminReviewPage() {
     id: string;
     action: "approve" | "discard";
   } | null>(null);
-  const [lastResult, setLastResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // "attention" = needs a decision (possible duplicates), not an error.
+  const [lastResult, setLastResult] = useState<{
+    tone: "success" | "attention" | "error";
+    message: string;
+  } | null>(null);
+
+  // What approving did, for one batch: remove its card once it's done; otherwise keep it (with its
+  // open decisions) and say what's left.
+  const applyReviewResult = (id: string, result: ReviewResultLike) => {
+    if (result.status === "approved" || result.status === "rejected") {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } else {
+      setItems((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, pendingDecisions: result.pendingDecisions } : i)),
+      );
+    }
+  };
 
   React.useEffect(() => {
     if (queue) {
@@ -186,8 +225,44 @@ function AdminReviewPage() {
   }, [queue]);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
-  const toggleExpand = (id: string) => {
-    setExpandedItems((prev) => ({ ...prev, [id]: !prev[id] }));
+  // A batch waiting only on possible duplicates starts collapsed — its other questions are already
+  // published; the duplicates are what need attention.
+  const isItemExpanded = (item: { id: string; pendingDecisions?: number }) =>
+    expandedItems[item.id] ?? !((item.pendingDecisions ?? 0) > 0);
+  const toggleExpand = (item: { id: string; pendingDecisions?: number }) => {
+    const current = isItemExpanded(item);
+    setExpandedItems((prev) => ({ ...prev, [item.id]: !current }));
+  };
+
+  // The admin's choices for each batch's possible duplicates, applied by Approve & Publish.
+  const queryClient = useQueryClient();
+  const [dupChoices, setDupChoices] = useState<Record<string, Record<string, DuplicateChoice>>>({});
+  const chosenCount = (batchId: string) => Object.keys(dupChoices[batchId] ?? {}).length;
+  const { mutateAsync: approveWithChoices } = useMutation(
+    orpc.admin.approveWithDuplicateChoices.mutationOptions(),
+  );
+  // Approve one batch, applying any duplicate choices made for it first.
+  const approveBatch = async (id: string): Promise<ReviewResultLike> => {
+    const choices = Object.entries(dupChoices[id] ?? {}).map(([decisionId, choice]) => ({
+      id: decisionId,
+      choice,
+    }));
+    if (choices.length === 0) return processReviewItem({ id, action: "approve" });
+    const result = await approveWithChoices({ batchId: id, choices });
+    setDupChoices((prev) => {
+      const { [id]: _done, ...rest } = prev;
+      return rest;
+    });
+    await queryClient.invalidateQueries({
+      queryKey: orpc.admin.listDuplicateReviews.queryOptions({ input: { batchId: id } }).queryKey,
+    });
+    return {
+      ...result,
+      message:
+        result.choiceErrors.length > 0
+          ? `${result.message}\n${result.choiceErrors.map((e) => `  ${e}`).join("\n")}`
+          : result.message,
+    };
   };
 
   const handleAction = async (id: string, action: "approve" | "discard") => {
@@ -195,17 +270,16 @@ function AdminReviewPage() {
       setIsProcessing(true);
       setActiveAction({ id, action });
       setLastResult(null);
-      const result = await processReviewItem({
-        id,
-        action: action === "discard" ? "reject" : "approve",
-      });
-      // A batch that didn't fully publish stays pending server-side, so keep its card too.
-      if (result.success) setItems((prev) => prev.filter((i) => i.id !== id));
-      setLastResult({ ok: result.success, message: result.message });
+      const result =
+        action === "discard"
+          ? await processReviewItem({ id, action: "reject" })
+          : await approveBatch(id);
+      applyReviewResult(id, result);
+      setLastResult({ tone: toneFor(result), message: describeForPage(result) });
     } catch (err) {
       setLastResult({
-        ok: false,
-        message: `Error processing item in queue: ${(err instanceof Error ? err.message : undefined) ?? "check server logs"}`,
+        tone: "error",
+        message: `Couldn't process this batch: ${(err instanceof Error ? err.message : undefined) ?? "check the server logs"}`,
       });
     } finally {
       setIsProcessing(false);
@@ -223,15 +297,21 @@ function AdminReviewPage() {
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
 
   const handleBatchApprove = async () => {
-    // Batches with a similar existing question or known extraction problems need a human look.
-    const safeItems = items.filter((i) => !i.hasCollision && !(i.qualityIssues?.length > 0));
+    // Batches with known extraction problems need a human look.
+    // Batches still waiting on possible duplicates are included only once the admin has chosen for
+    // at least one of them — approving then applies those choices.
+    const safeItems = items.filter(
+      (i) => !(i.qualityIssues?.length > 0) && (!(i.pendingDecisions > 0) || chosenCount(i.id) > 0),
+    );
     if (safeItems.length === 0) {
-      alert("No batches without collisions or extraction problems to approve.");
+      alert(
+        "No batches ready to approve: fix extraction problems, or choose what to keep for possible duplicates first.",
+      );
       return;
     }
     if (
       !confirm(
-        `Approve and publish all ${safeItems.length} batches with no collisions or extraction problems?`,
+        `Approve and publish ${safeItems.length} batch${safeItems.length === 1 ? "" : "es"}? Choices you made for possible duplicates are applied; any without a choice stay for review.`,
       )
     ) {
       return;
@@ -240,19 +320,23 @@ function AdminReviewPage() {
     setLastResult(null);
     setBatchProgress({ done: 0, total: safeItems.length });
     const failures: string[] = [];
+    const needsDecisions: string[] = [];
     let published = 0;
+    let openDecisions = 0;
     let next = 0;
     const worker = async () => {
       while (next < safeItems.length) {
         const item = safeItems[next++];
         try {
-          const result = await processReviewItem({ id: item.id, action: "approve" });
-          if (result.success) {
-            setItems((prev) => prev.filter((i) => i.id !== item.id));
+          const result = await approveBatch(item.id);
+          applyReviewResult(item.id, result);
+          if (result.status === "approved") {
             published++;
+          } else if (result.status === "needs_decisions") {
+            openDecisions += result.pendingDecisions;
+            needsDecisions.push(`Batch ${item.id.slice(0, 8)}: ${result.message}`);
           } else {
-            // Not approved: it stays in the queue (and on the page) to retry.
-            failures.push(`Batch ${item.id.slice(0, 8)}: ${result.message}`);
+            failures.push(`Batch ${item.id.slice(0, 8)}: ${describeForPage(result)}`);
           }
         } catch (err) {
           failures.push(
@@ -270,11 +354,18 @@ function AdminReviewPage() {
     } finally {
       setIsProcessing(false);
       setBatchProgress(null);
+      const headline = [
+        `Published ${published} of ${safeItems.length} batches`,
+        needsDecisions.length > 0
+          ? `${needsDecisions.length} ${needsDecisions.length === 1 ? "batch has" : "batches have"} ${openDecisions} possible duplicate${openDecisions === 1 ? "" : "s"} to review below`
+          : null,
+        failures.length > 0 ? `${failures.length} couldn't be published` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       setLastResult({
-        ok: failures.length === 0,
-        message:
-          `Published ${published} of ${safeItems.length} batches.` +
-          (failures.length ? `\n${failures.join("\n")}` : ""),
+        tone: failures.length > 0 ? "error" : needsDecisions.length > 0 ? "attention" : "success",
+        message: [`${headline}.`, ...needsDecisions, ...failures].join("\n"),
       });
     }
   };
@@ -394,9 +485,11 @@ function AdminReviewPage() {
       {lastResult && (
         <div
           className={`mb-6 p-4 rounded-xl border font-mono text-xs whitespace-pre-wrap break-words ${
-            lastResult.ok
+            lastResult.tone === "success"
               ? "border-emerald-800 bg-emerald-950/40 text-emerald-300"
-              : "border-amber-800 bg-amber-950/30 text-amber-200"
+              : lastResult.tone === "attention"
+                ? "border-amber-800 bg-amber-950/30 text-amber-200"
+                : "border-rose-800 bg-rose-950/30 text-rose-200"
           }`}
         >
           {lastResult.message}
@@ -439,7 +532,8 @@ function AdminReviewPage() {
           items.map((item) => {
             const parsed = item.parsedData as any;
             const elements: QuestionElement[] = parsed?.extractedElements || [];
-            const isExpanded = expandedItems[item.id] !== false; // expanded by default
+            const isExpanded = isItemExpanded(item);
+            const waitingOnChoices = item.pendingDecisions > 0 && chosenCount(item.id) === 0;
             const metadata = parsed?.metadata || {};
             const examCode = String(metadata.exam || "").replace(/^Exam\s+/i, "");
 
@@ -447,7 +541,7 @@ function AdminReviewPage() {
               <div
                 key={item.id}
                 className={`border rounded-2xl overflow-hidden transition-all ${
-                  item.hasCollision
+                  item.pendingDecisions > 0
                     ? "border-amber-900/60 bg-amber-950/10"
                     : "border-slate-800 bg-slate-950/60"
                 }`}
@@ -521,9 +615,10 @@ function AdminReviewPage() {
                         </span>
                       ))}
 
-                    {item.hasCollision && (
-                      <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-800 flex items-center gap-1">
-                        <AlertCircle className="w-3.5 h-3.5" /> Similar Question Exists
+                    {item.pendingDecisions > 0 && (
+                      <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> {item.pendingDecisions} possible
+                        duplicate{item.pendingDecisions === 1 ? "" : "s"} to review
                       </span>
                     )}
 
@@ -546,7 +641,7 @@ function AdminReviewPage() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => toggleExpand(item.id)}
+                      onClick={() => toggleExpand(item)}
                       className="p-1.5 rounded-lg border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition-colors text-xs font-mono flex items-center gap-1"
                     >
                       {isExpanded ? (
@@ -559,8 +654,13 @@ function AdminReviewPage() {
 
                     <button
                       type="button"
-                      disabled={isProcessing || !!publishingLockedReason}
-                      title={publishingLockedReason ?? undefined}
+                      disabled={isProcessing || !!publishingLockedReason || waitingOnChoices}
+                      title={
+                        publishingLockedReason ??
+                        (waitingOnChoices
+                          ? "Choose what to keep for the possible duplicates below first."
+                          : undefined)
+                      }
                       onClick={() => handleAction(item.id, "approve")}
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-mono font-bold transition-all shadow-md flex items-center gap-1.5"
                     >
@@ -586,6 +686,27 @@ function AdminReviewPage() {
                     </button>
                   </div>
                 </div>
+
+                {item.pendingDecisions > 0 && (
+                  <DuplicateDecisions
+                    batchId={item.id}
+                    disabledReason={publishingLockedReason}
+                    choices={dupChoices[item.id] ?? {}}
+                    onChoose={(decisionId, choice) =>
+                      setDupChoices((prev) => ({
+                        ...prev,
+                        [item.id]: { ...prev[item.id], [decisionId]: choice },
+                      }))
+                    }
+                  />
+                )}
+
+                {item.pendingDecisions > 0 && !isExpanded && (
+                  <p className="px-6 py-3 font-mono text-[11px] text-slate-500">
+                    The other {Math.max(elements.length - item.pendingDecisions, 0)} questions in
+                    this batch are already published — expand to see them.
+                  </p>
+                )}
 
                 {/* Expanded Extracted Questions View */}
                 {isExpanded && (
