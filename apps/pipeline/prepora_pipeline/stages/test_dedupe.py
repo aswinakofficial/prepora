@@ -16,7 +16,7 @@ from prepora_pipeline.core.db import get_db_connection
 
 from .content_hash import content_hash
 from .dedupe import check_duplicate, levenshtein, similarity
-from .publish import PublishError, publish_question
+from .publish import HeldResult, PublishError, publish_question
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -459,3 +459,280 @@ class TestPerformanceAgainstALargeCorpus:
         # to avoid — the query only ever touches the ~2,000-row bucket for one subject, not the
         # other 48,000 rows in the other 24 subjects.
         assert elapsed < 10.0, f"dedupe check against a 50k corpus took {elapsed:.2f}s"
+
+
+def _with_options(question, options, answer_key):
+    return question.model_copy(
+        update={
+            "options": [NormalizedOption(key=k, text=t) for k, t in options],
+            "answer": McqAnswer(correct_key=answer_key),
+        }
+    )
+
+
+GITHUB_OPTIONS = [("A", "JavaScript and Docker"), ("B", "Workflows and runners"), ("C", "Both")]
+
+
+class TestPossibleDuplicatesAreHeldForADecision:
+    """A near duplicate becomes a decision for a person (on_near_duplicate="hold"), with a
+    suggestion — then that decision either links it to the existing question or publishes it."""
+
+    def _publish_original(self, test_exam, test_subject, text):
+        return publish_question(
+            _with_options(
+                _normalized(test_exam, test_subject, question_text=text, number=1),
+                GITHUB_OPTIONS,
+                "A",
+            )
+        )
+
+    def test_hold_returns_the_match_and_writes_nothing(self, test_exam, test_subject):
+        marker = uuid.uuid4().hex[:8]
+        original = self._publish_original(
+            test_exam, test_subject, f"What's the best reason to upgrade plan {marker}?"
+        )
+        reworded = _with_options(
+            _normalized(
+                test_exam,
+                test_subject,
+                question_text=f"What is the best reason to upgrade plan {marker}?",
+                number=2,
+                year=2026,
+            ),
+            GITHUB_OPTIONS,
+            "A",
+        )
+
+        held = publish_question(reworded, on_near_duplicate="hold")
+
+        assert isinstance(held, HeldResult)
+        decision = held.decision
+        assert decision.outcome == "near_duplicate"
+        assert decision.existing_question_id == original.question_id
+        assert decision.existing_question_text.startswith("What's the best reason")
+        # Same options, same answer, no number changed → most likely the same question, reworded.
+        assert (decision.options_match, decision.answer_match) == (True, True)
+        assert decision.suggestion == "same"
+        assert _count("SELECT count(*) FROM questions WHERE question_text = %s",
+                      (reworded.question_text,)) == 0
+
+    def test_a_changed_number_suggests_a_different_question(self, test_exam, test_subject):
+        # Seen for real: "What are the two types of GitHub Actions?" vs "…three types…" scored 90%
+        # similar, but they are different questions with different answers.
+        marker = uuid.uuid4().hex[:6]
+        self._publish_original(
+            test_exam, test_subject, f"What are the two types of GitHub Actions {marker}?"
+        )
+        three = _with_options(
+            _normalized(
+                test_exam,
+                test_subject,
+                question_text=f"What are the three types of GitHub Actions {marker}?",
+                number=2,
+                year=2026,
+            ),
+            GITHUB_OPTIONS,
+            "A",
+        )
+        decision = publish_question(three, on_near_duplicate="hold").decision
+        assert decision.suggestion == "different"
+
+    def test_a_different_correct_answer_suggests_a_different_question(
+        self, test_exam, test_subject
+    ):
+        marker = uuid.uuid4().hex[:8]
+        self._publish_original(
+            test_exam, test_subject, f"Which feature should you enable for team {marker}?"
+        )
+        other_answer = _with_options(
+            _normalized(
+                test_exam,
+                test_subject,
+                question_text=f"Which feature should you enable for teams {marker}?",
+                number=2,
+                year=2026,
+            ),
+            GITHUB_OPTIONS,
+            "B",
+        )
+        decision = publish_question(other_answer, on_near_duplicate="hold").decision
+        assert (decision.options_match, decision.answer_match) == (True, False)
+        assert decision.suggestion == "different"
+
+    def test_same_question_links_and_remembers_the_wording(self, test_exam, test_subject):
+        marker = uuid.uuid4().hex[:8]
+        original = self._publish_original(
+            test_exam,
+            test_subject,
+            f"What's the appropriate repository permission role for pushers {marker}?",
+        )
+        reworded_text = f"What's the appropriate repository permission level for pushers {marker}?"
+        reworded = _with_options(
+            _normalized(
+                test_exam, test_subject, question_text=reworded_text, number=2, year=2026
+            ),
+            GITHUB_OPTIONS,
+            "A",
+        )
+
+        linked = publish_question(reworded, link_to_question_id=original.question_id)
+
+        # No new question: the existing one now also appears in the 2026 set, under its own wording.
+        assert linked.question_id == original.question_id
+        assert linked.question_created is False
+        assert linked.occurrence_created is True
+        assert linked.question_set_id != original.question_set_id
+        assert _count("SELECT count(*) FROM question_variants WHERE question_id = %s",
+                      (original.question_id,)) == 1
+
+        # The decision is made once: the same rewording collected again (a 2027 paper) is now an
+        # exact match and links on its own — no hold, no review.
+        again = publish_question(
+            _with_options(
+                _normalized(
+                    test_exam, test_subject, question_text=reworded_text, number=3, year=2027
+                ),
+                GITHUB_OPTIONS,
+                "A",
+            ),
+            on_near_duplicate="hold",
+        )
+        assert not isinstance(again, HeldResult)
+        assert again.question_id == original.question_id
+        assert again.occurrence_created is True
+
+    def test_different_question_publishes_as_new(self, test_exam, test_subject):
+        marker = uuid.uuid4().hex[:6]
+        original = self._publish_original(
+            test_exam, test_subject, f"What are the two types of GitHub Actions {marker}?"
+        )
+        three = _with_options(
+            _normalized(
+                test_exam,
+                test_subject,
+                question_text=f"What are the three types of GitHub Actions {marker}?",
+                number=2,
+                year=2026,
+            ),
+            GITHUB_OPTIONS,
+            "C",
+        )
+        with pytest.raises(PublishError, match="flagged for human review"):
+            publish_question(three)  # the default is still to refuse
+
+        published = publish_question(three, publish_as_new=True)
+        assert published.question_created is True
+        assert published.question_id != original.question_id
+
+    def test_linking_to_a_deleted_question_fails_clearly(self, test_exam, test_subject):
+        question = _normalized(
+            test_exam, test_subject, question_text=f"Orphan {uuid.uuid4().hex}?", number=1
+        )
+        with pytest.raises(PublishError, match="no longer exists"):
+            publish_question(question, link_to_question_id=str(uuid.uuid4()))
+
+
+def _count(query, params):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+class TestKeepingTheNewVersion:
+    """"Same question" can keep either version. Keeping the new one rewrites the published
+    question in place — same id, same options (ids), new wording — and remembers the old wording."""
+
+    def test_new_version_replaces_the_wording_and_remembers_the_old(self, test_exam, test_subject):
+        marker = uuid.uuid4().hex[:8]
+        old_text = f"What's the appropriate repository permission role for pushers {marker}?"
+        new_text = f"What's the appropriate repository permission level for pushers {marker}?"
+        original = publish_question(
+            _with_options(
+                _normalized(test_exam, test_subject, question_text=old_text, number=1),
+                GITHUB_OPTIONS,
+                "A",
+            )
+        )
+        option_ids_before = _rows(
+            "SELECT id FROM question_options WHERE question_id = %s ORDER BY sequence",
+            (original.question_id,),
+        )
+        new_options = [("A", "JavaScript and Docker containers"), ("B", "Workflows and runners"),
+                       ("C", "Both of these")]
+        newer = _with_options(
+            _normalized(test_exam, test_subject, question_text=new_text, number=2, year=2026),
+            new_options,
+            "C",
+        )
+
+        linked = publish_question(
+            newer, link_to_question_id=original.question_id, use_new_wording=True
+        )
+
+        assert linked.question_id == original.question_id
+        assert linked.occurrence_created is True
+        assert _rows("SELECT question_text FROM questions WHERE id = %s",
+                     (original.question_id,)) == [(new_text,)]
+        # Same option rows (practice attempts point at these ids), new text, answer moved to C.
+        assert _rows(
+            "SELECT id FROM question_options WHERE question_id = %s ORDER BY sequence",
+            (original.question_id,),
+        ) == option_ids_before
+        assert _rows(
+            "SELECT o.option_key, o.option_text FROM question_options o "
+            "JOIN question_answers a ON a.correct_option_id = o.id WHERE o.question_id = %s",
+            (original.question_id,),
+        ) == [("C", "Both of these")]
+        # The old wording is remembered, so it still links automatically if collected again.
+        again = publish_question(
+            _with_options(
+                _normalized(test_exam, test_subject, question_text=old_text, number=3, year=2027),
+                new_options,
+                "C",
+            ),
+            on_near_duplicate="hold",
+        )
+        assert not isinstance(again, HeldResult)
+        assert again.question_id == original.question_id
+
+    def test_new_version_with_a_different_number_of_options_is_refused(
+        self, test_exam, test_subject
+    ):
+        marker = uuid.uuid4().hex[:8]
+        original = publish_question(
+            _with_options(
+                _normalized(
+                    test_exam,
+                    test_subject,
+                    question_text=f"Pick the runner type {marker}?",
+                    number=1,
+                ),
+                GITHUB_OPTIONS,
+                "A",
+            )
+        )
+        two_options = _with_options(
+            _normalized(
+                test_exam, test_subject, question_text=f"Pick a runner type {marker}?", number=2
+            ),
+            [("A", "Hosted"), ("B", "Self-hosted")],
+            "A",
+        )
+        with pytest.raises(PublishError, match="has 2 options and the published question has 3"):
+            publish_question(
+                two_options, link_to_question_id=original.question_id, use_new_wording=True
+            )
+
+
+def _rows(query, params):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+    finally:
+        conn.close()

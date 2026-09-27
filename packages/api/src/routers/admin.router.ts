@@ -3,6 +3,7 @@ import { isAdminUser } from "@prepora/auth";
 import { getDb } from "@prepora/db";
 import {
   auditLogs,
+  duplicateReviews,
   examSessions,
   exams,
   examTypes,
@@ -388,11 +389,196 @@ const PUBLISH_CONCURRENCY = 12;
 // Shared by processReviewItem and processReviewBatch (docs/roadmap/engineering-roadmap.md item
 // 21) so there is exactly one place that decides what happens to a review item, whether it's
 // processed alone or as part of a batch.
+// ─── Review results and possible-duplicate decisions ───────────────────────────
+// What approving a batch did, in a shape the review page can present without parsing messages.
+
+export interface ReviewFailure {
+  number: number;
+  preview: string;
+  reason: string;
+}
+
+export interface ReviewCounts {
+  published: number;
+  added: number;
+  alreadyInExam: number;
+  /** Possible duplicates found on this attempt and held for a decision. */
+  held: number;
+  /** Decisions still open for this batch, including ones held on earlier attempts. */
+  pendingDecisions: number;
+  failed: ReviewFailure[];
+}
+
+export interface ReviewResult extends ReviewCounts {
+  success: boolean;
+  status: "approved" | "needs_decisions" | "not_approved" | "rejected";
+  message: string;
+}
+
+const EMPTY_REVIEW_COUNTS: ReviewCounts = {
+  published: 0,
+  added: 0,
+  alreadyInExam: 0,
+  held: 0,
+  pendingDecisions: 0,
+  failed: [],
+};
+
+interface DuplicateDecisionPayload {
+  existing_question_id: string;
+  similarity_score: number;
+  options_match: boolean;
+  answer_match: boolean;
+  suggestion: "same" | "different";
+}
+
+type PipelinePublishResponse =
+  | { held: true; decision: DuplicateDecisionPayload }
+  | { held: false; occurrence_created?: boolean; question_id?: string };
+
+function questionPreview(text: string): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length > 70 ? `${oneLine.slice(0, 70)}…` : oneLine;
+}
+
+/** The pipeline's {"detail": "..."} error, without the JSON wrapper. */
+async function pipelineErrorReason(res: Response): Promise<string> {
+  const body = await res.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown };
+    if (typeof parsed.detail === "string") return parsed.detail;
+  } catch {}
+  return body || `Pipeline service returned ${res.status}`;
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function describeReviewResult(status: ReviewResult["status"], c: ReviewCounts): string {
+  const parts = [`${plural(c.added, "new question")} added`];
+  if (c.alreadyInExam > 0) parts.push(`${c.alreadyInExam} already in the exam`);
+  const summary = parts.join(" · ");
+  if (status === "approved") return `Approved: ${summary}.`;
+  if (status === "needs_decisions") {
+    return `${summary}. ${plural(c.pendingDecisions, "possible duplicate")} need${
+      c.pendingDecisions === 1 ? "s" : ""
+    } your decision before this batch is complete.`;
+  }
+  const decisions =
+    c.pendingDecisions > 0 ? ` ${plural(c.pendingDecisions, "possible duplicate")} to review.` : "";
+  return `${summary}. ${plural(c.failed.length, "question")} couldn't be published — approve again to retry.${decisions}`;
+}
+
+async function holdPossibleDuplicate(
+  db: ReturnType<typeof getDb>,
+  batchId: string,
+  questionNumber: number,
+  candidate: unknown,
+  decision: DuplicateDecisionPayload,
+): Promise<void> {
+  // Re-approving a batch holds the same question again: refresh an undecided row, but never
+  // reopen one a person already decided.
+  await db
+    .insert(duplicateReviews)
+    .values({
+      scrapedQuestionId: batchId,
+      questionNumber,
+      candidate,
+      existingQuestionId: decision.existing_question_id,
+      similarity: decision.similarity_score,
+      optionsMatch: decision.options_match,
+      answerMatch: decision.answer_match,
+      suggestion: decision.suggestion,
+    })
+    .onConflictDoUpdate({
+      target: [duplicateReviews.scrapedQuestionId, duplicateReviews.questionNumber],
+      set: {
+        candidate,
+        existingQuestionId: decision.existing_question_id,
+        similarity: decision.similarity_score,
+        optionsMatch: decision.options_match,
+        answerMatch: decision.answer_match,
+        suggestion: decision.suggestion,
+      },
+      setWhere: eq(duplicateReviews.status, "pending"),
+    });
+}
+
+async function countPendingDecisions(db: ReturnType<typeof getDb>, batchId: string) {
+  const [row] = await db
+    .select({ n: count() })
+    .from(duplicateReviews)
+    .where(
+      and(eq(duplicateReviews.scrapedQuestionId, batchId), eq(duplicateReviews.status, "pending")),
+    );
+  return Number(row?.n ?? 0);
+}
+
+async function resolveDuplicate(
+  db: ReturnType<typeof getDb>,
+  actorId: string,
+  id: string,
+  decision: "same" | "different" | "skip",
+  // For "same": which version the published question should show — the one already published
+  // (default) or the new one from this batch. Either way the other wording is remembered.
+  keep: "existing" | "new" = "existing",
+): Promise<void> {
+  assertPublishingAvailable();
+  const [row] = await db.select().from(duplicateReviews).where(eq(duplicateReviews.id, id));
+  if (!row) throw new ORPCError("NOT_FOUND", { message: "That decision no longer exists." });
+  if (row.status !== "pending") {
+    throw new ORPCError("CONFLICT", { message: "This question has already been decided." });
+  }
+
+  if (decision !== "skip") {
+    const query =
+      decision === "same"
+        ? `link_to_question_id=${encodeURIComponent(row.existingQuestionId)}${
+            keep === "new" ? "&use_new_wording=true" : ""
+          }`
+        : "publish_as_new=true";
+    const res = await fetchPipeline(`/publish?${query}`, {
+      method: "POST",
+      body: JSON.stringify(row.candidate),
+    });
+    if (!res.ok) {
+      // 422 = the pipeline refused this decision with a reason (e.g. the new version has a
+      // different number of options); anything else is the service itself failing.
+      throw new ORPCError(res.status === 422 ? "BAD_REQUEST" : "BAD_GATEWAY", {
+        message: `Couldn't apply that to question ${row.questionNumber}: ${await pipelineErrorReason(res)}`,
+      });
+    }
+  }
+
+  const status =
+    decision === "skip" ? "skipped" : decision === "same" && keep === "new" ? "same_new" : decision;
+  await db
+    .update(duplicateReviews)
+    .set({ status, decidedBy: actorId, decidedAt: new Date() })
+    .where(eq(duplicateReviews.id, id));
+  await writeAuditLog(db, {
+    actorId,
+    action: "resolve_possible_duplicate",
+    entityType: "duplicate_review",
+    entityId: id,
+    oldValue: { status: "pending" },
+    newValue: {
+      status,
+      batch: row.scrapedQuestionId,
+      questionNumber: row.questionNumber,
+      existingQuestionId: row.existingQuestionId,
+      suggestion: row.suggestion,
+      keep: decision === "same" ? keep : undefined,
+    },
+  });
+}
+
 async function processOneReviewItem(
   db: ReturnType<typeof getDb>,
   actorId: string,
   input: { id: string; action: "approve" | "reject" },
-): Promise<{ success: boolean; message: string }> {
+): Promise<ReviewResult> {
   if (input.action === "reject") {
     await db
       .update(scrapedQuestions)
@@ -406,7 +592,12 @@ async function processOneReviewItem(
       oldValue: { status: "pending" },
       newValue: { status: "rejected" },
     });
-    return { success: true, message: `Rejected batch ${input.id.substring(0, 8)}...` };
+    return {
+      ...EMPTY_REVIEW_COUNTS,
+      success: true,
+      status: "rejected",
+      message: `Rejected batch ${input.id.substring(0, 8)}.`,
+    };
   }
 
   // Approve logic. Approving publishes every question through the pipeline service, which only
@@ -477,28 +668,39 @@ async function processOneReviewItem(
   // Of those, how many actually joined the exam vs. were already in it (a re-scrape is mostly the
   // latter — publishing them is a deduplicated no-op).
   let addedCount = 0;
-  const failures: string[] = [];
+  let heldCount = 0;
+  const failed: ReviewFailure[] = [];
   const publishOne = async (el: (typeof publishable)[number], number: number) => {
     try {
       const normalized = reviewElementToNormalizedQuestion(el, meta, number, examSlug);
-      const res = await fetchPipeline("/publish", {
+      // A possible duplicate is held for a person to decide (duplicate_reviews), not failed —
+      // see apps/pipeline/prepora_pipeline/stages/publish.py's publish_question().
+      const res = await fetchPipeline("/publish?on_near_duplicate=hold", {
         method: "POST",
         body: JSON.stringify(normalized),
       });
-      if (res.ok) {
-        publishCount++;
-        const result = (await res.json().catch(() => null)) as {
-          occurrence_created?: boolean;
-        } | null;
-        if (result?.occurrence_created) addedCount++;
-      } else {
-        const body = await res.text().catch(() => res.statusText);
-        failures.push(`Q${number} ${el.questionText.slice(0, 40)}...: ${body}`);
+      if (!res.ok) {
+        failed.push({
+          number,
+          preview: questionPreview(el.questionText),
+          reason: await pipelineErrorReason(res),
+        });
+        return;
       }
+      const result = (await res.json().catch(() => null)) as PipelinePublishResponse | null;
+      if (result?.held) {
+        heldCount++;
+        await holdPossibleDuplicate(db, input.id, number, normalized, result.decision);
+        return;
+      }
+      publishCount++;
+      if (result?.occurrence_created) addedCount++;
     } catch (err) {
-      failures.push(
-        `Q${number} ${el.questionText.slice(0, 40)}...: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      failed.push({
+        number,
+        preview: questionPreview(el.questionText),
+        reason: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -519,29 +721,35 @@ async function processOneReviewItem(
     };
     await Promise.all(Array.from({ length: PUBLISH_CONCURRENCY }, worker));
   }
+  failed.sort((a, b) => a.number - b.number);
 
-  const alreadyCount = publishCount - addedCount;
-  const summary =
-    `${addedCount} new question${addedCount === 1 ? "" : "s"} added` +
-    (alreadyCount > 0 ? ` · ${alreadyCount} already in the exam` : "");
+  // Includes decisions still open from an earlier attempt, not just ones held just now.
+  const pendingDecisions = await countPendingDecisions(db, input.id);
+  const counts = {
+    published: publishCount,
+    added: addedCount,
+    alreadyInExam: publishCount - addedCount,
+    held: heldCount,
+    pendingDecisions,
+    failed,
+  };
 
-  // A batch is approved only when every question published. If any failed it stays pending, so it
-  // remains in the review queue and approving again retries — publishing is idempotent, so the
-  // questions that did publish are simply reported as already in the exam. (Marking it approved
-  // regardless once dropped 25 batches from the queue with nothing published.)
-  if (failures.length > 0) {
+  // A batch is approved only when every question is published or decided. Anything else leaves it
+  // pending — in the review queue, where approving again retries (publishing is idempotent) and
+  // possible duplicates wait for their decisions. (Approving regardless once dropped 25 batches
+  // from the queue with nothing published.)
+  if (failed.length > 0 || pendingDecisions > 0) {
     await writeAuditLog(db, {
       actorId,
-      action: "approve_scraped_question_failed",
+      action:
+        failed.length > 0 ? "approve_scraped_question_failed" : "approve_scraped_question_held",
       entityType: "scraped_question",
       entityId: input.id,
       oldValue: { status: "pending" },
-      newValue: { status: "pending", publishCount, addedCount, failures },
+      newValue: { status: "pending", ...counts },
     });
-    return {
-      success: false,
-      message: `Not approved — ${failures.length} of ${publishable.length} questions failed to publish, so the batch stays in the queue (approving again retries; ${summary}). ${failures.join("; ")}`,
-    };
+    const status = failed.length > 0 ? "not_approved" : "needs_decisions";
+    return { success: false, status, message: describeReviewResult(status, counts), ...counts };
   }
 
   await db
@@ -555,10 +763,15 @@ async function processOneReviewItem(
     entityType: "scraped_question",
     entityId: input.id,
     oldValue: { status: "pending" },
-    newValue: { status: "approved", publishCount, addedCount, failures },
+    newValue: { status: "approved", ...counts },
   });
 
-  return { success: true, message: `Approved: ${summary}.` };
+  return {
+    success: true,
+    status: "approved",
+    message: describeReviewResult("approved", counts),
+    ...counts,
+  };
 }
 
 export const adminRouter = {
@@ -893,6 +1106,15 @@ export const adminRouter = {
       // legitimately reappearing in a different exam or year.
       // Shared across every batch in this request: the exam list, and each exam's published
       // question texts (many batches usually belong to the same few exams).
+      // Possible duplicates still waiting for a decision, per batch.
+      const pendingDecisionRows = await db
+        .select({ batchId: duplicateReviews.scrapedQuestionId, n: count() })
+        .from(duplicateReviews)
+        .where(eq(duplicateReviews.status, "pending"))
+        .groupBy(duplicateReviews.scrapedQuestionId);
+      const pendingDecisionsByBatch = new Map(
+        pendingDecisionRows.map((r) => [r.batchId, Number(r.n)]),
+      );
       const examRows = await db
         .select({ slug: exams.slug, urlMatchPattern: exams.urlMatchPattern })
         .from(exams);
@@ -911,29 +1133,6 @@ export const adminRouter = {
           }
           const meta = parsedData?.metadata || {};
           const elements = parsedData?.extractedElements || [];
-          const first = elements[0];
-
-          let hasCollision = false;
-          // The dedupe check lives in the pipeline service — skip it where that's locked.
-          if (first?.questionText && first?.options && first?.answer && !publishingLockReason()) {
-            try {
-              const normalized = reviewElementToNormalizedQuestion(first, meta, 1);
-              const res = await fetchPipeline("/dedupe/check", {
-                method: "POST",
-                body: JSON.stringify(normalized),
-              });
-              if (res.ok) {
-                const decision = (await res.json()) as { outcome: string };
-                hasCollision = decision.outcome !== "unique";
-              }
-            } catch (err) {
-              // The pipeline service (dedupe check) isn't always running locally — an
-              // unreachable enrichment call must never blank out the whole review queue for
-              // every pending item just because this one optional check failed.
-              console.error("[REVIEW QUEUE] Dedupe check unreachable, skipping:", err);
-            }
-          }
-
           // How much of this batch the exam doesn't have yet — a re-scrape of an assessment is
           // mostly questions already published, and only the new ones will be added.
           const examSlug = await resolveRegisteredExamSlug(
@@ -951,9 +1150,9 @@ export const adminRouter = {
 
           return {
             ...row,
-            hasCollision,
             qualityIssues: reviewQualityIssues(elements),
             newQuestionCount: newCount,
+            pendingDecisions: pendingDecisionsByBatch.get(row.id) ?? 0,
             existingQuestionCount: existingCount,
           };
         }),
@@ -976,6 +1175,132 @@ export const adminRouter = {
     .handler(async ({ input, context }) => {
       const db = getDb();
       return processOneReviewItem(db, context.user.id, input);
+    }),
+
+  // ─── Possible-duplicate decisions ──────────────────────────────────────────
+  // The side-by-side view for one batch: each held question next to the published question it
+  // resembles — wording, options, correct answers, and where the existing one appears.
+  listDuplicateReviews: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/review/duplicates",
+      summary: "List a batch's possible duplicates awaiting a decision",
+    })
+    .input(z.object({ batchId: z.string() }))
+    .handler(async ({ input }) => {
+      const db = getDb();
+      const rows = await db
+        .select()
+        .from(duplicateReviews)
+        .where(eq(duplicateReviews.scrapedQuestionId, input.batchId))
+        .orderBy(duplicateReviews.questionNumber);
+      if (rows.length === 0) return [];
+
+      const existingIds = [...new Set(rows.map((r) => r.existingQuestionId))];
+      const existing = await db.execute(sql`
+        SELECT q.id, q.question_text AS "text",
+          (SELECT json_agg(json_build_object('key', o.option_key, 'text', o.option_text,
+                    'correct', EXISTS (SELECT 1 FROM question_answers a WHERE a.correct_option_id = o.id))
+                  ORDER BY o.sequence)
+             FROM question_options o WHERE o.question_id = q.id) AS options,
+          (SELECT json_agg(DISTINCT e.name || ' · ' || qs.title)
+             FROM question_occurrences oc
+             JOIN question_sets qs ON qs.id = oc.question_set_id
+             JOIN exam_variants ev ON ev.id = qs.exam_variant_id
+             JOIN exams e ON e.id = ev.exam_id
+            WHERE oc.question_id = q.id) AS "appearsIn"
+        FROM questions q
+        WHERE q.id IN (${sql.join(
+          existingIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+      `);
+      const byId = new Map(
+        (
+          existing.rows as unknown as {
+            id: string;
+            text: string;
+            options: { key: string; text: string; correct: boolean }[] | null;
+            appearsIn: string[] | null;
+          }[]
+        ).map((row) => [row.id, row]),
+      );
+
+      return rows.map((row) => {
+        const candidate = row.candidate as {
+          question_text: string;
+          options: { key: string; text: string }[];
+          answer: { correct_key?: string; correct_keys?: string[] };
+        };
+        const correctKeys = new Set(
+          candidate.answer.correct_keys ??
+            (candidate.answer.correct_key ? [candidate.answer.correct_key] : []),
+        );
+        const match = byId.get(row.existingQuestionId);
+        return {
+          id: row.id,
+          questionNumber: row.questionNumber,
+          similarity: row.similarity,
+          optionsMatch: row.optionsMatch,
+          answerMatch: row.answerMatch,
+          suggestion: row.suggestion as "same" | "different",
+          status: row.status as "pending" | "same" | "same_new" | "different" | "skipped",
+          candidate: {
+            text: candidate.question_text,
+            options: candidate.options.map((o) => ({ ...o, correct: correctKeys.has(o.key) })),
+          },
+          existing: {
+            id: row.existingQuestionId,
+            text: match?.text ?? "(question no longer exists)",
+            options: match?.options ?? [],
+            appearsIn: match?.appearsIn ?? [],
+          },
+        };
+      });
+    }),
+
+  // Approve a batch together with the admin's choices for its possible duplicates — what the
+  // review page's Approve & Publish sends. Each choice is applied (keep the published version,
+  // keep the new version, keep both as different questions, or skip the new one), then the batch
+  // is approved once: it completes if nothing is left undecided, and any question without a choice
+  // simply stays for review. A choice that can't be applied is reported and left open.
+  approveWithDuplicateChoices: adminProcedure
+    .route({
+      method: "POST",
+      path: "/admin/review/approve-with-choices",
+      summary: "Apply choices for a batch's possible duplicates, then approve the batch",
+    })
+    .input(
+      z.object({
+        batchId: z.string(),
+        choices: z.array(
+          z.object({
+            id: z.string(),
+            choice: z.enum(["keep_existing", "keep_new", "keep_both", "skip"]),
+          }),
+        ),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const db = getDb();
+      const choiceErrors: string[] = [];
+      for (const { id, choice } of input.choices) {
+        try {
+          if (choice === "keep_existing") await resolveDuplicate(db, context.user.id, id, "same");
+          if (choice === "keep_new") {
+            await resolveDuplicate(db, context.user.id, id, "same", "new");
+          }
+          if (choice === "keep_both") await resolveDuplicate(db, context.user.id, id, "different");
+          if (choice === "skip") await resolveDuplicate(db, context.user.id, id, "skip");
+        } catch (err) {
+          choiceErrors.push(err instanceof Error ? err.message : String(err));
+        }
+      }
+      const batch = await processOneReviewItem(db, context.user.id, {
+        id: input.batchId,
+        action: "approve",
+      });
+      return { ...batch, choiceErrors };
     }),
 
   // docs/roadmap/engineering-roadmap.md item 21: review.tsx's batch approve/discard actions used
