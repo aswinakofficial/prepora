@@ -5,14 +5,17 @@ import type React from "react";
 import { useState } from "react";
 import { useFeatureFlag } from "../../hooks/useFeatureFlag";
 import { useRBAC } from "../../hooks/useRBAC";
-import { RoleGuard } from "../auth/RoleGuard";
 import { MobileAccountSection, UserMenu } from "../auth/UserMenu";
 import { SearchCommandModal } from "../search/SearchCommandModal";
+import { Skeleton } from "../ui/Skeleton";
 
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const { isAuthenticated } = useRBAC();
+  // Until the session (and, once signed in, admin status) is known, the account controls show
+  // skeletons in their place — never "Sign In" for someone who is signed in, and no Dashboard
+  // button popping in late.
+  const { isAuthenticated, isAdmin, isSessionLoading, isAdminLoading } = useRBAC();
   const { enabled: contributeEnabled } = useFeatureFlag("contribute");
 
   return (
@@ -69,16 +72,30 @@ export function SiteHeader() {
                 {item.label}
               </Link>
             ))}
-            <RoleGuard requireAdmin>
-              <Link
-                to="/admin"
-                onClick={() => setMenuOpen(false)}
-                className="py-3 border-b border-slate-900/60 text-emerald-400 flex items-center gap-2"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" /> Dashboard
-              </Link>
-            </RoleGuard>
-            {isAuthenticated ? (
+            {isAdminLoading ? (
+              <div className="py-3 border-b border-slate-900/60">
+                <Skeleton className="h-3.5 w-28" />
+              </div>
+            ) : (
+              isAdmin && (
+                <Link
+                  to="/admin"
+                  onClick={() => setMenuOpen(false)}
+                  className="py-3 border-b border-slate-900/60 text-emerald-400 flex items-center gap-2"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" /> Dashboard
+                </Link>
+              )
+            )}
+            {isSessionLoading ? (
+              <div className="flex items-center gap-3 pt-4" aria-hidden="true">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="space-y-2">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-3 w-40" />
+                </div>
+              </div>
+            ) : isAuthenticated ? (
               <MobileAccountSection onNavigate={() => setMenuOpen(false)} />
             ) : (
               <Link
@@ -120,23 +137,18 @@ export function SiteHeader() {
 
           {/* Action Col */}
           <div className="md:col-span-3 p-6 flex items-center justify-end gap-6">
-            <RoleGuard requireAdmin>
-              <Link
-                to="/admin"
-                className="text-emerald-400 font-bold hover:text-emerald-300 transition-colors shrink-0 flex items-center gap-1.5 border border-emerald-950 bg-emerald-950/30 px-2.5 py-1 rounded-sm"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                Dashboard
-              </Link>
-            </RoleGuard>
-
-            {!isAuthenticated && (
-              <Link
-                to="/auth/signin"
-                className="text-slate-500 hover:text-white transition-colors shrink-0"
-              >
-                Sign In
-              </Link>
+            {isAdminLoading ? (
+              <Skeleton className="h-[26px] w-[104px] rounded-sm shrink-0" />
+            ) : (
+              isAdmin && (
+                <Link
+                  to="/admin"
+                  className="text-emerald-400 font-bold hover:text-emerald-300 transition-colors shrink-0 flex items-center gap-1.5 border border-emerald-950 bg-emerald-950/30 px-2.5 py-1 rounded-sm"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Dashboard
+                </Link>
+              )
             )}
             <button
               type="button"
@@ -148,8 +160,24 @@ export function SiteHeader() {
                 ⌘K
               </kbd>
             </button>
-            {/* Signed in: the avatar, whose menu shows who is signed in — never the email here. */}
-            <UserMenu />
+            {/* The account control always sits last: a skeleton while the session loads, then the
+                avatar (whose menu shows who is signed in — never the email here) or Sign In. */}
+            {/* Fixed height: the skeleton, the avatar and "Sign In" all occupy the same box, so
+                swapping one for another never shifts the row. */}
+            <div className="h-7 flex items-center shrink-0">
+              {isSessionLoading ? (
+                <Skeleton className="h-7 w-7 rounded-full shrink-0" />
+              ) : isAuthenticated ? (
+                <UserMenu />
+              ) : (
+                <Link
+                  to="/auth/signin"
+                  className="text-slate-500 hover:text-white transition-colors shrink-0"
+                >
+                  Sign In
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </header>

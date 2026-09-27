@@ -1,6 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
 import { getWebRequest } from "@tanstack/react-start/server";
-import { useEffect, useState } from "react";
 import { requireAdmin } from "../../lib/auth";
 import { authClient } from "../../lib/auth-client";
 
@@ -11,7 +11,12 @@ export interface RBACState {
   role: UserRole;
   isAdmin: boolean;
   isAuthenticated: boolean;
+  /** Loading anything — the session, or (once signed in) whether the user is an admin. */
   isLoading: boolean;
+  /** The session itself is still loading: whether anyone is signed in isn't known yet. */
+  isSessionLoading: boolean;
+  /** Signed in, and whether they're an admin isn't known yet. */
+  isAdminLoading: boolean;
   hasRole: (allowedRoles: UserRole[]) => boolean;
 }
 
@@ -27,33 +32,25 @@ const checkCurrentUserIsAdminFn = createServerFn({ method: "GET" }).handler(asyn
 });
 
 export function useRBAC(): RBACState {
-  const { data: session, isPending: isLoadingSession } = authClient.useSession();
-  const [isAdminServer, setIsAdminServer] = useState(false);
-  const [isCheckingAdmin, setIsCheckingAdmin] = useState(false);
+  const { data: session, isPending: isSessionLoading } = authClient.useSession();
 
   const user = session?.user ?? null;
   const isAuthenticated = !!user;
+  const hasAdminRole = (user as any)?.role === "admin";
 
-  useEffect(() => {
-    if (user?.email) {
-      // Check if role is directly 'admin' on user object
-      if ((user as any)?.role === "admin") {
-        setIsAdminServer(true);
-        return;
-      }
+  // One shared, cached request for every component that asks (header, Dashboard button, account
+  // menus, route guards) — each used to fire its own check, and each started out as "not an
+  // admin", so the Dashboard button popped in late. Keyed by user, so signing out or switching
+  // accounts never reuses the previous answer.
+  const adminQuery = useQuery({
+    queryKey: ["current-user-is-admin", user?.id ?? null],
+    queryFn: () => checkCurrentUserIsAdminFn(),
+    enabled: isAuthenticated && !hasAdminRole,
+    staleTime: 5 * 60_000,
+  });
 
-      // Check against the server's ADMIN_USERS list, for this session
-      setIsCheckingAdmin(true);
-      checkCurrentUserIsAdminFn()
-        .then((res) => setIsAdminServer(res.authorized))
-        .catch(() => setIsAdminServer(false))
-        .finally(() => setIsCheckingAdmin(false));
-    } else {
-      setIsAdminServer(false);
-    }
-  }, [user?.email, (user as any)?.role]);
-
-  const isAdmin = isAuthenticated && ((user as any)?.role === "admin" || isAdminServer);
+  const isAdminLoading = isAuthenticated && !hasAdminRole && adminQuery.isPending;
+  const isAdmin = isAuthenticated && (hasAdminRole || adminQuery.data?.authorized === true);
   const role: UserRole = !isAuthenticated ? "guest" : isAdmin ? "admin" : "user";
 
   const hasRole = (allowedRoles: UserRole[]): boolean => {
@@ -65,7 +62,9 @@ export function useRBAC(): RBACState {
     role,
     isAdmin,
     isAuthenticated,
-    isLoading: isLoadingSession || isCheckingAdmin,
+    isLoading: isSessionLoading || isAdminLoading,
+    isSessionLoading,
+    isAdminLoading,
     hasRole,
   };
 }
