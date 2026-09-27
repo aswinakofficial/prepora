@@ -18,7 +18,8 @@ import { users } from "./users.ts";
 // When a question being published is very similar — but not identical — to one already published,
 // it is never merged or published automatically: approving its batch publishes everything else and
 // records the question here, with a suggestion, until an admin decides:
-//   same       → link it to the existing question (and remember the wording, see questionVariants)
+//   same       → link it to the existing question, showing whichever version the admin kept
+//                (status "same" or "same_new"); the other wording is remembered (questionVariants)
 //   different  → publish it as a new question
 //   skipped    → don't publish it
 // A batch is complete (approved) once none of its decisions are still pending.
@@ -42,7 +43,9 @@ export const duplicateReviews = pgTable(
     optionsMatch: boolean("options_match").notNull(),
     answerMatch: boolean("answer_match").notNull(),
     suggestion: text("suggestion").notNull(), // "same" | "different"
-    status: text("status").notNull().default("pending"), // "pending" | "same" | "different" | "skipped"
+    // "pending" | "same" (kept the published version) | "same_new" (kept this batch's version) |
+    // "different" | "skipped"
+    status: text("status").notNull().default("pending"),
     decidedBy: text("decided_by").references(() => users.id, { onDelete: "set null" }),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

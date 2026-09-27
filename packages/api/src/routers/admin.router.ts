@@ -520,6 +520,9 @@ async function resolveDuplicate(
   actorId: string,
   id: string,
   decision: "same" | "different" | "skip",
+  // For "same": which version the published question should show — the one already published
+  // (default) or the new one from this batch. Either way the other wording is remembered.
+  keep: "existing" | "new" = "existing",
 ): Promise<{ decision: typeof decision; batch: ReviewResult | null }> {
   assertPublishingAvailable();
   const [row] = await db.select().from(duplicateReviews).where(eq(duplicateReviews.id, id));
@@ -531,20 +534,25 @@ async function resolveDuplicate(
   if (decision !== "skip") {
     const query =
       decision === "same"
-        ? `link_to_question_id=${encodeURIComponent(row.existingQuestionId)}`
+        ? `link_to_question_id=${encodeURIComponent(row.existingQuestionId)}${
+            keep === "new" ? "&use_new_wording=true" : ""
+          }`
         : "publish_as_new=true";
     const res = await fetchPipeline(`/publish?${query}`, {
       method: "POST",
       body: JSON.stringify(row.candidate),
     });
     if (!res.ok) {
-      throw new ORPCError("BAD_GATEWAY", {
-        message: `Couldn't publish question ${row.questionNumber}: ${await pipelineErrorReason(res)}`,
+      // 422 = the pipeline refused this decision with a reason (e.g. the new version has a
+      // different number of options); anything else is the service itself failing.
+      throw new ORPCError(res.status === 422 ? "BAD_REQUEST" : "BAD_GATEWAY", {
+        message: `Couldn't apply that to question ${row.questionNumber}: ${await pipelineErrorReason(res)}`,
       });
     }
   }
 
-  const status = decision === "skip" ? "skipped" : decision;
+  const status =
+    decision === "skip" ? "skipped" : decision === "same" && keep === "new" ? "same_new" : decision;
   await db
     .update(duplicateReviews)
     .set({ status, decidedBy: actorId, decidedAt: new Date() })
@@ -561,6 +569,7 @@ async function resolveDuplicate(
       questionNumber: row.questionNumber,
       existingQuestionId: row.existingQuestionId,
       suggestion: row.suggestion,
+      keep: decision === "same" ? keep : undefined,
     },
   });
 
@@ -1270,7 +1279,7 @@ export const adminRouter = {
           optionsMatch: row.optionsMatch,
           answerMatch: row.answerMatch,
           suggestion: row.suggestion as "same" | "different",
-          status: row.status as "pending" | "same" | "different" | "skipped",
+          status: row.status as "pending" | "same" | "same_new" | "different" | "skipped",
           candidate: {
             text: candidate.question_text,
             options: candidate.options.map((o) => ({ ...o, correct: correctKeys.has(o.key) })),
@@ -1285,8 +1294,9 @@ export const adminRouter = {
       });
     }),
 
-  // Decide one possible duplicate. "same" links it to the existing question (recording the new
-  // wording so it's recognised automatically next time), "different" publishes it as a new
+  // Decide one possible duplicate. "same" links it to the existing question, keeping whichever
+  // version the admin picked (`keep`) and remembering the other wording so it's recognised
+  // automatically next time; "different" publishes it as a new
   // question, "skip" leaves it unpublished. Deciding the batch's last open question completes the
   // batch — approval runs again (idempotent) and marks it approved if nothing else is outstanding.
   resolveDuplicateReview: adminProcedure
@@ -1295,10 +1305,16 @@ export const adminRouter = {
       path: "/admin/review/duplicates/resolve",
       summary: "Decide a possible duplicate: same question, different question, or skip",
     })
-    .input(z.object({ id: z.string(), decision: z.enum(["same", "different", "skip"]) }))
+    .input(
+      z.object({
+        id: z.string(),
+        decision: z.enum(["same", "different", "skip"]),
+        keep: z.enum(["existing", "new"]).default("existing"),
+      }),
+    )
     .handler(async ({ input, context }) => {
       const db = getDb();
-      return resolveDuplicate(db, context.user.id, input.id, input.decision);
+      return resolveDuplicate(db, context.user.id, input.id, input.decision, input.keep);
     }),
 
   // "Accept all suggestions" for one batch: every open decision takes its pre-selected answer.

@@ -41,16 +41,19 @@ def publish(
     normalized: NormalizedQuestion,
     on_near_duplicate: Literal["refuse", "hold"] = "refuse",
     link_to_question_id: str | None = None,
+    use_new_wording: bool = False,
     publish_as_new: bool = False,
 ):
     """Publish one question. Query parameters (all optional, see publish_question()):
     on_near_duplicate=hold returns {"held": true, "decision": {...}} for a possible duplicate
-    instead of a 422; link_to_question_id / publish_as_new carry a reviewer's decision."""
+    instead of a 422; link_to_question_id (+ use_new_wording) / publish_as_new carry a reviewer's
+    decision."""
     try:
         result = publish_question(
             normalized,
             on_near_duplicate=on_near_duplicate,
             link_to_question_id=link_to_question_id,
+            use_new_wording=use_new_wording,
             publish_as_new=publish_as_new,
         )
     except PublishError as exc:
