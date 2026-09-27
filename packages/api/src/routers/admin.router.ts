@@ -1133,29 +1133,6 @@ export const adminRouter = {
           }
           const meta = parsedData?.metadata || {};
           const elements = parsedData?.extractedElements || [];
-          const first = elements[0];
-
-          let hasCollision = false;
-          // The dedupe check lives in the pipeline service — skip it where that's locked.
-          if (first?.questionText && first?.options && first?.answer && !publishingLockReason()) {
-            try {
-              const normalized = reviewElementToNormalizedQuestion(first, meta, 1);
-              const res = await fetchPipeline("/dedupe/check", {
-                method: "POST",
-                body: JSON.stringify(normalized),
-              });
-              if (res.ok) {
-                const decision = (await res.json()) as { outcome: string };
-                hasCollision = decision.outcome !== "unique";
-              }
-            } catch (err) {
-              // The pipeline service (dedupe check) isn't always running locally — an
-              // unreachable enrichment call must never blank out the whole review queue for
-              // every pending item just because this one optional check failed.
-              console.error("[REVIEW QUEUE] Dedupe check unreachable, skipping:", err);
-            }
-          }
-
           // How much of this batch the exam doesn't have yet — a re-scrape of an assessment is
           // mostly questions already published, and only the new ones will be added.
           const examSlug = await resolveRegisteredExamSlug(
@@ -1173,7 +1150,6 @@ export const adminRouter = {
 
           return {
             ...row,
-            hasCollision,
             qualityIssues: reviewQualityIssues(elements),
             newQuestionCount: newCount,
             pendingDecisions: pendingDecisionsByBatch.get(row.id) ?? 0,
