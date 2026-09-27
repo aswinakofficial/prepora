@@ -523,7 +523,7 @@ async function resolveDuplicate(
   // For "same": which version the published question should show — the one already published
   // (default) or the new one from this batch. Either way the other wording is remembered.
   keep: "existing" | "new" = "existing",
-): Promise<{ decision: typeof decision; batch: ReviewResult | null }> {
+): Promise<void> {
   assertPublishingAvailable();
   const [row] = await db.select().from(duplicateReviews).where(eq(duplicateReviews.id, id));
   if (!row) throw new ORPCError("NOT_FOUND", { message: "That decision no longer exists." });
@@ -572,17 +572,6 @@ async function resolveDuplicate(
       keep: decision === "same" ? keep : undefined,
     },
   });
-
-  // The last open decision: approve the batch again so it completes if nothing else is
-  // outstanding (already-published questions are no-ops; decided ones now resolve on their own).
-  if ((await countPendingDecisions(db, row.scrapedQuestionId)) > 0) {
-    return { decision, batch: null };
-  }
-  const batch = await processOneReviewItem(db, actorId, {
-    id: row.scrapedQuestionId,
-    action: "approve",
-  });
-  return { decision, batch };
 }
 
 async function processOneReviewItem(
@@ -1144,29 +1133,6 @@ export const adminRouter = {
           }
           const meta = parsedData?.metadata || {};
           const elements = parsedData?.extractedElements || [];
-          const first = elements[0];
-
-          let hasCollision = false;
-          // The dedupe check lives in the pipeline service — skip it where that's locked.
-          if (first?.questionText && first?.options && first?.answer && !publishingLockReason()) {
-            try {
-              const normalized = reviewElementToNormalizedQuestion(first, meta, 1);
-              const res = await fetchPipeline("/dedupe/check", {
-                method: "POST",
-                body: JSON.stringify(normalized),
-              });
-              if (res.ok) {
-                const decision = (await res.json()) as { outcome: string };
-                hasCollision = decision.outcome !== "unique";
-              }
-            } catch (err) {
-              // The pipeline service (dedupe check) isn't always running locally — an
-              // unreachable enrichment call must never blank out the whole review queue for
-              // every pending item just because this one optional check failed.
-              console.error("[REVIEW QUEUE] Dedupe check unreachable, skipping:", err);
-            }
-          }
-
           // How much of this batch the exam doesn't have yet — a re-scrape of an assessment is
           // mostly questions already published, and only the new ones will be added.
           const examSlug = await resolveRegisteredExamSlug(
@@ -1184,7 +1150,6 @@ export const adminRouter = {
 
           return {
             ...row,
-            hasCollision,
             qualityIssues: reviewQualityIssues(elements),
             newQuestionCount: newCount,
             pendingDecisions: pendingDecisionsByBatch.get(row.id) ?? 0,
@@ -1294,60 +1259,48 @@ export const adminRouter = {
       });
     }),
 
-  // Decide one possible duplicate. "same" links it to the existing question, keeping whichever
-  // version the admin picked (`keep`) and remembering the other wording so it's recognised
-  // automatically next time; "different" publishes it as a new
-  // question, "skip" leaves it unpublished. Deciding the batch's last open question completes the
-  // batch — approval runs again (idempotent) and marks it approved if nothing else is outstanding.
-  resolveDuplicateReview: adminProcedure
+  // Approve a batch together with the admin's choices for its possible duplicates — what the
+  // review page's Approve & Publish sends. Each choice is applied (keep the published version,
+  // keep the new version, keep both as different questions, or skip the new one), then the batch
+  // is approved once: it completes if nothing is left undecided, and any question without a choice
+  // simply stays for review. A choice that can't be applied is reported and left open.
+  approveWithDuplicateChoices: adminProcedure
     .route({
       method: "POST",
-      path: "/admin/review/duplicates/resolve",
-      summary: "Decide a possible duplicate: same question, different question, or skip",
+      path: "/admin/review/approve-with-choices",
+      summary: "Apply choices for a batch's possible duplicates, then approve the batch",
     })
     .input(
       z.object({
-        id: z.string(),
-        decision: z.enum(["same", "different", "skip"]),
-        keep: z.enum(["existing", "new"]).default("existing"),
+        batchId: z.string(),
+        choices: z.array(
+          z.object({
+            id: z.string(),
+            choice: z.enum(["keep_existing", "keep_new", "keep_both", "skip"]),
+          }),
+        ),
       }),
     )
     .handler(async ({ input, context }) => {
       const db = getDb();
-      return resolveDuplicate(db, context.user.id, input.id, input.decision, input.keep);
-    }),
-
-  // "Accept all suggestions" for one batch: every open decision takes its pre-selected answer.
-  acceptSuggestedDecisions: adminProcedure
-    .route({
-      method: "POST",
-      path: "/admin/review/duplicates/accept-suggestions",
-      summary: "Apply the suggested decision to every open possible duplicate in a batch",
-    })
-    .input(z.object({ batchId: z.string() }))
-    .handler(async ({ input, context }) => {
-      const db = getDb();
-      const open = await db
-        .select({ id: duplicateReviews.id, suggestion: duplicateReviews.suggestion })
-        .from(duplicateReviews)
-        .where(
-          and(
-            eq(duplicateReviews.scrapedQuestionId, input.batchId),
-            eq(duplicateReviews.status, "pending"),
-          ),
-        )
-        .orderBy(duplicateReviews.questionNumber);
-      let batch: ReviewResult | null = null;
-      for (const row of open) {
-        const outcome = await resolveDuplicate(
-          db,
-          context.user.id,
-          row.id,
-          row.suggestion as "same" | "different",
-        );
-        batch = outcome.batch ?? batch;
+      const choiceErrors: string[] = [];
+      for (const { id, choice } of input.choices) {
+        try {
+          if (choice === "keep_existing") await resolveDuplicate(db, context.user.id, id, "same");
+          if (choice === "keep_new") {
+            await resolveDuplicate(db, context.user.id, id, "same", "new");
+          }
+          if (choice === "keep_both") await resolveDuplicate(db, context.user.id, id, "different");
+          if (choice === "skip") await resolveDuplicate(db, context.user.id, id, "skip");
+        } catch (err) {
+          choiceErrors.push(err instanceof Error ? err.message : String(err));
+        }
       }
-      return { decided: open.length, batch };
+      const batch = await processOneReviewItem(db, context.user.id, {
+        id: input.batchId,
+        action: "approve",
+      });
+      return { ...batch, choiceErrors };
     }),
 
   // docs/roadmap/engineering-roadmap.md item 21: review.tsx's batch approve/discard actions used
