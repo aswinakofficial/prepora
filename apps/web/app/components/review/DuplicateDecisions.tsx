@@ -62,6 +62,36 @@ function OptionList({ options }: { options: { key: string; text: string; correct
   );
 }
 
+// "Same question" keeps one of the two versions; the other wording is remembered either way.
+function KeepThisVersion({
+  name,
+  checked,
+  onChange,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <label className="mb-2 flex w-fit cursor-pointer items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-400 hover:text-slate-200">
+      <input
+        type="radio"
+        name={`keep-${name}`}
+        checked={checked}
+        onChange={onChange}
+        className="accent-emerald-500"
+      />
+      Keep this version
+    </label>
+  );
+}
+
+function panelClass(selected: boolean): string {
+  return `rounded-lg border p-3 transition-colors ${
+    selected ? "border-emerald-700/80 bg-emerald-950/10" : "border-slate-800"
+  }`;
+}
+
 const DECISION_LABEL: Record<Decision, string> = {
   same: "Same question",
   different: "Different question",
@@ -69,7 +99,8 @@ const DECISION_LABEL: Record<Decision, string> = {
 };
 
 const STATUS_LABEL = {
-  same: "Linked to the existing question",
+  same: "Same question — kept the published version",
+  same_new: "Same question — now shows the new version",
   different: "Published as a new question",
   skipped: "Skipped — not published",
 } as const;
@@ -89,6 +120,8 @@ export function DuplicateDecisions({
   const listQuery = orpc.admin.listDuplicateReviews.queryOptions({ input: { batchId } });
   const { data: decisions = [], isPending } = useQuery(listQuery);
   const [busy, setBusy] = useState<string | null>(null);
+  // For "Same question": which version to keep, per decision. The published one unless changed.
+  const [keepNew, setKeepNew] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: listQuery.queryKey });
@@ -98,10 +131,11 @@ export function DuplicateDecisions({
   );
 
   const decide = async (id: string, decision: Decision) => {
+    const keep = decision === "same" && keepNew[id] ? ("new" as const) : ("existing" as const);
     setBusy(id);
     setError(null);
     try {
-      const outcome = await resolve({ id, decision });
+      const outcome = await resolve({ id, decision, keep });
       if (outcome.batch) onBatchResult(outcome.batch);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save that decision.");
@@ -147,8 +181,9 @@ export function DuplicateDecisions({
           </h3>
           <p className="max-w-2xl text-xs leading-relaxed text-slate-400">
             These look very like questions already published. Decide whether each is the same
-            question (it will be linked, and its wording remembered so it's recognised next time) or
-            a different one (published as new). The rest of the batch is already published.
+            question — pick which version to keep; the other wording is remembered so it's
+            recognised next time — or a different one (published as new). The rest of the batch is
+            already published.
           </p>
         </div>
         {open.length > 1 && (
@@ -203,7 +238,14 @@ export function DuplicateDecisions({
             </header>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-slate-800 p-3">
+              <div className={panelClass(!decided && !keepNew[d.id])}>
+                {!decided && (
+                  <KeepThisVersion
+                    name={d.id}
+                    checked={!keepNew[d.id]}
+                    onChange={() => setKeepNew((k) => ({ ...k, [d.id]: false }))}
+                  />
+                )}
                 <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">
                   Already published
                   {d.existing.appearsIn.length > 0 && (
@@ -218,7 +260,14 @@ export function DuplicateDecisions({
                 </p>
                 <OptionList options={d.existing.options} />
               </div>
-              <div className="rounded-lg border border-slate-800 p-3">
+              <div className={panelClass(!decided && !!keepNew[d.id])}>
+                {!decided && (
+                  <KeepThisVersion
+                    name={d.id}
+                    checked={!!keepNew[d.id]}
+                    onChange={() => setKeepNew((k) => ({ ...k, [d.id]: true }))}
+                  />
+                )}
                 <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">
                   New in this batch
                 </p>
@@ -260,7 +309,9 @@ export function DuplicateDecisions({
                       ) : (
                         <Sparkles className="h-3.5 w-3.5" />
                       )}
-                      {DECISION_LABEL[choice]}
+                      {choice === "same"
+                        ? `Same question · keep ${keepNew[d.id] ? "new" : "published"} version`
+                        : DECISION_LABEL[choice]}
                       {suggested && (
                         <span className="rounded bg-black/25 px-1 text-[9px] uppercase tracking-wider">
                           Suggested
