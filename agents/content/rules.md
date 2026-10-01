@@ -4,7 +4,7 @@ These rules apply to all Content Agents working on Prepora content.
 
 ## Hard Rules (Never Break)
 
-1. **Never invent answers.** If the answer is not clearly stated in the source, use `FLAG FOR HUMAN REVIEW`.
+1. **Never invent answers.** If the answer is not clearly stated in the source, use `FLAG FOR HUMAN REVIEW`. (The pipeline's optional AI step may later *suggest* an answer, but only a reviewer can confirm it, and it stays labelled — see docs/adr/015-ai-assistance.md. A content agent never writes one in as the answer.)
 2. **Never fabricate explanations.** If no explanation exists in the source, flag it.
 3. **Never merge questions** silently. If you suspect a duplicate, flag it and document both.
 4. **Never alter question meaning.** OCR error correction is allowed for formatting only.

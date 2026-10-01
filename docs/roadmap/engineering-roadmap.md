@@ -9,6 +9,28 @@
 
 ---
 
+## Knowledge index and source onboarding (2026-10)
+
+The next phase builds the knowledge index: a hierarchy per kind of exam, papers, multiple sources
+per question with answer provenance, and faceted search. It adds sources one track at a time.
+
+- **Design:** [docs/architecture/knowledge-index.md](../architecture/knowledge-index.md), including
+  its foundation steps S0–S8, P and O.
+- **Decisions:** [ADR-013](../adr/013-knowledge-index-hierarchy.md),
+  [ADR-014](../adr/014-multi-source-provenance.md), [ADR-015](../adr/015-ai-assistance.md).
+- **Source research and the order of tracks:** [docs/sources](../sources/README.md).
+  1. ISTQB, then AWS, HashiCorp and Databricks.
+  2. GATE CS.
+  3. Kerala PSC.
+  4. MGU.
+  5. JEE Main.
+  6. UPSC Prelims.
+  7. Calicut.
+  8. KTU.
+
+  NEET, CUSAT and Kannur are parked.
+- **Permission requests:** [docs/sources/permissions.md](../sources/permissions.md).
+
 ## How to read this
 
 Each item carries seven fields:

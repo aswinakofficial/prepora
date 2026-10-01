@@ -131,6 +131,27 @@ class TestAllowedBaseUrls:
 
         assert is_source_enabled(source_name) is False
 
+    def test_a_not_onboarded_source_is_always_disabled(self, tmp_path, source_name):
+        _write_source_yaml(tmp_path, source_name)
+        sync_sources_from_yaml(connectors_dir=tmp_path)
+        assert is_source_enabled(source_name) is True
+
+        # Marked not onboarded: disabled on the next sync, and kept disabled even if re-enabled.
+        _write_source_yaml(tmp_path, source_name, onboarding="not_onboarded")
+        sync_sources_from_yaml(connectors_dir=tmp_path)
+        assert is_source_enabled(source_name) is False
+        assert f"{source_name}.example.com" not in get_allowed_base_urls()
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE sources SET enabled = true WHERE name = %s", (source_name,))
+                conn.commit()
+        finally:
+            conn.close()
+        sync_sources_from_yaml(connectors_dir=tmp_path)
+        assert is_source_enabled(source_name) is False
+
     def test_unknown_source_is_not_enabled(self):
         assert is_source_enabled(f"does-not-exist-{uuid.uuid4()}") is False
 

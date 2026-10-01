@@ -3,6 +3,11 @@
 Multiple-choice question archives (civil engineering, aptitude, and other categories) at
 [indiabix.com](https://www.indiabix.com).
 
+- **Not onboarded:** IndiaBix publishes its own copyrighted practice questions, not past exam
+  papers, so Prepora doesn't collect from it (docs/sources/not-onboarded.md). `source.yaml` marks it
+  `onboarding: not_onboarded`, which keeps it disabled in the registry. This connector stays as
+  the worked example in docs/connectors/README.md — its fixture is real markup with invented
+  content.
 - **Registry entry:** `source.yaml` in this directory (see docs/roadmap/engineering-roadmap.md
   item 14).
 - **Auth required:** no.

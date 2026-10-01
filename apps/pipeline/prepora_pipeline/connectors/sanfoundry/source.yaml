@@ -9,3 +9,7 @@ crawl_policy:
 rate_limit:
   requests_per_minute: 20
 robots_review_status: not_reviewed
+# Researched and deliberately not used (docs/sources/not-onboarded.md). The registry sync keeps
+# this source disabled, so it is off the fetch allowlist and hidden from the admin scraping page.
+onboarding: not_onboarded
+not_onboarded_reason: "Sanfoundry's own copyrighted practice questions, not past exam papers. See docs/sources/not-onboarded.md."

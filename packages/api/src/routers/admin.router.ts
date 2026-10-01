@@ -1362,7 +1362,9 @@ export const adminRouter = {
     .handler(async () => {
       const db = getDb();
       const [rows, healthBySource] = await Promise.all([
-        db.select().from(sources).orderBy(sources.name),
+        // Disabled sources can't be fetched from (they're off the scraper's allowlist) — including
+        // ones marked not onboarded (docs/sources/not-onboarded.md) — so they aren't offered here.
+        db.select().from(sources).where(eq(sources.enabled, true)).orderBy(sources.name),
         computeSourceHealthStats(db),
       ]);
       return rows.map((source) => ({
