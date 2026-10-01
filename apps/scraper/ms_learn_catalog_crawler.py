@@ -3,6 +3,8 @@ import json
 import os
 import re
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -151,7 +153,92 @@ def fetch_ms_learn_catalog() -> list:
             }
         ]
 
+    notices = exam_retirement_notices([item["exam"] for item in catalog_items])
+    for item in catalog_items:
+        item["retired"] = notices.get(item["exam"])
     return catalog_items
+
+
+# ─── Retired exams ───────────────────────────────────────────────────────────────────────────
+# Microsoft's practice-assessment catalog keeps listing an exam for a while after the exam itself
+# is retired, but its assessment is gone: the link redirects to the Credentials home page (AI-900)
+# or loads a page that never shows a question (MB-240). Scraping one used to "complete" with 0
+# questions — indistinguishable from success at a glance. The exam's own overview page is the
+# reliable signal: it carries a Warning box saying the exam is retired.
+
+_RETIRED = re.compile(r"\b(?:was|were|is|are|has been|have been)\s+retired\b", re.I)
+_EXAM_CODE = re.compile(r"\b([A-Z]{2,3}-\d{3,4})\b", re.I)
+_RETIREMENT_CACHE_SECONDS = 6 * 60 * 60
+_retirement_cache: dict[str, tuple[float, Optional[str]]] = {}
+
+
+def retirement_notice(page_html: str) -> Optional[str]:
+    """
+    The retirement sentence(s) from an MS Learn exam page's Warning box — "The AI-900 exam was
+    retired on June 30, 2026, and has been replaced by AI-901." — or None if the exam isn't
+    retired. Only a past-tense statement counts: "This exam will be retired on …" announces a
+    retirement that hasn't happened, and its assessment still works until then.
+    """
+    soup = BeautifulSoup(page_html, "html.parser")
+    for box in soup.find_all("div", class_=re.compile(r"^warning$", re.I)):
+        text = re.sub(r"^Warning\s*", "", box.get_text(" ", strip=True))
+        if not _RETIRED.search(text):
+            continue
+        sentences = [
+            sentence.strip()
+            for sentence in re.findall(r"[^.!?]+[.!?]?", text)
+            if re.search(r"retired|replaced by", sentence, re.I)
+        ]
+        return " ".join(sentences) or "This exam is retired."
+    return None
+
+
+def exam_retirement_notice(exam_code: str) -> Optional[str]:
+    """retirement_notice() for an exam code ("AI-900"), cached for a few hours. A page that can't
+    be fetched counts as not retired and isn't cached, so it's checked again next time."""
+    code = exam_code.upper()
+    cached = _retirement_cache.get(code)
+    if cached and time.time() - cached[0] < _RETIREMENT_CACHE_SECONDS:
+        return cached[1]
+    url = f"https://learn.microsoft.com/en-us/credentials/certifications/exams/{code.lower()}/"
+    try:
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=10)
+    except requests.RequestException as err:
+        log(f"[MS LEARN CATALOG WARNING]: Couldn't check whether {code} is retired: {err}")
+        return None
+    if res.status_code != 200:
+        return None
+    notice = retirement_notice(res.text)
+    _retirement_cache[code] = (time.time(), notice)
+    return notice
+
+
+def exam_retirement_notices(exam_codes: list[str]) -> dict[str, Optional[str]]:
+    """exam_retirement_notice() for many codes at once, fetched in parallel (the catalog lists
+    ~60 exams; one at a time that's half a minute)."""
+    codes = sorted({c.upper() for c in exam_codes if _EXAM_CODE.fullmatch(c)})
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return dict(zip(codes, pool.map(exam_retirement_notice, codes)))
+
+
+class AssessmentUnavailable(Exception):
+    """The practice assessment showed no questions at all — retired, removed, or never loaded.
+    Raised instead of returning an empty list, so the job fails with the reason rather than
+    completing with 0 questions."""
+
+
+def _unavailable_reason(assessment_url: str, exam: str, final_url: str) -> str:
+    code_match = _EXAM_CODE.search(f"{exam} {assessment_url}")
+    notice = exam_retirement_notice(code_match.group(1)) if code_match else None
+    if notice:
+        return f"Practice assessment not available — the exam is retired on Microsoft Learn: {notice}"
+    if "/practice/assessment" not in final_url:
+        return (
+            "Practice assessment not available — Microsoft Learn redirected it to "
+            f"{final_url}. It may have been removed."
+        )
+    return "No questions found — the practice assessment page never showed a question."
+
 
 # MS Learn renders several "Sign in" links (desktop header, mobile header, in-page CTA) and hides
 # whichever don't fit the current viewport. query_selector() returns the first match in document
@@ -834,6 +921,10 @@ async def crawl_ms_learn_assessment(
                 break
 
         log(f"[MS LEARN CRAWLER]: Extracted {len(extracted_questions)} questions from {assessment_url}")
+        if not extracted_questions:
+            reason = _unavailable_reason(assessment_url, exam, page.url)
+            log(f"[MS LEARN CRAWLER WARNING]: {reason}")
+            raise AssessmentUnavailable(reason)
 
         if extracted_questions:
             inserted_id = insert_scraped_question(

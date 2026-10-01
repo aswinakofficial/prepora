@@ -97,6 +97,16 @@ function humanizeSlug(slug: string): string {
     .join(" ");
 }
 
+// One practice assessment from the scraper's MS Learn catalog (GET /scrape/ms-learn/catalog).
+interface MsCatalogItem {
+  title: string;
+  exam: string;
+  url: string;
+  requiresAuth: boolean;
+  /** Microsoft's retirement notice when the exam is retired (its assessment is gone), else null. */
+  retired?: string | null;
+}
+
 function toSiteOption(source: {
   name: string;
   baseUrl: string;
@@ -182,9 +192,11 @@ function AdminScrapingPage() {
   const selectedWebsite = sites.find((s) => s.id === selectedWebsiteId) || sites[0] || EMPTY_SITE;
 
   // Microsoft Learn Catalog & Auth State
-  const [msCatalog, setMsCatalog] = useState<any[]>([]);
+  const [msCatalog, setMsCatalog] = useState<MsCatalogItem[]>([]);
   const [selectedCatalogUrls, setSelectedCatalogUrls] = useState<string[]>([]);
   const [isFetchingCatalog, setIsFetchingCatalog] = useState(false);
+  const selectableCatalogUrls = msCatalog.filter((item) => !item.retired).map((item) => item.url);
+  const allCatalogSelected = selectedCatalogUrls.length === selectableCatalogUrls.length;
   const [isAuthenticatingMs, setIsAuthenticatingMs] = useState(false);
   const [msAuthStatus, setMsAuthStatus] = useState<string | null>(null);
   const [scrapingProgress, setScrapingProgress] = useState<string | null>(null);
@@ -251,10 +263,16 @@ function AdminScrapingPage() {
     setErrorMsg(null);
     try {
       const data = await fetchMsCatalogFn({});
-      const items = data.catalog || [];
+      const items: MsCatalogItem[] = data.catalog || [];
       setMsCatalog(items);
-      setSelectedCatalogUrls(items.map((item: any) => item.url));
-      setSuccessMsg(`Discovered ${data.catalog_count || 0} Microsoft Learn Practice Assessments!`);
+      // Retired exams stay listed (Microsoft's catalog still links them) but their assessments
+      // are gone, so they start unselected and can't be selected.
+      setSelectedCatalogUrls(items.filter((item) => !item.retired).map((item) => item.url));
+      const retiredCount = items.filter((item) => item.retired).length;
+      setSuccessMsg(
+        `Discovered ${data.catalog_count || 0} Microsoft Learn Practice Assessments` +
+          (retiredCount > 0 ? ` (${retiredCount} retired, not selectable).` : "!"),
+      );
     } catch (err: any) {
       setErrorMsg(`Catalog fetch error: ${err.message}`);
     } finally {
@@ -743,44 +761,46 @@ function AdminScrapingPage() {
                               Discovered Assessments ({msCatalog.length}):
                             </p>
                             <span className="px-2.5 py-0.5 bg-sky-900/60 text-sky-300 border border-sky-700/60 font-mono text-[10px] uppercase tracking-wider rounded-full">
-                              {selectedCatalogUrls.length} of {msCatalog.length} Selected
+                              {selectedCatalogUrls.length} of {selectableCatalogUrls.length}{" "}
+                              Selected
                             </span>
                           </div>
 
                           <button
                             type="button"
                             onClick={() => {
-                              if (selectedCatalogUrls.length === msCatalog.length) {
-                                setSelectedCatalogUrls([]);
-                              } else {
-                                setSelectedCatalogUrls(msCatalog.map((item) => item.url));
-                              }
+                              setSelectedCatalogUrls(
+                                allCatalogSelected ? [] : selectableCatalogUrls,
+                              );
                             }}
                             className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] uppercase tracking-wider transition-colors flex items-center gap-1.5"
                           >
                             <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
-                            {selectedCatalogUrls.length === msCatalog.length
-                              ? "Deselect All"
-                              : "Select All"}
+                            {allCatalogSelected ? "Deselect All" : "Select All"}
                           </button>
                         </div>
 
                         <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                           {msCatalog.map((item) => {
                             const isChecked = selectedCatalogUrls.includes(item.url);
+                            const retired: string | null = item.retired ?? null;
                             return (
                               <div
                                 key={item.url}
+                                title={retired ?? undefined}
                                 className={`p-3 bg-slate-900 border flex items-center justify-between gap-4 transition-all ${
                                   isChecked
                                     ? "border-sky-500/80 bg-sky-950/40 ring-1 ring-sky-500/30"
                                     : "border-slate-800 hover:border-slate-700 opacity-70"
                                 }`}
                               >
-                                <label className="flex items-center gap-3 min-w-0 cursor-pointer">
+                                <label
+                                  className={`flex items-center gap-3 min-w-0 ${retired ? "cursor-not-allowed" : "cursor-pointer"}`}
+                                >
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
+                                    disabled={!!retired}
                                     onChange={() => {
                                       setSelectedCatalogUrls((prev) =>
                                         isChecked
@@ -791,22 +811,28 @@ function AdminScrapingPage() {
                                     className="w-4 h-4 rounded border-slate-700 text-sky-500 focus:ring-sky-500/20 bg-slate-950 shrink-0 cursor-pointer"
                                   />
                                   <div className="min-w-0">
-                                    <p className="text-xs text-slate-200 font-medium truncate">
-                                      {item.title}
+                                    <p className="flex items-center gap-2 text-xs text-slate-200 font-medium">
+                                      <span className="truncate">{item.title}</span>
+                                      {retired && (
+                                        <span className="shrink-0 rounded bg-amber-900/50 px-1.5 py-px font-mono text-[9px] uppercase tracking-wider text-amber-200">
+                                          Retired
+                                        </span>
+                                      )}
                                     </p>
                                     <p className="text-[10px] font-mono text-slate-400 truncate">
-                                      {item.url}
+                                      {retired ?? item.url}
                                     </p>
                                   </div>
                                 </label>
                                 <button
                                   type="button"
+                                  disabled={!!retired}
                                   onClick={() => {
                                     setUrl(item.url);
                                     setTargetExam(`Exam ${item.exam}`);
                                     setTargetSubject("Microsoft Certification");
                                   }}
-                                  className="shrink-0 px-2.5 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 text-[10px] font-mono uppercase tracking-wider transition-colors"
+                                  className="shrink-0 px-2.5 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 text-[10px] font-mono uppercase tracking-wider transition-colors disabled:opacity-40 disabled:hover:bg-sky-950"
                                 >
                                   Target Single
                                 </button>
@@ -1482,11 +1508,13 @@ function RunRow({ run, nested = false }: { run: ScrapeRun; nested?: boolean }) {
             </div>
           ))}
         </div>
-        {run.errorSummary && (
-          <div className="mt-2 text-[11px] text-rose-400 whitespace-pre-wrap break-words">
-            {run.errorSummary}
-          </div>
-        )}
+        {/* The job's summary usually repeats a failed stage's error shown just above. */}
+        {run.errorSummary &&
+          !run.stages.some((s) => s.errorDetail && run.errorSummary?.includes(s.errorDetail)) && (
+            <div className="mt-2 text-[11px] text-rose-400 whitespace-pre-wrap break-words">
+              {run.errorSummary}
+            </div>
+          )}
       </td>
 
       <td className="p-4 text-white font-medium whitespace-nowrap">{questionCount} Qs</td>
