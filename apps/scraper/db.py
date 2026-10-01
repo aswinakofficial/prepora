@@ -14,10 +14,16 @@ from here rather than defining its own.
 """
 import os
 import re
+import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import psycopg2
 from psycopg2.extras import Json
+
+# Same temporary path bridge into apps/pipeline as main.py and security.py (see main.py's comment).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+from prepora_pipeline.core.db import CONNECT_OPTIONS  # noqa: E402
 
 
 def get_db_connection():
@@ -30,7 +36,7 @@ def get_db_connection():
         # parameter — strip it defensively, mirroring
         # packages/db/src/client.ts's cleanConnectionString().
         clean_url = re.sub(r"[?&]channel_binding=[^&]+", "", db_url)
-        return psycopg2.connect(clean_url)
+        return psycopg2.connect(clean_url, **CONNECT_OPTIONS)
     except Exception as e:
         print(f"[DB CONNECTION WARNING]: {e}")
         return None
