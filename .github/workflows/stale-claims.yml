@@ -55,6 +55,6 @@ jobs:
                   body: `@${login} there's been no activity here for ${STALE_DAYS} days, so this issue has been released for someone else. Thanks for your interest — comment \`/claim\` again any time if you'd like to pick it back up.`,
                 });
                 core.info(`released #${issue.number} from ${login}`);
-                await syncIssueSafely({ getOctokit, core, ...context.repo, number: issue.number });
+                await syncIssueSafely({ core, ...context.repo, number: issue.number });
               }
             }

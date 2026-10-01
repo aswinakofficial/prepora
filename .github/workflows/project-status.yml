@@ -43,14 +43,14 @@ jobs:
             const { syncIssue, syncPullRequest } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/project-status.cjs`);
             const { owner, repo } = context.repo;
             if (context.eventName === "issues") {
-              await syncIssue({ getOctokit, core, owner, repo, number: context.payload.issue.number });
+              await syncIssue({ core, owner, repo, number: context.payload.issue.number });
             } else if (context.eventName === "pull_request_target") {
-              await syncPullRequest({ github, getOctokit, core, owner, repo, number: context.payload.pull_request.number });
+              await syncPullRequest({ github, core, owner, repo, number: context.payload.pull_request.number });
             } else {
               const input = context.payload.inputs.issues.trim();
               const numbers = input === "all"
                 ? (await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 }))
                     .filter((i) => !i.pull_request).map((i) => i.number)
                 : input.split(/[\s,]+/).map(Number).filter(Boolean);
-              for (const number of numbers) await syncIssue({ getOctokit, core, owner, repo, number });
+              for (const number of numbers) await syncIssue({ core, owner, repo, number });
             }
