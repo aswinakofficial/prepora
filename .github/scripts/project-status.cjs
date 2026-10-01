@@ -50,13 +50,32 @@ const ISSUE_QUERY = `
     }
   }`;
 
-function projectClient(getOctokit, core) {
+// A minimal GraphQL client for the board, authenticated with PROJECT_TOKEN. (actions/github-script's
+// own client uses the workflow token, which can't write to a user-owned board.)
+function projectClient(core) {
   const token = process.env.PROJECT_TOKEN;
   if (!token) {
     core.notice("PROJECT_TOKEN is not set, so the project board wasn't updated.");
     return null;
   }
-  return getOctokit(token);
+  return {
+    async graphql(query, variables) {
+      const res = await fetch("https://api.github.com/graphql", {
+        method: "POST",
+        headers: {
+          Authorization: `bearer ${token}`,
+          "Content-Type": "application/json",
+          "User-Agent": "prepora-project-status",
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+      const body = await res.json();
+      if (!res.ok || body.errors) {
+        throw new Error(`GitHub GraphQL ${res.status}: ${JSON.stringify(body.errors ?? body)}`);
+      }
+      return body.data;
+    },
+  };
 }
 
 async function loadProject(gh) {
@@ -93,8 +112,8 @@ function targetStatus(issue, current) {
   return FORWARD.has(current) ? "Ready" : current;
 }
 
-async function syncIssue({ getOctokit, core, owner, repo, number }) {
-  const gh = projectClient(getOctokit, core);
+async function syncIssue({ core, owner, repo, number }) {
+  const gh = projectClient(core);
   if (!gh) return;
   const project = await loadProject(gh);
   const { repository } = await gh.graphql(ISSUE_QUERY, { owner, repo, number });
@@ -135,7 +154,7 @@ async function syncIssue({ getOctokit, core, owner, repo, number }) {
 }
 
 // Every issue a pull request will close ("Closes #12" in its description, or linked in the sidebar).
-async function syncPullRequest({ github, getOctokit, core, owner, repo, number }) {
+async function syncPullRequest({ github, core, owner, repo, number }) {
   const { repository } = await github.graphql(
     `query($owner: String!, $repo: String!, $number: Int!) {
       repository(owner: $owner, name: $repo) {
@@ -151,7 +170,7 @@ async function syncPullRequest({ github, getOctokit, core, owner, repo, number }
   );
   if (issues.length === 0) core.info(`PR #${number} doesn't close any issue.`);
   for (const { number: issueNumber } of issues) {
-    await syncIssue({ getOctokit, core, owner, repo, number: issueNumber });
+    await syncIssue({ core, owner, repo, number: issueNumber });
   }
 }
 
