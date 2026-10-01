@@ -185,6 +185,7 @@ function reviewElementToNormalizedQuestion(
   },
   number: number,
   examSlug?: string,
+  sourceUrl?: string,
 ) {
   const examName = meta.exam || meta.targetExam || "unknown-exam";
   const subjectName = meta.subject || meta.targetSubject || "unknown-subject";
@@ -195,9 +196,13 @@ function reviewElementToNormalizedQuestion(
     exam_variant_slug: "standard",
     subject_slug: slugify(subjectName),
     question_set_title: meta.questionSetTitle || null,
-    // Pool sources (MS Learn) identify questions by content, so approving a re-scrape adds only
-    // questions not already published — see the pipeline's stable_id.py.
-    identity: meta.questionIdentity === "content" ? ("content" as const) : ("position" as const),
+    // The pipeline picks this source's duplicate-detection profile from it (identity, thresholds —
+    // apps/pipeline/prepora_pipeline/dedupe/profile.py), so nothing source-specific is decided here.
+    source_url: sourceUrl ?? null,
+    // Only when the scraper tagged the batch; otherwise the source's profile decides.
+    ...(meta.questionIdentity === "content" || meta.questionIdentity === "position"
+      ? { identity: meta.questionIdentity }
+      : {}),
     number,
     question_text: el.questionText,
     options: el.options.map((text, i) => ({ key: String.fromCharCode(65 + i), text })),
@@ -407,6 +412,8 @@ export interface ReviewCounts {
   held: number;
   /** Decisions still open for this batch, including ones held on earlier attempts. */
   pendingDecisions: number;
+  /** Questions a reviewer already chose not to publish, recognised and left out again. */
+  skipped: number;
   failed: ReviewFailure[];
 }
 
@@ -422,6 +429,7 @@ const EMPTY_REVIEW_COUNTS: ReviewCounts = {
   alreadyInExam: 0,
   held: 0,
   pendingDecisions: 0,
+  skipped: 0,
   failed: [],
 };
 
@@ -435,7 +443,8 @@ interface DuplicateDecisionPayload {
 
 type PipelinePublishResponse =
   | { held: true; decision: DuplicateDecisionPayload }
-  | { held: false; occurrence_created?: boolean; question_id?: string };
+  | { held: false; skipped: true }
+  | { held: false; skipped?: false; occurrence_created?: boolean; question_id?: string };
 
 function questionPreview(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
@@ -459,6 +468,7 @@ function plural(n: number, word: string): string {
 function describeReviewResult(status: ReviewResult["status"], c: ReviewCounts): string {
   const parts = [`${plural(c.added, "new question")} added`];
   if (c.alreadyInExam > 0) parts.push(`${c.alreadyInExam} already in the exam`);
+  if (c.skipped > 0) parts.push(`${c.skipped} skipped as decided before`);
   const summary = parts.join(" · ");
   if (status === "approved") return `Approved: ${summary}.`;
   if (status === "needs_decisions") {
@@ -469,6 +479,27 @@ function describeReviewResult(status: ReviewResult["status"], c: ReviewCounts): 
   const decisions =
     c.pendingDecisions > 0 ? ` ${plural(c.pendingDecisions, "possible duplicate")} to review.` : "";
   return `${summary}. ${plural(c.failed.length, "question")} couldn't be published — approve again to retry.${decisions}`;
+}
+
+/** Publishing order for a batch, as waves of indexes (the pipeline's /dedupe/batch-plan). Falls
+ * back to one wave — everything concurrently, as before — if the plan can't be had. */
+async function planPublishWaves(normalized: unknown[]): Promise<number[][]> {
+  const oneWave = [normalized.map((_, i) => i)];
+  try {
+    const res = await fetchPipeline("/dedupe/batch-plan", {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    });
+    if (!res.ok) return oneWave;
+    const { waves } = (await res.json()) as { waves?: number[][] };
+    const planned = (waves ?? []).flat();
+    // Only a plan covering every question exactly once is used.
+    const complete =
+      planned.length === normalized.length && new Set(planned).size === normalized.length;
+    return complete && waves?.[0]?.length ? waves : oneWave;
+  } catch {
+    return oneWave;
+  }
 }
 
 async function holdPossibleDuplicate(
@@ -622,10 +653,6 @@ async function processOneReviewItem(
 
   const elements = parsedData?.extractedElements || [];
   const meta = { ...(parsedData?.metadata || {}) };
-  // MS Learn practice assessments draw questions at random from a pool, so they're always
-  // identified by content — including batches scraped before the crawler started tagging them
-  // with questionIdentity (which would otherwise publish by position and drop new questions).
-  if (item[0].sourceUrl?.includes("learn.microsoft.com")) meta.questionIdentity = "content";
   const examName = meta.exam || meta.targetExam || "unknown-exam";
 
   // Publish into the exam this batch already belongs to when one is registered; otherwise admin
@@ -665,15 +692,19 @@ async function processOneReviewItem(
     images?: ScrapedImage[];
   }[];
 
+  const toNormalized = (el: (typeof publishable)[number], number: number) =>
+    reviewElementToNormalizedQuestion(el, meta, number, examSlug, item[0].sourceUrl);
+
   let publishCount = 0;
   // Of those, how many actually joined the exam vs. were already in it (a re-scrape is mostly the
   // latter — publishing them is a deduplicated no-op).
   let addedCount = 0;
   let heldCount = 0;
+  let skippedCount = 0;
   const failed: ReviewFailure[] = [];
   const publishOne = async (el: (typeof publishable)[number], number: number) => {
     try {
-      const normalized = reviewElementToNormalizedQuestion(el, meta, number, examSlug);
+      const normalized = toNormalized(el, number);
       // A possible duplicate is held for a person to decide (duplicate_reviews), not failed —
       // see apps/pipeline/prepora_pipeline/stages/publish.py's publish_question().
       const res = await fetchPipeline("/publish?on_near_duplicate=hold", {
@@ -694,6 +725,10 @@ async function processOneReviewItem(
         await holdPossibleDuplicate(db, input.id, number, normalized, result.decision);
         return;
       }
+      if (result?.skipped) {
+        skippedCount++;
+        return;
+      }
       publishCount++;
       if (result?.occurrence_created) addedCount++;
     } catch (err) {
@@ -711,16 +746,24 @@ async function processOneReviewItem(
   // concurrent first-time inserts would race on — and the rest follow PUBLISH_CONCURRENCY at a
   // time. Numbers are fixed up front from each question's position, so order never depends on
   // which request finishes first.
+  //
+  // In waves, planned by the pipeline (/dedupe/batch-plan): a question that repeats or nearly
+  // repeats an earlier one in the same batch is published only after it, so it's checked against
+  // it — published at the same moment, neither would see the other.
   if (publishable.length > 0) {
-    await publishOne(publishable[0], 1);
-    let next = 1;
-    const worker = async () => {
-      while (next < publishable.length) {
-        const index = next++;
-        await publishOne(publishable[index], index + 1);
-      }
-    };
-    await Promise.all(Array.from({ length: PUBLISH_CONCURRENCY }, worker));
+    const waves = await planPublishWaves(publishable.map((el, i) => toNormalized(el, i + 1)));
+    const [firstWave, ...laterWaves] = waves;
+    await publishOne(publishable[firstWave[0]], firstWave[0] + 1);
+    for (const wave of [firstWave.slice(1), ...laterWaves]) {
+      let next = 0;
+      const worker = async () => {
+        while (next < wave.length) {
+          const index = wave[next++];
+          await publishOne(publishable[index], index + 1);
+        }
+      };
+      await Promise.all(Array.from({ length: PUBLISH_CONCURRENCY }, worker));
+    }
   }
   failed.sort((a, b) => a.number - b.number);
 
@@ -732,6 +775,7 @@ async function processOneReviewItem(
     alreadyInExam: publishCount - addedCount,
     held: heldCount,
     pendingDecisions,
+    skipped: skippedCount,
     failed,
   };
 
@@ -1151,7 +1195,7 @@ export const adminRouter = {
 
           return {
             ...row,
-            qualityIssues: reviewQualityIssues(elements),
+            qualityIssues: reviewQualityIssues(elements, row.sourceUrl),
             newQuestionCount: newCount,
             pendingDecisions: pendingDecisionsByBatch.get(row.id) ?? 0,
             existingQuestionCount: existingCount,
