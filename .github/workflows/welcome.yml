@@ -1,0 +1,32 @@
+# Greets people on their first issue or pull request in this repository.
+name: Welcome first-time contributors
+
+on:
+  issues:
+    types: [opened]
+  # pull_request_target so the message can be posted on PRs from forks. This workflow never checks
+  # out or runs the PR's code.
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            Thanks for opening your first issue in Prepora! 🎉 A maintainer will take a look and
+            label it soon. While you wait, the [contributing guide](https://github.com/aswinakofficial/prepora/blob/main/CONTRIBUTING.md)
+            explains how the project works, and [Discussions](https://github.com/aswinakofficial/prepora/discussions)
+            is the place for questions and ideas.
+          pr-message: |
+            Thanks for your first pull request to Prepora! 🎉 A maintainer will review it soon —
+            usually within a few days. CI runs the same checks as `pnpm lint`, `pnpm typecheck` and
+            `pnpm test`; if something fails, the logs show what to fix. Questions are welcome right
+            here in the PR.

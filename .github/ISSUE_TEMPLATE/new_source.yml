@@ -1,0 +1,51 @@
+name: Propose a new exam source
+description: Suggest an exam, university, certification or website Prepora should collect questions from.
+labels: ["type: research", "area: sources", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every source is researched before any code is written — see the [source research playbook](https://github.com/aswinakofficial/prepora/blob/main/docs/sources/README.md).
+        Certification exams use **only practice material the vendor itself publishes**; "dump" sites with real exam questions are never used.
+  - type: input
+    id: exam
+    attributes:
+      label: Exam or institution
+      placeholder: e.g. "SSC CGL", "Anna University B.E.", "Google Associate Cloud Engineer"
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: Where are the papers published?
+      description: Official page if there is one; also any other sites you know of.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of exam
+      options:
+        - Certification
+        - Government
+        - Competitive / entrance
+        - University
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What's available?
+      description: Years, formats (web pages, PDFs, scans), languages, and whether answer keys are published.
+  - type: textarea
+    id: terms
+    attributes:
+      label: Terms of use
+      description: Anything you know about whether the content may be reused (copyright notice, licence).
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to research this source and write its dossier (docs/sources/TEMPLATE.md).

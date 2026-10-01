@@ -1,0 +1,41 @@
+name: Bug report
+description: Something on the site or in the code doesn't work as it should.
+labels: ["type: bug", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! A wrong answer or typo in a **question** has its own form ("Content error").
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: A URL on the site, or the part of the code (web, API, pipeline, scraper).
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Browser and device for site bugs; OS, Node and Python versions for local-development bugs.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant output. Remove any secrets (API keys, database URLs, passwords) first.
+      render: text

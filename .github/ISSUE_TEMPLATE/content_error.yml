@@ -1,0 +1,31 @@
+name: Content error
+description: A published question has a wrong answer, a typo, a broken image or a missing explanation.
+labels: ["type: content", "status: triage"]
+body:
+  - type: input
+    id: url
+    attributes:
+      label: Question URL
+      description: The link to the question on prepora.xpar.in.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What's wrong?
+      options:
+        - The marked answer is wrong
+        - Typo or garbled text
+        - Image or formula missing or broken
+        - Explanation is wrong or missing
+        - Duplicate of another question
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details and evidence
+      description: What should it be, and how do you know? A link to an official answer key is the strongest evidence.
+    validations:
+      required: true

@@ -105,14 +105,17 @@ flowchart LR
 
 Prepora is built in the open, and there is room for every kind of help:
 
-- **Developers** — web, API, pipeline and scraping work. Look for
-  [`good first issue`](https://github.com/aswinakofficial/prepora/labels/good%20first%20issue).
+- **Developers** — web, API, pipeline and scraping work. Start with a
+  [`good first issue`](https://github.com/aswinakofficial/prepora/labels/good%20first%20issue) and
+  comment `/claim` to take it ([how it works](CONTRIBUTING.md#finding-something-to-work-on)).
 - **Exam-source connectors** — teach Prepora to read a new source of past papers
   ([connector guide](docs/connectors/README.md)).
 - **Question contributors** — add past papers in a simple Markdown format; no coding needed
   ([format](agents/content/schema.md)).
 - **Data science and ML** — help build the knowledge search and the prediction models.
 - **Design, writing and translation** — make it clearer and available in more languages.
+- **Research, no code needed** — find and document new sources of past papers
+  ([`skill: no-code`](https://github.com/aswinakofficial/prepora/labels/skill%3A%20no-code)).
 
 ### Run it locally
 
