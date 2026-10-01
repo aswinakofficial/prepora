@@ -37,9 +37,10 @@ other channel run by the project — and when someone officially represents the 
 
 ## Reporting
 
-If you experience or witness unacceptable behaviour, please report it privately to the maintainers
-at **[CONDUCT CONTACT — to be filled in before publishing]**. All reports are reviewed promptly
-and fairly, and the reporter's privacy is respected.
+If you experience or witness unacceptable behaviour, please report it **privately** to the
+maintainer, [@aswinakofficial](https://github.com/aswinakofficial), using the contact details on
+that GitHub profile — not in a public issue or discussion. All reports are reviewed promptly and
+fairly, and the reporter's privacy is respected.
 
 ## Enforcement
 
