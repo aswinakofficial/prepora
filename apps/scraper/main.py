@@ -93,7 +93,9 @@ async def ms_learn_catalog_endpoint():
     Fetches the catalog of Microsoft Learn Practice Assessments and returns available exam tests.
     """
     from ms_learn_catalog_crawler import fetch_ms_learn_catalog
-    catalog = fetch_ms_learn_catalog()
+    # Blocking HTTP (the catalog plus each exam's retirement check) — off the event loop, which
+    # the queue worker's crawl shares.
+    catalog = await asyncio.to_thread(fetch_ms_learn_catalog)
     return {
         "status": "success",
         "catalog_count": len(catalog),
@@ -188,10 +190,10 @@ async def run_scrape(job_id: str, req: ScrapeRequest) -> dict:
     if is_ms_learn:
         is_headless = req.headless if req.headless is not None else True
         print(f"[MS LEARN PLAYWRIGHT SCRAPE] Target URL: {req.url} | Headless: {is_headless}")
+        from ms_learn_catalog_crawler import AssessmentUnavailable, crawl_ms_learn_assessment
+
         try:
             with stage_run(job_id, "scrape") as counts:
-                from ms_learn_catalog_crawler import crawl_ms_learn_assessment
-
                 # A single crawl can take several minutes (up to 50 questions, each a real
                 # browser interaction) — without this, the stage row sits at all-zero "running"
                 # for the whole duration and only reflects real progress once the entire crawl
@@ -235,6 +237,13 @@ async def run_scrape(job_id: str, req: ScrapeRequest) -> dict:
                 },
                 "job_id": job_id,
             }
+        except AssessmentUnavailable as unavailable:
+            # Nothing to fall back to: the generic HTML handler can't find questions on a page that
+            # has none. Fail the job with the reason (stage_run recorded it on the stage too), but
+            # not via finalize_job: that would count a failed crawl against MS Learn's source
+            # health, and Microsoft answered fine — the exam is just retired.
+            complete_job(job_id, "failed", error_summary=str(unavailable))
+            raise HTTPException(status_code=422, detail=str(unavailable)) from unavailable
         except Exception as ms_err:
             # stage_run already recorded the "scrape" stage as failed with this error — the job
             # itself stays open (not finalized) since we're falling through to the generic
