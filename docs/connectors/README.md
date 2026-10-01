@@ -5,7 +5,14 @@ means adding one directory — no other file in the repo should need to change (
 docs/roadmap/engineering-roadmap.md item 15's "Done when").
 
 This guide was written immediately after migrating the first connector (`indiabix`), while the
-friction of doing it was still fresh — follow it in order.
+friction of doing it was still fresh — follow it in order. (IndiaBix itself was later researched
+and not onboarded — docs/sources/not-onboarded.md — but its connector stays as this guide's worked
+example.)
+
+**Step 0: research the source first.** Before writing any code, write the source's dossier in
+[docs/sources](../sources/README.md): its terms, how it maps onto the
+[knowledge index](../architecture/knowledge-index.md), how it publishes, whether answers exist,
+and its third-party alternatives. A connector is written only once the dossier says go.
 
 ## Layout
 

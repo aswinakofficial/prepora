@@ -188,6 +188,16 @@ and check it with `pnpm db:check`.
   [docs/connectors](docs/connectors/README.md#layout) for how.
 - **Demo data is invented too** ([scripts/dev-seed/content](scripts/dev-seed/content)). Add to it
   if a feature needs more realistic local data.
+- **Research a source before writing a connector.** Every source gets a dossier in
+  [docs/sources](docs/sources/README.md) covering its terms, structure, answers and third-party
+  alternatives. Some sources are deliberately not used
+  ([not-onboarded](docs/sources/not-onboarded.md)). Certification exams use only practice
+  material the vendor itself publishes, never dump sites.
+- **Third-party content is used only as its licence or terms allow.** A source we may only
+  reference can be used to cross-check answers, never displayed. Explanations are written by
+  contributors unless a source grants permission ([ADR-014](docs/adr/014-multi-source-provenance.md)).
+- **AI-suggested answers and transcriptions** are optional and always confirmed by a reviewer
+  before publishing, then labelled ([ADR-015](docs/adr/015-ai-assistance.md)).
 
 ---
 

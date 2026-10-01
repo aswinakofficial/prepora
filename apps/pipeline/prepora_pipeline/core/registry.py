@@ -98,6 +98,11 @@ def sync_sources_from_yaml(connectors_dir: Path | None = None) -> int:
     static fields are written on conflict — enabled/last_crawl_at/last_successful_crawl_at/
     consecutive_failures are set from the column defaults on first insert only, and never
     overwritten on a repeat sync. Returns the number of source definitions processed.
+
+    One exception to "enabled is never overwritten": a definition marked
+    `onboarding: not_onboarded` (a source researched and deliberately not used — see
+    docs/sources/not-onboarded.md) is forced to enabled = false on every sync, so it can never be
+    fetched from (it drops off get_allowed_base_urls()) however its row was toggled before.
     """
     definitions = load_source_yaml_files(connectors_dir)
     conn = get_db_connection()
@@ -106,17 +111,20 @@ def sync_sources_from_yaml(connectors_dir: Path | None = None) -> int:
             for d in definitions:
                 crawl_policy = d.get("crawl_policy")
                 rate_limit = d.get("rate_limit")
+                not_onboarded = d.get("onboarding") == "not_onboarded"
                 cur.execute(
                     "INSERT INTO sources "
                     "(name, base_url, source_type, connector_name, requires_auth, crawl_policy, "
-                    "rate_limit, robots_review_status) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+                    "rate_limit, robots_review_status, enabled) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
                     "ON CONFLICT (name) DO UPDATE SET "
                     "base_url = EXCLUDED.base_url, source_type = EXCLUDED.source_type, "
                     "connector_name = EXCLUDED.connector_name, "
                     "requires_auth = EXCLUDED.requires_auth, "
                     "crawl_policy = EXCLUDED.crawl_policy, rate_limit = EXCLUDED.rate_limit, "
-                    "robots_review_status = EXCLUDED.robots_review_status, updated_at = now()",
+                    "robots_review_status = EXCLUDED.robots_review_status, "
+                    "enabled = CASE WHEN %s THEN false ELSE sources.enabled END, "
+                    "updated_at = now()",
                     (
                         d["name"],
                         d["base_url"],
@@ -126,6 +134,8 @@ def sync_sources_from_yaml(connectors_dir: Path | None = None) -> int:
                         Json(crawl_policy) if crawl_policy is not None else None,
                         Json(rate_limit) if rate_limit is not None else None,
                         d.get("robots_review_status", "not_reviewed"),
+                        not not_onboarded,
+                        not_onboarded,
                     ),
                 )
             conn.commit()

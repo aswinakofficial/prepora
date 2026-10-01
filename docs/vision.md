@@ -19,9 +19,12 @@ This page is the "why" and the "where next". For the day-to-day engineering plan
 
 These decide the hard trade-offs. A change that breaks one of them needs a very good reason.
 
-1. **Sourced, reviewed, never invented.** Every published question traces back to where it came
-   from, and a person approves every batch before it goes live. When data is missing (an answer, an
-   option), we leave it missing and say so — we never fill it in with a guess.
+1. **Sourced, reviewed, always labelled.** Every published question traces back to where it came
+   from, and a person approves every batch before it goes live. Nothing is published without an
+   official answer or a person's confirmation, and every answer says where it came from. Where an
+   official answer doesn't exist, an optional AI step may *suggest* one, but it's published only
+   after a reviewer confirms it, and it stays labelled "AI-suggested, reviewed"
+   ([ADR-015](adr/015-ai-assistance.md)). Missing data is never filled in silently.
 2. **Honest about uncertainty.** Predictions are labelled as predictions, show what they were built
    from, and publish how accurate the method has been on real past papers.
 3. **Open.** The code is MIT-licensed and built in public. The repository holds code only — no
