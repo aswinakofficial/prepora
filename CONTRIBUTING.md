@@ -9,11 +9,64 @@ bug report, a typo fix, a new exam-source connector, a UI improvement, or better
 
 ## Contents
 
-1. [Local development](#local-development) — get the app running in about 10 minutes
-2. [Where things live](#where-things-live)
-3. [Making a change](#making-a-change) — checks to run, commits, pull requests
-4. [Content and scraping policy](#content-and-scraping-policy)
-5. [Troubleshooting](#troubleshooting)
+1. [Finding something to work on](#finding-something-to-work-on) — good first issues, claiming, labels
+2. [Local development](#local-development) — get the app running in about 10 minutes
+3. [Where things live](#where-things-live)
+4. [Making a change](#making-a-change) — checks to run, commits, pull requests
+5. [Content and scraping policy](#content-and-scraping-policy)
+6. [Troubleshooting](#troubleshooting)
+
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+---
+
+## Finding something to work on
+
+All planned work is in [GitHub issues](https://github.com/aswinakofficial/prepora/issues), grouped
+by milestone, and on the project board. The bigger picture — what Prepora is building and in what
+order — is in the [vision](docs/vision.md) and the
+[knowledge-index plan](docs/architecture/knowledge-index.md).
+
+- **New here?** Start with a
+  [`good first issue`](https://github.com/aswinakofficial/prepora/labels/good%20first%20issue):
+  small, self-contained, and described well enough to finish without knowing the whole codebase.
+- **Ready for more?** [`help wanted`](https://github.com/aswinakofficial/prepora/labels/help%20wanted)
+  issues are open to anyone and need a bit more context.
+- **Not a programmer?** Look for [`skill: no-code`](https://github.com/aswinakofficial/prepora/labels/skill%3A%20no-code):
+  researching exam sources, checking facts, writing docs, adding past papers in Markdown, testing.
+- **Have your own idea?** Open an issue (or a Discussion for open-ended ideas) before writing a lot
+  of code, so we can agree on the approach.
+
+### Claiming an issue
+
+1. Comment **`/claim`** on the issue. A bot assigns it to you, so others know it's taken.
+2. Open a pull request that says `Closes #<issue number>`. A **draft PR early** is welcome — it's
+   the easiest way to ask "am I on the right track?".
+3. Changed your mind? Comment **`/unclaim`** — no explanation needed.
+
+A few rules keep things fair: first-timers can hold **two** claimed issues at a time; issues with
+**no activity for 3 weeks** (and no open pull request) are released automatically; and issues
+labelled `status: maintainer` or `status: needs design` can't be claimed yet.
+
+### What to expect from us
+
+- A first response to new issues and pull requests **within a few days** — even if it's only "thanks,
+  I'll review this weekend".
+- Reviews that explain the *why* behind any change we ask for. Every contributor is credited in the
+  release notes.
+
+### Labels
+
+| Label | Meaning |
+|---|---|
+| `good first issue`, `help wanted` | Where to start |
+| `type: …` | bug, feature, docs, research, content, test, chore |
+| `area: …` | web, api, data-model, pipeline, scraper, sources, search, ai, infra |
+| `source: …` | One exam-source track (e.g. `source: gate`) — see [docs/sources](docs/sources/README.md) |
+| `size: S / M / L` | Roughly a few hours / a day or two / several days |
+| `skill: …` | python, typescript, ui, sql, no-code |
+| `status: …` | triage, needs design, maintainer, blocked |
+| `epic` | A larger piece of work tracked as a checklist of smaller issues |
 
 ---
 
@@ -149,8 +202,8 @@ and secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env`.
 
 ## Making a change
 
-1. **Pick something to work on.** Issues labelled `good first issue` are a good start. For anything
-   bigger than a small fix, open an issue first so we can agree on the approach.
+1. **Pick something to work on** and claim it — see
+   [Finding something to work on](#finding-something-to-work-on).
 2. **Branch** from `main`: `git switch -c fix/short-description`.
 3. **Run the checks** before you push — CI runs the same ones, and a PR can only merge when they pass:
 

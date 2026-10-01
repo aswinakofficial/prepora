@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question or share an idea
+    url: https://github.com/aswinakofficial/prepora/discussions
+    about: For questions, ideas and "how do I…?" — please use Discussions rather than an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/aswinakofficial/prepora/security/advisories/new
+    about: Please report security problems privately, never in a public issue.
+  - name: Contributing guide
+    url: https://github.com/aswinakofficial/prepora/blob/main/CONTRIBUTING.md
+    about: How to set up the project, find something to work on, and open a pull request.

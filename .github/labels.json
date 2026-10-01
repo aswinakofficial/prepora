@@ -1,0 +1,222 @@
+[
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Small, well-described, little context needed \u2014 a great first contribution"
+  },
+  {
+    "name": "help wanted",
+    "color": "008672",
+    "description": "Ready for anyone to pick up; may need some experience with the area"
+  },
+  {
+    "name": "type: bug",
+    "color": "d4c5f9",
+    "description": "Something doesn't work as it should"
+  },
+  {
+    "name": "type: feature",
+    "color": "d4c5f9",
+    "description": "New capability or improvement"
+  },
+  {
+    "name": "type: docs",
+    "color": "d4c5f9",
+    "description": "Documentation"
+  },
+  {
+    "name": "type: research",
+    "color": "d4c5f9",
+    "description": "Investigate a source or a question; output is a written finding"
+  },
+  {
+    "name": "type: content",
+    "color": "d4c5f9",
+    "description": "A problem with a published question (wrong answer, typo, broken image)"
+  },
+  {
+    "name": "type: test",
+    "color": "d4c5f9",
+    "description": "Tests and test infrastructure"
+  },
+  {
+    "name": "type: chore",
+    "color": "d4c5f9",
+    "description": "Maintenance, refactoring, tooling"
+  },
+  {
+    "name": "area: web",
+    "color": "0e8a16",
+    "description": "Website (apps/web)"
+  },
+  {
+    "name": "area: api",
+    "color": "0e8a16",
+    "description": "API and business logic (packages/api)"
+  },
+  {
+    "name": "area: data-model",
+    "color": "0e8a16",
+    "description": "Database schema and migrations (packages/db, drizzle/)"
+  },
+  {
+    "name": "area: pipeline",
+    "color": "0e8a16",
+    "description": "Publishing pipeline (apps/pipeline)"
+  },
+  {
+    "name": "area: scraper",
+    "color": "0e8a16",
+    "description": "Scraper service (apps/scraper)"
+  },
+  {
+    "name": "area: sources",
+    "color": "0e8a16",
+    "description": "Exam sources: research dossiers and connectors"
+  },
+  {
+    "name": "area: search",
+    "color": "0e8a16",
+    "description": "Search and facets"
+  },
+  {
+    "name": "area: ai",
+    "color": "0e8a16",
+    "description": "Optional AI assistance (suggested answers, transcription, tagging)"
+  },
+  {
+    "name": "area: infra",
+    "color": "0e8a16",
+    "description": "CI, deployment, developer setup"
+  },
+  {
+    "name": "source: ms-learn",
+    "color": "fbca04",
+    "description": "The ms-learn source track (docs/sources/ms-learn.md or university-ms-learn.md)"
+  },
+  {
+    "name": "source: istqb",
+    "color": "fbca04",
+    "description": "The istqb source track (docs/sources/istqb.md or university-istqb.md)"
+  },
+  {
+    "name": "source: aws",
+    "color": "fbca04",
+    "description": "The aws source track (docs/sources/aws.md or university-aws.md)"
+  },
+  {
+    "name": "source: hashicorp",
+    "color": "fbca04",
+    "description": "The hashicorp source track (docs/sources/hashicorp.md or university-hashicorp.md)"
+  },
+  {
+    "name": "source: databricks",
+    "color": "fbca04",
+    "description": "The databricks source track (docs/sources/databricks.md or university-databricks.md)"
+  },
+  {
+    "name": "source: gate",
+    "color": "fbca04",
+    "description": "The gate source track (docs/sources/gate.md or university-gate.md)"
+  },
+  {
+    "name": "source: kerala-psc",
+    "color": "fbca04",
+    "description": "The kerala-psc source track (docs/sources/kerala-psc.md or university-kerala-psc.md)"
+  },
+  {
+    "name": "source: jee-main",
+    "color": "fbca04",
+    "description": "The jee-main source track (docs/sources/jee-main.md or university-jee-main.md)"
+  },
+  {
+    "name": "source: upsc",
+    "color": "fbca04",
+    "description": "The upsc source track (docs/sources/upsc.md or university-upsc.md)"
+  },
+  {
+    "name": "source: neet",
+    "color": "fbca04",
+    "description": "The neet source track (docs/sources/neet.md or university-neet.md)"
+  },
+  {
+    "name": "source: mgu",
+    "color": "fbca04",
+    "description": "The mgu source track (docs/sources/mgu.md or university-mgu.md)"
+  },
+  {
+    "name": "source: calicut",
+    "color": "fbca04",
+    "description": "The calicut source track (docs/sources/calicut.md or university-calicut.md)"
+  },
+  {
+    "name": "source: ktu",
+    "color": "fbca04",
+    "description": "The ktu source track (docs/sources/ktu.md or university-ktu.md)"
+  },
+  {
+    "name": "size: S",
+    "color": "c2e0c6",
+    "description": "A few hours"
+  },
+  {
+    "name": "size: M",
+    "color": "bfdadc",
+    "description": "A day or two"
+  },
+  {
+    "name": "size: L",
+    "color": "f9d0c4",
+    "description": "Several days; consider splitting"
+  },
+  {
+    "name": "skill: python",
+    "color": "bfd4f2",
+    "description": "Python (pipeline, scraper)"
+  },
+  {
+    "name": "skill: typescript",
+    "color": "bfd4f2",
+    "description": "TypeScript (web, API)"
+  },
+  {
+    "name": "skill: ui",
+    "color": "bfd4f2",
+    "description": "Design and front-end"
+  },
+  {
+    "name": "skill: sql",
+    "color": "bfd4f2",
+    "description": "SQL and data modelling"
+  },
+  {
+    "name": "skill: no-code",
+    "color": "bfd4f2",
+    "description": "No programming needed: research, writing, data entry, testing"
+  },
+  {
+    "name": "status: triage",
+    "color": "ededed",
+    "description": "New \u2014 a maintainer will review and label it"
+  },
+  {
+    "name": "status: needs design",
+    "color": "e99695",
+    "description": "Approach not settled yet \u2014 discuss before starting work"
+  },
+  {
+    "name": "status: maintainer",
+    "color": "b60205",
+    "description": "Kept by maintainers (architecture, migrations, security)"
+  },
+  {
+    "name": "status: blocked",
+    "color": "000000",
+    "description": "Waiting on another issue or an external answer"
+  },
+  {
+    "name": "epic",
+    "color": "5319e7",
+    "description": "Tracks a larger piece of work split into smaller issues"
+  }
+]

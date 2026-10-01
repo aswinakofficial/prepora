@@ -1,0 +1,50 @@
+# Releases claimed issues with no activity for 21 days and no open pull request linked to them, so
+# work doesn't sit blocked. Maintainers' own assignments are left alone.
+name: Release stale claims
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const STALE_DAYS = 21;
+            const cutoff = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: "open", assignee: "*", per_page: 100,
+            });
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+              if (new Date(issue.updated_at).getTime() > cutoff) continue;
+
+              const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                ...context.repo, issue_number: issue.number, per_page: 100,
+              });
+              const hasOpenPr = timeline.some(
+                (e) => e.event === "cross-referenced" && e.source?.issue?.pull_request && e.source.issue.state === "open",
+              );
+              if (hasOpenPr) continue;
+
+              for (const { login } of issue.assignees) {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo, username: login,
+                }).catch(() => ({ data: { permission: "none" } }));
+                if (["admin", "maintain", "write"].includes(data.permission)) continue;
+                await github.rest.issues.removeAssignees({ ...context.repo, issue_number: issue.number, assignees: [login] });
+                await github.rest.issues.createComment({
+                  ...context.repo, issue_number: issue.number,
+                  body: `@${login} there's been no activity here for ${STALE_DAYS} days, so this issue has been released for someone else. Thanks for your interest — comment \`/claim\` again any time if you'd like to pick it back up.`,
+                });
+                core.info(`released #${issue.number} from ${login}`);
+              }
+            }
