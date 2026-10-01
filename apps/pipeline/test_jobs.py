@@ -19,7 +19,13 @@ from prepora_pipeline.core import (
     stage_run,
 )
 from prepora_pipeline.core.db import get_db_connection
-from prepora_pipeline.core.jobs import record_stage, start_job
+from prepora_pipeline.core.jobs import (
+    cancel_queued_run,
+    claim_next_queued_job,
+    record_stage,
+    requeue_interrupted_jobs,
+    start_job,
+)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -293,3 +299,59 @@ class TestFinalizeJobRecordsCrawlAttempt:
         assert last_crawl_at is not None
         assert last_successful_crawl_at is None
         assert consecutive_failures == 1
+
+
+class TestQueuedRuns:
+    """Bulk scrape runs: jobs queued together under a run_id, claimed one at a time by a worker."""
+
+    def _queue(self, source_id, job_type, run_id, count):
+        return [
+            create_job(
+                source_id=source_id,
+                job_type=job_type,
+                trigger_type="bulk",
+                configuration={"url": f"https://example.com/{n}"},
+                run_id=run_id,
+                run_position=n,
+            )
+            for n in range(count)
+        ]
+
+    def test_jobs_are_claimed_once_each_in_run_order(self, source_id):
+        job_type = f"test-queue-{uuid.uuid4().hex[:8]}"  # isolates this test's queue
+        run_id = str(uuid.uuid4())
+        ids = self._queue(source_id, job_type, run_id, 3)
+
+        claimed = [claim_next_queued_job(job_type=job_type) for _ in range(4)]
+
+        assert [job.id if job else None for job in claimed] == [*ids, None]
+        assert all(get_job(i).status == "running" for i in ids)
+
+    def test_one_off_jobs_are_never_claimed_by_the_queue(self, source_id):
+        job_type = f"test-queue-{uuid.uuid4().hex[:8]}"
+        create_job(source_id=source_id, job_type=job_type, trigger_type="manual")
+        assert claim_next_queued_job(job_type=job_type) is None
+
+    def test_cancel_stops_only_jobs_that_have_not_started(self, source_id):
+        job_type = f"test-queue-{uuid.uuid4().hex[:8]}"
+        run_id = str(uuid.uuid4())
+        first, second, third = self._queue(source_id, job_type, run_id, 3)
+        claim_next_queued_job(job_type=job_type)  # `first` is now running
+
+        assert cancel_queued_run(run_id) == 2
+        assert [get_job(i).status for i in (first, second, third)] == [
+            "running",
+            "cancelled",
+            "cancelled",
+        ]
+        assert claim_next_queued_job(job_type=job_type) is None
+
+    def test_a_job_interrupted_by_a_restart_is_requeued(self, source_id):
+        job_type = f"test-queue-{uuid.uuid4().hex[:8]}"
+        run_id = str(uuid.uuid4())
+        (only,) = self._queue(source_id, job_type, run_id, 1)
+        claim_next_queued_job(job_type=job_type)  # the service "crashes" mid-scrape
+
+        assert requeue_interrupted_jobs(job_type=job_type) == 1
+        assert get_job(only).status == "queued"
+        assert claim_next_queued_job(job_type=job_type).id == only

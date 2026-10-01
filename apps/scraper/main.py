@@ -1,4 +1,6 @@
+import asyncio
 import sys
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -25,10 +27,14 @@ import settings as _settings  # noqa: F401,E402 — imported after load_dotenv()
 # a deliberate, temporary bridge until that merge happens.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
 from prepora_pipeline.core import (  # noqa: E402
+    cancel_queued_run,
+    claim_next_queued_job,
+    complete_job,
     create_job,
     finalize_job,
     get_job,
     record_stage,
+    requeue_interrupted_jobs,
     stage_run,
     start_job,
 )
@@ -87,7 +93,9 @@ async def ms_learn_catalog_endpoint():
     Fetches the catalog of Microsoft Learn Practice Assessments and returns available exam tests.
     """
     from ms_learn_catalog_crawler import fetch_ms_learn_catalog
-    catalog = fetch_ms_learn_catalog()
+    # Blocking HTTP (the catalog plus each exam's retirement check) — off the event loop, which
+    # the queue worker's crawl shares.
+    catalog = await asyncio.to_thread(fetch_ms_learn_catalog)
     return {
         "status": "success",
         "catalog_count": len(catalog),
@@ -170,15 +178,22 @@ async def scrape_endpoint(req: ScrapeRequest):
         }
 
     start_job(job_id)
+    return await run_scrape(job_id, req)
+
+
+async def run_scrape(job_id: str, req: ScrapeRequest) -> dict:
+    """Runs one scrape for an already-started job: the single-exam POST /scrape above, and the
+    queue worker below for bulk runs. Records progress and the final status on the job."""
+    is_ms_learn = "learn.microsoft.com" in req.url or "microsoft.com" in req.url
 
     # SPECIALIZED PLAYWRIGHT BRANCH: Microsoft Learn Assessment Crawler
     if is_ms_learn:
         is_headless = req.headless if req.headless is not None else True
         print(f"[MS LEARN PLAYWRIGHT SCRAPE] Target URL: {req.url} | Headless: {is_headless}")
+        from ms_learn_catalog_crawler import AssessmentUnavailable, crawl_ms_learn_assessment
+
         try:
             with stage_run(job_id, "scrape") as counts:
-                from ms_learn_catalog_crawler import crawl_ms_learn_assessment
-
                 # A single crawl can take several minutes (up to 50 questions, each a real
                 # browser interaction) — without this, the stage row sits at all-zero "running"
                 # for the whole duration and only reflects real progress once the entire crawl
@@ -222,6 +237,13 @@ async def scrape_endpoint(req: ScrapeRequest):
                 },
                 "job_id": job_id,
             }
+        except AssessmentUnavailable as unavailable:
+            # Nothing to fall back to: the generic HTML handler can't find questions on a page that
+            # has none. Fail the job with the reason (stage_run recorded it on the stage too), but
+            # not via finalize_job: that would count a failed crawl against MS Learn's source
+            # health, and Microsoft answered fine — the exam is just retired.
+            complete_job(job_id, "failed", error_summary=str(unavailable))
+            raise HTTPException(status_code=422, detail=str(unavailable)) from unavailable
         except Exception as ms_err:
             # stage_run already recorded the "scrape" stage as failed with this error — the job
             # itself stays open (not finalized) since we're falling through to the generic
@@ -289,3 +311,105 @@ async def scrape_endpoint(req: ScrapeRequest):
         },
         "job_id": job_id,
     }
+
+
+# ─── Queued bulk runs ─────────────────────────────────────────────────────────────────────────
+# "Scrape these 43 exams" used to be a loop in the admin's browser tab, so refreshing or closing the
+# page silently stopped the run. Now the admin page queues every exam as a job in one request
+# (POST /scrape/queue) and this service works through the queue on its own — one exam at a time,
+# surviving page refreshes and, via requeue at startup, its own restarts.
+
+QUEUE_JOB_TYPE = "scrape"
+QUEUE_IDLE_SECONDS = 3
+
+
+class QueueItem(BaseModel):
+    url: str
+    target_exam: Optional[str] = None
+    target_subject: Optional[str] = "Microsoft Certification"
+
+
+class QueueRequest(BaseModel):
+    items: List[QueueItem]
+    max_questions: Optional[int] = None
+    headless: Optional[bool] = True
+    requested_by: Optional[str] = None
+
+
+@app.post("/scrape/queue")
+async def queue_scrape_run(req: QueueRequest):
+    if not req.items:
+        raise HTTPException(status_code=400, detail="Nothing to scrape.")
+    for item in req.items:
+        assert_safe_url(item.url)  # refuse the whole run up front rather than failing mid-way
+    run_id = str(uuid.uuid4())
+    for position, item in enumerate(req.items):
+        is_ms_learn = "microsoft.com" in item.url
+        create_job(
+            source_id="ms-learn" if is_ms_learn else "generic",
+            job_type=QUEUE_JOB_TYPE,
+            trigger_type="bulk",
+            requested_by=req.requested_by,
+            configuration={
+                "url": item.url,
+                "parser_mode": "mcq",
+                "target_exam": item.target_exam,
+                "target_subject": item.target_subject,
+                "max_questions": req.max_questions,
+                "headless": req.headless,
+            },
+            run_id=run_id,
+            run_position=position,
+        )
+    print(f"[SCRAPE QUEUE] Queued run {run_id} with {len(req.items)} job(s)")
+    return {"run_id": run_id, "queued": len(req.items)}
+
+
+@app.post("/scrape/queue/{run_id}/cancel")
+async def cancel_scrape_run(run_id: str):
+    cancelled = cancel_queued_run(run_id)
+    print(f"[SCRAPE QUEUE] Cancelled {cancelled} queued job(s) in run {run_id}")
+    return {"run_id": run_id, "cancelled": cancelled}
+
+
+async def queue_worker() -> None:
+    """Claims queued bulk-run jobs one at a time and scrapes them. A failure is recorded on that job
+    and the worker moves on to the next, so one bad exam never stalls the rest of the run."""
+    requeued = await asyncio.to_thread(requeue_interrupted_jobs, job_type=QUEUE_JOB_TYPE)
+    if requeued:
+        print(f"[SCRAPE QUEUE] Re-queued {requeued} job(s) interrupted by a restart")
+    while True:
+        try:
+            job = await asyncio.to_thread(claim_next_queued_job, job_type=QUEUE_JOB_TYPE)
+        except Exception as err:  # database briefly unreachable: back off and try again
+            print(f"[SCRAPE QUEUE] Couldn't check the queue: {err}")
+            await asyncio.sleep(QUEUE_IDLE_SECONDS * 5)
+            continue
+        if job is None:
+            await asyncio.sleep(QUEUE_IDLE_SECONDS)
+            continue
+        config = job.configuration or {}
+        print(f"[SCRAPE QUEUE] Starting job {job.id}: {config.get('target_exam')} {config.get('url')}")
+        try:
+            await run_scrape(
+                job.id,
+                ScrapeRequest(
+                    url=config["url"],
+                    parser_mode=config.get("parser_mode") or "mcq",
+                    target_exam=config.get("target_exam"),
+                    target_subject=config.get("target_subject"),
+                    max_questions=config.get("max_questions"),
+                    job_id=job.id,
+                    headless=config.get("headless", True),
+                ),
+            )
+        except Exception as err:
+            detail = getattr(err, "detail", None) or str(err)
+            print(f"[SCRAPE QUEUE] Job {job.id} failed: {detail}")
+            await asyncio.to_thread(complete_job, job.id, "failed", error_summary=str(detail)[:500])
+
+
+@app.on_event("startup")
+async def start_queue_worker() -> None:
+    app.state.queue_worker = asyncio.create_task(queue_worker())
+

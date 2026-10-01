@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   CheckCircle2,
   CheckSquare,
+  ChevronDown,
   ChevronRight,
   Database,
   ExternalLink,
@@ -96,6 +97,16 @@ function humanizeSlug(slug: string): string {
     .join(" ");
 }
 
+// One practice assessment from the scraper's MS Learn catalog (GET /scrape/ms-learn/catalog).
+interface MsCatalogItem {
+  title: string;
+  exam: string;
+  url: string;
+  requiresAuth: boolean;
+  /** Microsoft's retirement notice when the exam is retired (its assessment is gone), else null. */
+  retired?: string | null;
+}
+
 function toSiteOption(source: {
   name: string;
   baseUrl: string;
@@ -181,9 +192,11 @@ function AdminScrapingPage() {
   const selectedWebsite = sites.find((s) => s.id === selectedWebsiteId) || sites[0] || EMPTY_SITE;
 
   // Microsoft Learn Catalog & Auth State
-  const [msCatalog, setMsCatalog] = useState<any[]>([]);
+  const [msCatalog, setMsCatalog] = useState<MsCatalogItem[]>([]);
   const [selectedCatalogUrls, setSelectedCatalogUrls] = useState<string[]>([]);
   const [isFetchingCatalog, setIsFetchingCatalog] = useState(false);
+  const selectableCatalogUrls = msCatalog.filter((item) => !item.retired).map((item) => item.url);
+  const allCatalogSelected = selectedCatalogUrls.length === selectableCatalogUrls.length;
   const [isAuthenticatingMs, setIsAuthenticatingMs] = useState(false);
   const [msAuthStatus, setMsAuthStatus] = useState<string | null>(null);
   const [scrapingProgress, setScrapingProgress] = useState<string | null>(null);
@@ -227,14 +240,19 @@ function AdminScrapingPage() {
 
   // Every scrape run — its job status, live progress, per-stage counts, and the review batch it
   // produced — in one table. Polls quickly while anything is queued or running.
-  const { data: scrapeRuns, refetch: refetchRuns } = useQuery({
-    ...orpc.admin.listScrapeRuns.queryOptions(),
+  // Newest first and paged: bulk runs are one entry each, with their exams inside.
+  const [runsLimit, setRunsLimit] = useState(20);
+  const { data: scrapeRunsData, refetch: refetchRuns } = useQuery({
+    ...orpc.admin.listScrapeRuns.queryOptions({ input: { limit: runsLimit } }),
     refetchInterval: (query) =>
-      isScraping ||
-      query.state.data?.some((run) => run.status === "queued" || run.status === "running")
-        ? 1500
-        : 5000,
+      isScraping || (query.state.data?.entries ?? []).some(entryIsActive) ? 1500 : 5000,
   });
+  const { mutateAsync: queueScrapeRunFn } = useMutation(
+    orpc.admin.queueScrapeRun.mutationOptions(),
+  );
+  const { mutateAsync: cancelScrapeRunFn } = useMutation(
+    orpc.admin.cancelScrapeRun.mutationOptions(),
+  );
 
   useEffect(() => {
     setQuestions(routeData || []);
@@ -245,10 +263,16 @@ function AdminScrapingPage() {
     setErrorMsg(null);
     try {
       const data = await fetchMsCatalogFn({});
-      const items = data.catalog || [];
+      const items: MsCatalogItem[] = data.catalog || [];
       setMsCatalog(items);
-      setSelectedCatalogUrls(items.map((item: any) => item.url));
-      setSuccessMsg(`Discovered ${data.catalog_count || 0} Microsoft Learn Practice Assessments!`);
+      // Retired exams stay listed (Microsoft's catalog still links them) but their assessments
+      // are gone, so they start unselected and can't be selected.
+      setSelectedCatalogUrls(items.filter((item) => !item.retired).map((item) => item.url));
+      const retiredCount = items.filter((item) => item.retired).length;
+      setSuccessMsg(
+        `Discovered ${data.catalog_count || 0} Microsoft Learn Practice Assessments` +
+          (retiredCount > 0 ? ` (${retiredCount} retired, not selectable).` : "!"),
+      );
     } catch (err: any) {
       setErrorMsg(`Catalog fetch error: ${err.message}`);
     } finally {
@@ -267,45 +291,34 @@ function AdminScrapingPage() {
 
     if (
       !confirm(
-        `Are you sure you want to scrape ${itemsToScrape.length} selected exam set(s)? This will execute sequential Playwright assessment crawling.`,
+        `Queue ${itemsToScrape.length} exam set(s) for scraping? The local scraper runs them one at a time in the background.`,
       )
     ) {
       return;
     }
 
+    // Queued, not looped here: the local scraper service works through the run on its own, so it
+    // keeps going if this page is refreshed or closed. Progress shows under Scrape Runs.
     setIsScraping(true);
     setErrorMsg(null);
     setSuccessMsg(null);
-    let totalSaved = 0;
-
-    for (let i = 0; i < itemsToScrape.length; i++) {
-      const cat = itemsToScrape[i];
-      setScrapingProgress(
-        `Scraping (${i + 1}/${itemsToScrape.length}): ${cat.exam || cat.title}...`,
+    try {
+      const queued = await queueScrapeRunFn({
+        items: itemsToScrape.map((cat) => ({ url: cat.url, exam: cat.exam || undefined })),
+        maxQuestions: maxQuestions || undefined,
+        headless: isHeadless,
+      });
+      setSuccessMsg(
+        `Queued ${queued.queued} exam${queued.queued === 1 ? "" : "s"}. The local scraper works through them one at a time — you can refresh or leave this page; progress is under Scrape Runs.`,
       );
-      const curJobId = Math.random().toString(36).substring(7);
-      try {
-        const data = await triggerScrapeJobFn({
-          url: cat.url,
-          targetExam: `Exam ${cat.exam}`,
-          targetSubject: "Microsoft Certification",
-          parserMode: "mcq",
-          jobId: curJobId,
-          maxQuestions: maxQuestions || undefined,
-          headless: isHeadless,
-        });
-        totalSaved += data.extracted_count || 0;
-      } catch (err: any) {
-        console.error(`Failed to ingest ${cat.exam}`, err);
-      }
+      await refetchRuns();
+    } catch (err) {
+      setErrorMsg(
+        `Couldn't queue the run: ${err instanceof Error ? err.message : "check that the scraper service is running"}`,
+      );
+    } finally {
+      setIsScraping(false);
     }
-
-    setIsScraping(false);
-    setScrapingProgress(null);
-    setSuccessMsg(
-      `Bulk Scraping Completed! Extracted ${totalSaved} total questions across ${itemsToScrape.length} selected exam set(s).`,
-    );
-    await refetch();
   };
 
   const handleLaunchMsAuth = async () => {
@@ -398,12 +411,28 @@ function AdminScrapingPage() {
     }
   };
 
-  const visibleRuns = (scrapeRuns ?? []).filter(
-    (run) =>
+  const matchesSelectedSite = (run: ScrapeRun) =>
+    run.sourceId === selectedWebsite.id ||
+    !!run.url?.toLowerCase().includes(selectedWebsite.domain.toLowerCase());
+  const allEntries = scrapeRunsData?.entries ?? [];
+  const visibleEntries = allEntries.filter(
+    (entry) =>
       logFilter === "all" ||
-      run.sourceId === selectedWebsite.id ||
-      run.url?.toLowerCase().includes(selectedWebsite.domain.toLowerCase()),
+      (entry.kind === "single"
+        ? matchesSelectedSite(entry.run)
+        : entry.runs.some(matchesSelectedSite)),
   );
+  const cancelRun = async (runId: string) => {
+    try {
+      const result = await cancelScrapeRunFn({ runId });
+      setSuccessMsg(
+        `Cancelled ${result.cancelled} queued exam(s). The one already running will finish.`,
+      );
+      await refetchRuns();
+    } catch (err) {
+      setErrorMsg(`Couldn't cancel: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-32">
@@ -732,44 +761,46 @@ function AdminScrapingPage() {
                               Discovered Assessments ({msCatalog.length}):
                             </p>
                             <span className="px-2.5 py-0.5 bg-sky-900/60 text-sky-300 border border-sky-700/60 font-mono text-[10px] uppercase tracking-wider rounded-full">
-                              {selectedCatalogUrls.length} of {msCatalog.length} Selected
+                              {selectedCatalogUrls.length} of {selectableCatalogUrls.length}{" "}
+                              Selected
                             </span>
                           </div>
 
                           <button
                             type="button"
                             onClick={() => {
-                              if (selectedCatalogUrls.length === msCatalog.length) {
-                                setSelectedCatalogUrls([]);
-                              } else {
-                                setSelectedCatalogUrls(msCatalog.map((item) => item.url));
-                              }
+                              setSelectedCatalogUrls(
+                                allCatalogSelected ? [] : selectableCatalogUrls,
+                              );
                             }}
                             className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] uppercase tracking-wider transition-colors flex items-center gap-1.5"
                           >
                             <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
-                            {selectedCatalogUrls.length === msCatalog.length
-                              ? "Deselect All"
-                              : "Select All"}
+                            {allCatalogSelected ? "Deselect All" : "Select All"}
                           </button>
                         </div>
 
                         <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                           {msCatalog.map((item) => {
                             const isChecked = selectedCatalogUrls.includes(item.url);
+                            const retired: string | null = item.retired ?? null;
                             return (
                               <div
                                 key={item.url}
+                                title={retired ?? undefined}
                                 className={`p-3 bg-slate-900 border flex items-center justify-between gap-4 transition-all ${
                                   isChecked
                                     ? "border-sky-500/80 bg-sky-950/40 ring-1 ring-sky-500/30"
                                     : "border-slate-800 hover:border-slate-700 opacity-70"
                                 }`}
                               >
-                                <label className="flex items-center gap-3 min-w-0 cursor-pointer">
+                                <label
+                                  className={`flex items-center gap-3 min-w-0 ${retired ? "cursor-not-allowed" : "cursor-pointer"}`}
+                                >
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
+                                    disabled={!!retired}
                                     onChange={() => {
                                       setSelectedCatalogUrls((prev) =>
                                         isChecked
@@ -780,22 +811,28 @@ function AdminScrapingPage() {
                                     className="w-4 h-4 rounded border-slate-700 text-sky-500 focus:ring-sky-500/20 bg-slate-950 shrink-0 cursor-pointer"
                                   />
                                   <div className="min-w-0">
-                                    <p className="text-xs text-slate-200 font-medium truncate">
-                                      {item.title}
+                                    <p className="flex items-center gap-2 text-xs text-slate-200 font-medium">
+                                      <span className="truncate">{item.title}</span>
+                                      {retired && (
+                                        <span className="shrink-0 rounded bg-amber-900/50 px-1.5 py-px font-mono text-[9px] uppercase tracking-wider text-amber-200">
+                                          Retired
+                                        </span>
+                                      )}
                                     </p>
                                     <p className="text-[10px] font-mono text-slate-400 truncate">
-                                      {item.url}
+                                      {retired ?? item.url}
                                     </p>
                                   </div>
                                 </label>
                                 <button
                                   type="button"
+                                  disabled={!!retired}
                                   onClick={() => {
                                     setUrl(item.url);
                                     setTargetExam(`Exam ${item.exam}`);
                                     setTargetSubject("Microsoft Certification");
                                   }}
-                                  className="shrink-0 px-2.5 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 text-[10px] font-mono uppercase tracking-wider transition-colors"
+                                  className="shrink-0 px-2.5 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 text-[10px] font-mono uppercase tracking-wider transition-colors disabled:opacity-40 disabled:hover:bg-sky-950"
                                 >
                                   Target Single
                                 </button>
@@ -1138,7 +1175,15 @@ function AdminScrapingPage() {
             <div>
               <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
-                <span>03 / Scrape Runs ({visibleRuns.length})</span>
+                <span>
+                  03 / Scrape Runs
+                  {scrapeRunsData && (
+                    <span className="normal-case tracking-normal text-slate-500">
+                      {" "}
+                      · showing {visibleEntries.length} of {scrapeRunsData.total}
+                    </span>
+                  )}
+                </span>
               </h2>
               <p className="font-mono text-[10px] text-slate-500 uppercase mt-1 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -1173,14 +1218,33 @@ function AdminScrapingPage() {
             </div>
           </div>
 
-          <ScrapeRunsTable runs={visibleRuns} />
+          <ScrapeRunsTable entries={visibleEntries} onCancel={cancelRun} />
+          {scrapeRunsData && allEntries.length < scrapeRunsData.total && (
+            <button
+              type="button"
+              onClick={() => setRunsLimit((n) => n + 20)}
+              className="mt-4 w-full border border-slate-800 bg-slate-950 py-2.5 font-mono text-[11px] uppercase tracking-widest text-slate-400 transition-colors hover:text-white"
+            >
+              Load more · {scrapeRunsData.total - allEntries.length} older
+            </button>
+          )}
         </section>
       </main>
     </div>
   );
 }
 
-type ScrapeRun = NonNullable<Awaited<ReturnType<typeof orpc.admin.listScrapeRuns.call>>>[number];
+type ScrapeRunEntry = NonNullable<
+  Awaited<ReturnType<typeof orpc.admin.listScrapeRuns.call>>
+>["entries"][number];
+type BulkRunEntry = Extract<ScrapeRunEntry, { kind: "bulk" }>;
+type ScrapeRun = Extract<ScrapeRunEntry, { kind: "single" }>["run"];
+
+function entryIsActive(entry: ScrapeRunEntry): boolean {
+  return entry.kind === "single"
+    ? entry.run.status === "queued" || entry.run.status === "running"
+    : entry.summary.queued + entry.summary.running > 0;
+}
 
 const RUN_STATUS_STYLE: Record<string, string> = {
   completed: "bg-emerald-950/40 border-emerald-900/80 text-emerald-400",
@@ -1201,7 +1265,13 @@ function formatDuration(ms: number): string {
   return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
-function ScrapeRunsTable({ runs }: { runs: ScrapeRun[] }) {
+function ScrapeRunsTable({
+  entries,
+  onCancel,
+}: {
+  entries: ScrapeRunEntry[];
+  onCancel: (runId: string) => void;
+}) {
   return (
     <div className="border border-slate-900 overflow-x-auto bg-slate-950/40">
       <table className="w-full text-left font-mono text-xs">
@@ -1215,167 +1285,273 @@ function ScrapeRunsTable({ runs }: { runs: ScrapeRun[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-900/80 text-slate-300">
-          {runs.length === 0 ? (
+          {entries.length === 0 ? (
             <tr>
               <td colSpan={5} className="p-8 text-center text-slate-600">
                 No scrape runs yet. Start one above — it appears here immediately and updates live.
               </td>
             </tr>
           ) : (
-            runs.map((run) => {
-              const active = run.status === "running" || run.status === "queued";
-              // The stage still in progress (MS Learn reports processed/discovered as it goes).
-              const liveStage = run.stages.find((stage) => stage.status === "running");
-              const progress =
-                liveStage && liveStage.discoveredCount > 0
-                  ? Math.min(1, liveStage.processedCount / liveStage.discoveredCount)
-                  : null;
-              const started = run.startedAt ? new Date(run.startedAt) : null;
-              const ended = run.completedAt ? new Date(run.completedAt) : null;
-              const title =
-                run.batch?.examTitle || run.batch?.exam || run.targetExam || run.sourceId;
-              const questionCount =
-                run.batch?.questionCount ??
-                run.stages.reduce((max, stage) => Math.max(max, stage.processedCount), 0);
-
-              return (
-                <tr key={run.id} className="hover:bg-slate-900/40 transition-colors align-top">
-                  <td className="p-4 max-w-[320px]">
-                    <div className="flex items-start gap-3">
-                      {run.batch?.logoUrl && (
-                        <img
-                          src={run.batch.logoUrl}
-                          alt=""
-                          className="w-8 h-8 object-contain shrink-0"
-                          loading="lazy"
-                        />
-                      )}
-                      <div className="min-w-0">
-                        <div className="text-slate-200 font-sans text-sm truncate" title={title}>
-                          {title}
-                        </div>
-                        <div className="text-[10px] text-slate-600 mt-0.5">
-                          #{run.id.slice(0, 8)} · {run.sourceId}
-                        </div>
-                        {run.url && (
-                          <a
-                            href={run.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] text-slate-500 hover:text-blue-400 flex items-center gap-1 mt-0.5"
-                            title={run.url}
-                          >
-                            <span className="truncate">{run.url}</span>
-                            <ExternalLink className="w-3 h-3 shrink-0" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="p-4 min-w-[280px]">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase tracking-wider border ${
-                        RUN_STATUS_STYLE[run.status] ?? RUN_STATUS_STYLE.queued
-                      }`}
-                    >
-                      {active && <RefreshCw className="w-3 h-3 animate-spin" />}
-                      {run.status}
-                    </span>
-                    {progress != null && liveStage && (
-                      <div className="mt-2">
-                        <div className="h-1 bg-slate-900 border border-slate-800">
-                          <div
-                            className="h-full bg-sky-400 transition-all"
-                            style={{ width: `${Math.round(progress * 100)}%` }}
-                          />
-                        </div>
-                        <div className="text-[10px] text-sky-300 mt-1">
-                          {liveStage.processedCount} / {liveStage.discoveredCount} questions
-                        </div>
-                      </div>
-                    )}
-                    <div className="mt-2 space-y-0.5">
-                      {run.stages.map((stage) => (
-                        <div key={stage.id} className="text-[11px] text-slate-500">
-                          <span className="text-slate-300">{stage.stage}</span>{" "}
-                          <span
-                            className={
-                              stage.status === "completed"
-                                ? "text-emerald-500"
-                                : stage.status === "failed"
-                                  ? "text-rose-500"
-                                  : "text-amber-500"
-                            }
-                          >
-                            {stage.status}
-                          </span>{" "}
-                          — processed={stage.processedCount} failed={stage.failedCount} duplicate=
-                          {stage.duplicateCount} skipped={stage.skippedCount}
-                          {stage.durationMs != null ? ` (${stage.durationMs}ms)` : ""}
-                          {stage.errorDetail && (
-                            <div className="text-rose-400 whitespace-pre-wrap break-words">
-                              {stage.errorDetail}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    {run.errorSummary && (
-                      <div className="mt-2 text-[11px] text-rose-400 whitespace-pre-wrap break-words">
-                        {run.errorSummary}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="p-4 text-white font-medium whitespace-nowrap">
-                    {questionCount} Qs
-                  </td>
-
-                  <td className="p-4 whitespace-nowrap">
-                    {run.batch ? (
-                      <div className="space-y-1">
-                        <div
-                          className={`uppercase tracking-wider text-[10px] ${
-                            BATCH_STATUS_STYLE[run.batch.status] ?? "text-slate-400"
-                          }`}
-                        >
-                          {run.batch.status}
-                        </div>
-                        {run.batch.status === "pending" && (
-                          <Link
-                            to="/admin/review"
-                            className="text-slate-400 hover:text-white border-b border-slate-700 hover:border-white pb-0.5 transition-colors uppercase tracking-wider text-[10px]"
-                          >
-                            Review →
-                          </Link>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-slate-600 text-[10px]">
-                        {active ? "Scraping…" : "No batch"}
-                      </span>
-                    )}
-                  </td>
-
-                  <td
-                    className="p-4 text-slate-500 text-[11px] whitespace-nowrap"
-                    suppressHydrationWarning
-                  >
-                    {started ? `${started.toISOString().replace("T", " ").slice(0, 19)} UTC` : "—"}
-                    {started && (
-                      <div className="text-slate-400 mt-0.5">
-                        {formatDuration((ended ?? new Date()).getTime() - started.getTime())}
-                        {!ended && active ? " so far" : ""}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })
+            entries.map((entry) =>
+              entry.kind === "single" ? (
+                <RunRow key={entry.id} run={entry.run} />
+              ) : (
+                <BulkRunRows key={entry.id} entry={entry} onCancel={onCancel} />
+              ),
+            )
           )}
         </tbody>
       </table>
     </div>
+  );
+}
+
+// One bulk run ("scrape these 43 exams") as a single row: overall progress, what's running now,
+// and a Cancel for the exams not started yet. Expands into one row per exam.
+function BulkRunRows({
+  entry,
+  onCancel,
+}: {
+  entry: BulkRunEntry;
+  onCancel: (runId: string) => void;
+}) {
+  const { summary } = entry;
+  const active = summary.queued + summary.running > 0;
+  const [open, setOpen] = useState(false);
+  const finished = summary.completed + summary.failed + summary.cancelled;
+  const current = entry.runs.find((run) => run.status === "running");
+  const currentStage = current?.stages.find((stage) => stage.status === "running");
+  const createdAt = new Date(entry.createdAt);
+  return (
+    <>
+      <tr className={`align-top ${active ? "bg-sky-950/10" : ""}`}>
+        <td className="p-4">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="flex items-start gap-2 text-left"
+            aria-expanded={open}
+          >
+            {open ? (
+              <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            ) : (
+              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            )}
+            <span>
+              <span className="block font-sans text-sm text-slate-200">
+                Bulk run · {summary.total} exam{summary.total === 1 ? "" : "s"}
+              </span>
+              <span className="text-[10px] text-slate-600">
+                #{entry.id.slice(0, 8)} · {open ? "hide" : "show"} exams
+              </span>
+            </span>
+          </button>
+        </td>
+        <td className="p-4 min-w-[280px]">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+            <span className="text-emerald-400">{summary.completed} done</span>
+            {summary.running > 0 && <span className="text-sky-300">{summary.running} running</span>}
+            {summary.queued > 0 && <span className="text-slate-400">{summary.queued} queued</span>}
+            {summary.failed > 0 && <span className="text-rose-400">{summary.failed} failed</span>}
+            {summary.cancelled > 0 && (
+              <span className="text-slate-500">{summary.cancelled} cancelled</span>
+            )}
+          </div>
+          <div className="mt-2 h-1 bg-slate-900 border border-slate-800">
+            <div
+              className="h-full bg-emerald-500 transition-all"
+              style={{ width: `${Math.round((finished / Math.max(summary.total, 1)) * 100)}%` }}
+            />
+          </div>
+          {current && (
+            <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-sky-300">
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              Now: {current.targetExam ?? current.url}
+              {currentStage && currentStage.discoveredCount > 0
+                ? ` — question ${currentStage.processedCount} of ${currentStage.discoveredCount}`
+                : ""}
+            </div>
+          )}
+          {summary.queued > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`Cancel the ${summary.queued} exam(s) that haven't started?`)) {
+                  onCancel(entry.id);
+                }
+              }}
+              className="mt-2 border border-rose-900/70 bg-rose-950/30 px-2 py-1 text-[10px] uppercase tracking-wider text-rose-300 hover:bg-rose-900/40"
+            >
+              Cancel remaining
+            </button>
+          )}
+        </td>
+        <td className="p-4 text-white font-medium whitespace-nowrap">{summary.questions} Qs</td>
+        <td className="p-4 text-[10px] text-slate-500">
+          {entry.runs.filter((run) => run.batch?.status === "pending").length > 0 ? (
+            <Link
+              to="/admin/review"
+              className="uppercase tracking-wider text-amber-400 hover:text-white"
+            >
+              {entry.runs.filter((run) => run.batch?.status === "pending").length} to review →
+            </Link>
+          ) : (
+            "—"
+          )}
+        </td>
+        <td className="p-4 text-slate-500 text-[11px] whitespace-nowrap" suppressHydrationWarning>
+          {`${createdAt.toISOString().replace("T", " ").slice(0, 19)} UTC`}
+        </td>
+      </tr>
+      {open && entry.runs.map((run) => <RunRow key={run.id} run={run} nested />)}
+    </>
+  );
+}
+
+function RunRow({ run, nested = false }: { run: ScrapeRun; nested?: boolean }) {
+  const active = run.status === "running" || run.status === "queued";
+  // The stage still in progress (MS Learn reports processed/discovered as it goes).
+  const liveStage = run.stages.find((stage) => stage.status === "running");
+  const progress =
+    liveStage && liveStage.discoveredCount > 0
+      ? Math.min(1, liveStage.processedCount / liveStage.discoveredCount)
+      : null;
+  const started = run.startedAt ? new Date(run.startedAt) : null;
+  const ended = run.completedAt ? new Date(run.completedAt) : null;
+  const title = run.batch?.examTitle || run.batch?.exam || run.targetExam || run.sourceId;
+  const questionCount =
+    run.batch?.questionCount ??
+    run.stages.reduce((max, stage) => Math.max(max, stage.processedCount), 0);
+
+  return (
+    <tr
+      className={`hover:bg-slate-900/40 transition-colors align-top ${nested ? "bg-slate-950/60" : ""}`}
+    >
+      <td className={`p-4 max-w-[320px] ${nested ? "pl-10" : ""}`}>
+        <div className="flex items-start gap-3">
+          {run.batch?.logoUrl && (
+            <img
+              src={run.batch.logoUrl}
+              alt=""
+              className="w-8 h-8 object-contain shrink-0"
+              loading="lazy"
+            />
+          )}
+          <div className="min-w-0">
+            <div className="text-slate-200 font-sans text-sm truncate" title={title}>
+              {title}
+            </div>
+            <div className="text-[10px] text-slate-600 mt-0.5">
+              #{run.id.slice(0, 8)} · {run.sourceId}
+            </div>
+            {run.url && (
+              <a
+                href={run.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] text-slate-500 hover:text-blue-400 flex items-center gap-1 mt-0.5"
+                title={run.url}
+              >
+                <span className="truncate">{run.url}</span>
+                <ExternalLink className="w-3 h-3 shrink-0" />
+              </a>
+            )}
+          </div>
+        </div>
+      </td>
+
+      <td className="p-4 min-w-[280px]">
+        <span
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase tracking-wider border ${
+            RUN_STATUS_STYLE[run.status] ?? RUN_STATUS_STYLE.queued
+          }`}
+        >
+          {active && <RefreshCw className="w-3 h-3 animate-spin" />}
+          {run.status}
+        </span>
+        {progress != null && liveStage && (
+          <div className="mt-2">
+            <div className="h-1 bg-slate-900 border border-slate-800">
+              <div
+                className="h-full bg-sky-400 transition-all"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
+            </div>
+            <div className="text-[10px] text-sky-300 mt-1">
+              {liveStage.processedCount} / {liveStage.discoveredCount} questions
+            </div>
+          </div>
+        )}
+        <div className="mt-2 space-y-0.5">
+          {run.stages.map((stage) => (
+            <div key={stage.id} className="text-[11px] text-slate-500">
+              <span className="text-slate-300">{stage.stage}</span>{" "}
+              <span
+                className={
+                  stage.status === "completed"
+                    ? "text-emerald-500"
+                    : stage.status === "failed"
+                      ? "text-rose-500"
+                      : "text-amber-500"
+                }
+              >
+                {stage.status}
+              </span>{" "}
+              — processed={stage.processedCount} failed={stage.failedCount} duplicate=
+              {stage.duplicateCount} skipped={stage.skippedCount}
+              {stage.durationMs != null ? ` (${stage.durationMs}ms)` : ""}
+              {stage.errorDetail && (
+                <div className="text-rose-400 whitespace-pre-wrap break-words">
+                  {stage.errorDetail}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {/* The job's summary usually repeats a failed stage's error shown just above. */}
+        {run.errorSummary &&
+          !run.stages.some((s) => s.errorDetail && run.errorSummary?.includes(s.errorDetail)) && (
+            <div className="mt-2 text-[11px] text-rose-400 whitespace-pre-wrap break-words">
+              {run.errorSummary}
+            </div>
+          )}
+      </td>
+
+      <td className="p-4 text-white font-medium whitespace-nowrap">{questionCount} Qs</td>
+
+      <td className="p-4 whitespace-nowrap">
+        {run.batch ? (
+          <div className="space-y-1">
+            <div
+              className={`uppercase tracking-wider text-[10px] ${
+                BATCH_STATUS_STYLE[run.batch.status] ?? "text-slate-400"
+              }`}
+            >
+              {run.batch.status}
+            </div>
+            {run.batch.status === "pending" && (
+              <Link
+                to="/admin/review"
+                className="text-slate-400 hover:text-white border-b border-slate-700 hover:border-white pb-0.5 transition-colors uppercase tracking-wider text-[10px]"
+              >
+                Review →
+              </Link>
+            )}
+          </div>
+        ) : (
+          <span className="text-slate-600 text-[10px]">{active ? "Scraping…" : "No batch"}</span>
+        )}
+      </td>
+
+      <td className="p-4 text-slate-500 text-[11px] whitespace-nowrap" suppressHydrationWarning>
+        {started ? `${started.toISOString().replace("T", " ").slice(0, 19)} UTC` : "—"}
+        {started && (
+          <div className="text-slate-400 mt-0.5">
+            {formatDuration((ended ?? new Date()).getTime() - started.getTime())}
+            {!ended && active ? " so far" : ""}
+          </div>
+        )}
+      </td>
+    </tr>
   );
 }

@@ -27,6 +27,27 @@ _MAX_IDLE = 8
 # probed with `SELECT 1` (one round trip, far cheaper than a reconnect) before being handed out.
 _PROBE_AFTER_IDLE_SECONDS = 30
 
+# Network timeouts for every connection. Without them a connection that died underneath us — the
+# laptop slept, the network changed, Neon dropped it — blocks the first query on it forever: libpq
+# waits on the socket indefinitely, and in the scraper that froze the whole service mid-crawl.
+# tcp_user_timeout bounds a write the server never acknowledges; the keepalives detect a silent
+# peer while waiting for a reply. Either way the query fails in well under a minute instead.
+CONNECT_OPTIONS = {
+    "connect_timeout": 15,
+    "tcp_user_timeout": 30_000,  # milliseconds
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
+
+
+def _now() -> float:
+    # Wall-clock seconds, not time.monotonic(): on Linux the monotonic clock stops while the
+    # machine is suspended, so a connection idle across a night's sleep looked seconds old and
+    # was handed out unprobed.
+    return time.time()
+
 _idle: list[tuple["_PooledConnection", float]] = []
 _idle_lock = threading.Lock()
 
@@ -47,7 +68,7 @@ class _PooledConnection(psycopg2.extensions.connection):
             return
         with _idle_lock:
             if len(_idle) < _MAX_IDLE:
-                _idle.append((self, time.monotonic()))
+                _idle.append((self, _now()))
                 return
         super().close()
 
@@ -63,7 +84,7 @@ def _take_idle() -> "_PooledConnection | None":
             conn, released_at = _idle.pop()
         if conn.closed:
             continue
-        if time.monotonic() - released_at > _PROBE_AFTER_IDLE_SECONDS:
+        if _now() - released_at > _PROBE_AFTER_IDLE_SECONDS:
             try:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
@@ -89,4 +110,4 @@ def get_db_connection():
     # don't accept as a connection parameter — mirrors packages/db/src/client.ts's
     # cleanConnectionString() and apps/scraper/db.py's own copy of this same fix.
     clean_url = re.sub(r"[?&]channel_binding=[^&]+", "", db_url)
-    return psycopg2.connect(clean_url, connection_factory=_PooledConnection)
+    return psycopg2.connect(clean_url, connection_factory=_PooledConnection, **CONNECT_OPTIONS)

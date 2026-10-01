@@ -24,6 +24,12 @@ export const pipelineJobs = pgTable(
     // key returns the existing job instead of starting a second one.
     idempotencyKey: text("idempotency_key").unique(),
     configuration: jsonb("configuration"),
+    // Bulk scrape runs ("scrape these 43 exams"): every job queued together shares a run_id, and
+    // run_position is its place in that run. The local scraper service works through queued jobs
+    // on its own (apps/scraper's queue worker), so a run survives the admin page being refreshed
+    // or closed. Null for one-off jobs.
+    runId: text("run_id"),
+    runPosition: integer("run_position"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     errorSummary: text("error_summary"),
@@ -33,6 +39,7 @@ export const pipelineJobs = pgTable(
     index("pipeline_jobs_source_id_idx").on(t.sourceId),
     index("pipeline_jobs_status_idx").on(t.status),
     index("pipeline_jobs_created_at_idx").on(t.createdAt),
+    index("pipeline_jobs_run_id_idx").on(t.runId),
   ],
 );
 

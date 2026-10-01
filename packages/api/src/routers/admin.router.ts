@@ -10,6 +10,7 @@ import {
   examVariants,
   featureFlags,
   organizations,
+  pipelineJobs,
   questionOptions,
   questionSets,
   questions,
@@ -1384,44 +1385,67 @@ export const adminRouter = {
   // the jobId the scraper stamps into the batch's metadata. Replaces three separate panels — a
   // text rendering of these same jobs, a job table, and a batch table — that each showed one
   // slice of the same runs.
+  // The scraping page's runs table. A bulk run ("scrape these 43 exams") is one entry with its
+  // exams inside; a single-exam scrape is an entry of its own. Entries are newest first and paged
+  // (`limit`), with the real total so the page can say "showing 20 of 37" instead of silently
+  // capping.
   listScrapeRuns: adminProcedure
     .route({
       method: "GET",
       path: "/admin/scrape/runs",
-      summary: "Recent scrape runs with their stages and the review batch each produced",
+      summary: "Scrape runs — bulk runs grouped — with their stages and the batch each produced",
     })
-    .handler(async () => {
+    .input(z.object({ limit: z.number().int().min(1).max(200).default(20) }).optional())
+    .handler(async ({ input }) => {
       const db = getDb();
+      const limit = input?.limit ?? 20;
+      const entryKey = sql`coalesce(${pipelineJobs.runId}, ${pipelineJobs.id})`;
+      const [{ total }] = await db
+        .select({ total: sql<number>`count(distinct ${entryKey})::int` })
+        .from(pipelineJobs);
+      const entryRows = await db
+        .select({
+          key: sql<string>`${entryKey}`,
+          createdAt: sql<Date>`min(${pipelineJobs.createdAt})`,
+        })
+        .from(pipelineJobs)
+        .groupBy(entryKey)
+        .orderBy(sql`min(${pipelineJobs.createdAt}) desc`)
+        .limit(limit);
+      const keys = entryRows.map((row) => row.key);
+      if (keys.length === 0) return { total, entries: [] };
+
+      const keyList = sql.join(
+        keys.map((key) => sql`${key}`),
+        sql`, `,
+      );
       const jobs = await db.query.pipelineJobs.findMany({
-        orderBy: (t, { desc: descOrder }) => [descOrder(t.createdAt)],
-        limit: 30,
+        where: (t) =>
+          sql`${t.runId} in (${keyList}) or (${t.runId} is null and ${t.id} in (${keyList}))`,
+        orderBy: (t, { asc }) => [asc(t.runPosition), asc(t.createdAt)],
         with: { stages: { orderBy: (t, { asc }) => [asc(t.createdAt)] } },
       });
       const jobIds = jobs.map((job) => job.id);
-      const batches = jobIds.length
-        ? await db
-            .select({
-              id: scrapedQuestions.id,
-              status: scrapedQuestions.status,
-              jobId: sql<string>`${scrapedQuestions.parsedData}->'metadata'->>'jobId'`,
-              exam: sql<string | null>`${scrapedQuestions.parsedData}->'metadata'->>'exam'`,
-              examTitle: sql<
-                string | null
-              >`${scrapedQuestions.parsedData}->'metadata'->>'examTitle'`,
-              logoUrl: sql<string | null>`${scrapedQuestions.parsedData}->'metadata'->>'logoUrl'`,
-              questionCount: sql<number>`jsonb_array_length(coalesce(${scrapedQuestions.parsedData}->'extractedElements', '[]'::jsonb))`,
-            })
-            .from(scrapedQuestions)
-            .where(
-              sql`${scrapedQuestions.parsedData}->'metadata'->>'jobId' in (${sql.join(
-                jobIds.map((id) => sql`${id}`),
-                sql`, `,
-              )})`,
-            )
-        : [];
+      const batches = await db
+        .select({
+          id: scrapedQuestions.id,
+          status: scrapedQuestions.status,
+          jobId: sql<string>`${scrapedQuestions.parsedData}->'metadata'->>'jobId'`,
+          exam: sql<string | null>`${scrapedQuestions.parsedData}->'metadata'->>'exam'`,
+          examTitle: sql<string | null>`${scrapedQuestions.parsedData}->'metadata'->>'examTitle'`,
+          logoUrl: sql<string | null>`${scrapedQuestions.parsedData}->'metadata'->>'logoUrl'`,
+          questionCount: sql<number>`jsonb_array_length(coalesce(${scrapedQuestions.parsedData}->'extractedElements', '[]'::jsonb))`,
+        })
+        .from(scrapedQuestions)
+        .where(
+          sql`${scrapedQuestions.parsedData}->'metadata'->>'jobId' in (${sql.join(
+            jobIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        );
       const batchByJob = new Map(batches.map((batch) => [batch.jobId, batch]));
 
-      return jobs.map((job) => {
+      const toRun = (job: (typeof jobs)[number]) => {
         const configuration = (job.configuration ?? {}) as { url?: string; target_exam?: string };
         return {
           id: job.id,
@@ -1429,6 +1453,7 @@ export const adminRouter = {
           status: job.status,
           url: configuration.url ?? null,
           targetExam: configuration.target_exam ?? null,
+          createdAt: job.createdAt,
           startedAt: job.startedAt,
           completedAt: job.completedAt,
           errorSummary: job.errorSummary,
@@ -1446,7 +1471,97 @@ export const adminRouter = {
           })),
           batch: batchByJob.get(job.id) ?? null,
         };
+      };
+
+      const entries = entryRows.map((row) => {
+        const members = jobs.filter((job) => (job.runId ?? job.id) === row.key);
+        if (members.length === 1 && !members[0].runId) {
+          return {
+            kind: "single" as const,
+            id: row.key,
+            createdAt: row.createdAt,
+            run: toRun(members[0]),
+          };
+        }
+        const runs = members.map(toRun);
+        const count = (status: string) => runs.filter((r) => r.status === status).length;
+        return {
+          kind: "bulk" as const,
+          id: row.key,
+          createdAt: row.createdAt,
+          summary: {
+            total: runs.length,
+            queued: count("queued"),
+            running: count("running"),
+            completed: count("completed") + count("partial"),
+            failed: count("failed"),
+            cancelled: count("cancelled"),
+            questions: runs.reduce((sum, r) => sum + (r.batch?.questionCount ?? 0), 0),
+          },
+          runs,
+        };
       });
+      return { total, entries };
+    }),
+
+  // Queue a bulk scrape: every exam becomes a job the local scraper service works through on its
+  // own (apps/scraper's queue worker), so the run survives the page being refreshed or closed.
+  queueScrapeRun: adminProcedure
+    .route({
+      method: "POST",
+      path: "/admin/scrape/queue",
+      summary: "Queue a bulk scrape run for the local scraper service",
+    })
+    .input(
+      z.object({
+        items: z
+          .array(z.object({ url: z.string().url(), exam: z.string().optional() }))
+          .min(1)
+          .max(200),
+        maxQuestions: z.number().int().positive().optional(),
+        headless: z.boolean().optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const res = await fetchScraper("/scrape/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: input.items.map((item) => ({
+            url: item.url,
+            target_exam: item.exam ? `Exam ${item.exam}` : null,
+            target_subject: "Microsoft Certification",
+          })),
+          max_questions: input.maxQuestions ?? null,
+          headless: input.headless ?? true,
+          requested_by: context.user.id,
+        }),
+      });
+      if (!res.ok) {
+        throw new ORPCError("BAD_GATEWAY", {
+          message: `The scraper service couldn't queue the run (${res.status}): ${await res.text().catch(() => "")}`,
+        });
+      }
+      return (await res.json()) as { run_id: string; queued: number };
+    }),
+
+  cancelScrapeRun: adminProcedure
+    .route({
+      method: "POST",
+      path: "/admin/scrape/queue/cancel",
+      summary: "Cancel the exams in a bulk run that haven't started yet",
+    })
+    .input(z.object({ runId: z.string() }))
+    .handler(async ({ input }) => {
+      const res = await fetchScraper(`/scrape/queue/${encodeURIComponent(input.runId)}/cancel`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        throw new ORPCError("BAD_GATEWAY", {
+          message: `The scraper service couldn't cancel the run (${res.status}).`,
+        });
+      }
+      return (await res.json()) as { run_id: string; cancelled: number };
     }),
 
   // Which local-only services are locked in this environment (null = available), so admin pages

@@ -76,6 +76,8 @@ def create_job(
     requested_by: str | None = None,
     configuration: dict[str, Any] | None = None,
     idempotency_key: str | None = None,
+    run_id: str | None = None,
+    run_position: int | None = None,
 ) -> str:
     """
     Returns the job id. If `idempotency_key` is given and a job already exists with that key, its
@@ -96,7 +98,8 @@ def create_job(
             cur.execute(
                 "INSERT INTO pipeline_jobs "
                 "(source_id, job_type, status, trigger_type, requested_by, idempotency_key, "
-                "configuration) VALUES (%s, %s, 'queued', %s, %s, %s, %s) RETURNING id",
+                "configuration, run_id, run_position) "
+                "VALUES (%s, %s, 'queued', %s, %s, %s, %s, %s, %s) RETURNING id",
                 (
                     source_id,
                     job_type,
@@ -104,6 +107,8 @@ def create_job(
                     requested_by,
                     idempotency_key,
                     Json(configuration) if configuration is not None else None,
+                    run_id,
+                    run_position,
                 ),
             )
             job_id = cur.fetchone()[0]
@@ -263,6 +268,73 @@ def stage_run(job_id: str, stage: str) -> Iterator[StageCounts]:
     else:
         duration_ms = int((time.monotonic() - start) * 1000)
         record_stage(job_id, stage, "completed", counts=counts, duration_ms=duration_ms)
+
+
+# ─── Queued runs ─────────────────────────────────────────────────────────────────────────────
+# A bulk run ("scrape these 43 exams") is a set of queued jobs sharing a run_id. A worker (the local
+# scraper service) claims them one at a time, so the run lives in the database rather than in the
+# admin's browser tab.
+
+_JOB_COLUMNS = (
+    "id, source_id, job_type, status, trigger_type, requested_by, idempotency_key, "
+    "configuration, started_at, completed_at, error_summary"
+)
+
+
+def claim_next_queued_job(*, job_type: str) -> JobRecord | None:
+    """Atomically take the oldest queued job of a run (in run order) and mark it running.
+    SKIP LOCKED means two workers can never claim the same job; None when nothing is waiting."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE pipeline_jobs SET status = 'running', started_at = %s "
+                "WHERE id = (SELECT id FROM pipeline_jobs "
+                "  WHERE status = 'queued' AND job_type = %s AND run_id IS NOT NULL "
+                "  ORDER BY created_at, run_position FOR UPDATE SKIP LOCKED LIMIT 1) "
+                f"RETURNING {_JOB_COLUMNS}",
+                (datetime.now(timezone.utc), job_type),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return _row_to_job(row) if row else None
+    finally:
+        conn.close()
+
+
+def requeue_interrupted_jobs(*, job_type: str) -> int:
+    """Put queued-run jobs that were mid-flight when the worker stopped (the service was restarted)
+    back in the queue, so a run resumes instead of leaving one exam stuck as "running" forever.
+    Only called at worker startup, when no job of this type can genuinely be running."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE pipeline_jobs SET status = 'queued', started_at = NULL "
+                "WHERE status = 'running' AND job_type = %s AND run_id IS NOT NULL",
+                (job_type,),
+            )
+            conn.commit()
+            return cur.rowcount
+    finally:
+        conn.close()
+
+
+def cancel_queued_run(run_id: str) -> int:
+    """Cancel every job in a run that hasn't started. A job already running finishes normally."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE pipeline_jobs SET status = 'cancelled', completed_at = %s, "
+                "error_summary = 'Cancelled before it started.' "
+                "WHERE run_id = %s AND status = 'queued'",
+                (datetime.now(timezone.utc), run_id),
+            )
+            conn.commit()
+            return cur.rowcount
+    finally:
+        conn.close()
 
 
 def get_job(job_id: str) -> JobRecord | None:
