@@ -73,5 +73,10 @@ export const questionVariants = pgTable(
   (t) => [
     unique("question_variants_question_hash_unique").on(t.questionId, t.contentHash),
     index("question_variants_content_hash_idx").on(t.contentHash),
+    // Confirmed wordings are candidates for duplicate detection too (see questions.ts).
+    index("question_variants_question_text_trgm_idx").using(
+      "gin",
+      t.questionText.op("gin_trgm_ops"),
+    ),
   ],
 );

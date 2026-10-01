@@ -196,7 +196,10 @@ export function DuplicateDecisions({
                 Question {d.questionNumber}
               </span>
               <span className="text-slate-400">
-                {Math.round(d.similarity * 100)}% similar wording
+                {/* 1.0: identical wording, held because the options or answer differ. */}
+                {d.similarity >= 1
+                  ? "Same wording"
+                  : `${Math.round(d.similarity * 100)}% similar wording`}
               </span>
               <span className={d.optionsMatch ? "text-emerald-400" : "text-amber-300"}>
                 · options {d.optionsMatch ? "identical" : "differ"}

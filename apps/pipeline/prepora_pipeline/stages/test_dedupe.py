@@ -283,8 +283,9 @@ class TestPerformanceAgainstALargeCorpus:
     docs/roadmap/engineering-roadmap.md item 20's own performance test: dedupe against a
     50,000-question corpus completes within a documented bound. Seeds the corpus directly via bulk
     SQL (not publish_question, which would take far too many round trips) spread across 25
-    subjects so the target subject's own bucket is ~2,000 rows — proving the subject-scoped query
-    doesn't pay for the other 48,000.
+    subjects. Candidates come from the whole corpus through the pg_trgm index (dedupe/
+    candidates.py), not one subject's bucket — and every seeded question is worded almost alike,
+    the worst case for a trigram search.
     """
 
     NUM_SUBJECTS = 25
@@ -387,8 +388,8 @@ class TestPerformanceAgainstALargeCorpus:
         # A bulk load of 50,000 fresh rows in one go leaves the planner with stale statistics
         # until autovacuum's autoanalyze gets around to it — which, immediately after a burst
         # insert like this, it usually hasn't. Without this, the planner can pick a sequential
-        # scan instead of question_sets_subject_id_idx, which is the exact thing this test exists
-        # to catch, not something it should itself be defeated by.
+        # scan instead of the trigram index, which is the exact thing this test exists to catch,
+        # not something it should itself be defeated by.
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
@@ -450,15 +451,39 @@ class TestPerformanceAgainstALargeCorpus:
         print(f"\ndedupe check against a {self.TOTAL_CORPUS_SIZE}-question corpus: {elapsed:.3f}s")
 
         assert decision.outcome == "unique"
-        # Documented bound: a subject-scoped dedupe check against a corpus of
+        # Documented bound: a dedupe check against a corpus of
         # NUM_SUBJECTS * QUESTIONS_PER_SUBJECT = 50,000 questions completes in under 10 seconds —
-        # generous enough to absorb a remote Postgres connection's own latency variance (three
-        # sequential round trips per check_duplicate() call), while still being one to two orders
-        # of magnitude below what a naive O(n) full-corpus scan with per-pair Levenshtein would
-        # cost, which is the thing the subject-scoped query and question_sets_subject_id_idx exist
-        # to avoid — the query only ever touches the ~2,000-row bucket for one subject, not the
-        # other 48,000 rows in the other 24 subjects.
+        # generous enough to absorb a remote Postgres connection's own latency variance, while
+        # still one to two orders of magnitude below a naive full-corpus scan with per-pair
+        # Levenshtein, which is what the trigram index exists to avoid.
         assert elapsed < 10.0, f"dedupe check against a 50k corpus took {elapsed:.2f}s"
+
+    def test_a_near_duplicate_is_found_anywhere_in_a_50000_question_corpus(self, large_corpus):
+        # One typo away from a question in subject 17, checked from a different subject: the
+        # near-duplicate search covers the whole corpus, and must pick the one real match out of
+        # 50,000 questions that are all worded almost alike.
+        run_id = large_corpus["run_id"]
+        original = f"Perf corpus question {run_id} subject 17 number 1234"
+        candidate = NormalizedQuestion(
+            exam_slug="unregistered-perf-exam",
+            exam_variant_slug="standard",
+            subject_slug=large_corpus["target_subject_slug"],
+            number=1,
+            question_text=original.replace("corpus", "corpas"),
+            question_type="mcq",
+            options=[NormalizedOption(key="A", text="x"), NormalizedOption(key="B", text="y")],
+            answer=McqAnswer(correct_key="A"),
+            parser_version="test-v1",
+        )
+
+        started = time.monotonic()
+        decision = check_duplicate(candidate)
+        elapsed = time.monotonic() - started
+        print(f"\nnear-duplicate search, {self.TOTAL_CORPUS_SIZE}-question corpus: {elapsed:.3f}s")
+
+        assert decision.outcome == "near_duplicate"
+        assert decision.existing_question_text == original
+        assert elapsed < 10.0, f"near-duplicate search in a 50k corpus took {elapsed:.2f}s"
 
 
 def _with_options(question, options, answer_key):

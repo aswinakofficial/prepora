@@ -105,7 +105,10 @@ class NormalizedQuestion(BaseModel):
     # How the question is identified across runs (stages/stable_id.py): "position" for exam papers,
     # where number N of a given paper is a fixed question; "content" for sources that draw
     # questions at random from a pool (MS Learn), where only the text identifies a question.
-    identity: Literal["position", "content"] = "position"
+    # Unset means "whatever this question's source declares" (dedupe/profile.py's
+    # effective_identity), so a producer doesn't have to know — "position" if the source declares
+    # nothing.
+    identity: Literal["position", "content"] | None = None
 
     # Question content.
     number: int | None = Field(default=None, gt=0)

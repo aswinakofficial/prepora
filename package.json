@@ -23,6 +23,7 @@
     "db:local": "bash scripts/dev-db.sh",
     "db:studio": "pnpm --filter @prepora/db db:studio",
     "content:validate": "tsx scripts/validate-content.ts",
+    "check:duplicates": "cd apps/pipeline && ./venv/bin/python -m prepora_pipeline.cli dedupe-audit",
     "content:import": "cd apps/pipeline && ./venv/bin/python -m prepora_pipeline.cli import-markdown --content-dir ../../content",
     "content:duplicates": "tsx scripts/check-duplicates.ts",
     "content:sitemap": "tsx scripts/generate-sitemap.ts",

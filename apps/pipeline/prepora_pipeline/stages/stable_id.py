@@ -7,7 +7,9 @@ duplicate ids *before* publish ever runs).
 import hashlib
 
 from ..contracts import NormalizedQuestion
-from .content_hash import normalize_question_text
+from ..dedupe.fingerprint import shape_of
+from ..dedupe.normalize import normalize_question_text
+from ..dedupe.profile import effective_identity
 
 
 def _slug_component(value: str) -> str:
@@ -18,7 +20,7 @@ def _year_or_session(normalized: NormalizedQuestion):
     return normalized.year if normalized.year is not None else (normalized.session_label or "v1")
 
 
-def derive_stable_content_id(normalized: NormalizedQuestion) -> str:
+def derive_stable_content_id(normalized: NormalizedQuestion, *, distinct: bool = False) -> str:
     """
     Position identity (the default): {EXAM}-{VARIANT}-{YEAR-or-SESSION}-{SUBJECT}-Q{number},
     following agents/content/schema.md's "Stable IDs" convention (e.g. KPSC-AE-2025-CIVIL-Q001) —
@@ -30,15 +32,28 @@ def derive_stable_content_id(normalized: NormalizedQuestion) -> str:
     silently dropped as "already published". Hashing the content gives the same question the same
     id in every scrape, and a new question a new one. SHA-256 rather than content_hash()'s 32-bit
     djb2, because this is an identity — a collision would merge two different questions.
+
+    The identity mode is the question's own if its producer set one, else its source's
+    (dedupe/profile.py's effective_identity()).
+
+    distinct=True: a reviewer decided this is a different question from one with the same id —
+    identical wording with different options or answer (dedupe's "conflicting_duplicate"). The id
+    then also covers the options and answer, so both can exist.
     """
-    if normalized.identity == "content":
+    if effective_identity(normalized) == "content":
         digest = hashlib.sha256(
             normalize_question_text(normalized.question_text).encode("utf-8")
         ).hexdigest()
-        return f"{_stable_base(normalized)}-C{digest[:16].upper()}"
-    if normalized.number is None:
-        raise ValueError("Cannot derive a stable_content_id without a question number.")
-    return f"{_stable_base(normalized)}-Q{normalized.number:03d}"
+        stable_id = f"{_stable_base(normalized)}-C{digest[:16].upper()}"
+    else:
+        if normalized.number is None:
+            raise ValueError("Cannot derive a stable_content_id without a question number.")
+        stable_id = f"{_stable_base(normalized)}-Q{normalized.number:03d}"
+    if distinct:
+        shape = shape_of(normalized)
+        signature = "\x1f".join(sorted(shape.options)) + "\x1e" + "\x1f".join(sorted(shape.correct))
+        stable_id += f"-D{hashlib.sha256(signature.encode('utf-8')).hexdigest()[:8].upper()}"
+    return stable_id
 
 
 def _stable_base(normalized: NormalizedQuestion) -> str:

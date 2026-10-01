@@ -53,6 +53,10 @@ export const questions = pgTable(
     index("questions_topic_id_idx").on(t.topicId),
     index("questions_status_idx").on(t.status),
     index("questions_search_vector_idx").using("gin", t.searchVector),
+    // Candidate search for duplicate detection (apps/pipeline/prepora_pipeline/dedupe/
+    // candidates.py): pg_trgm's % operator over the whole corpus. The extension itself is
+    // created by migration 0016.
+    index("questions_question_text_trgm_idx").using("gin", t.questionText.op("gin_trgm_ops")),
   ],
 );
 
