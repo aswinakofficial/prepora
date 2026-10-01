@@ -19,7 +19,9 @@ and its third-party alternatives. A connector is written only once the dossier s
 ```
 connectors/<name>/
   __init__.py
-  source.yaml         # the registry entry (item 14) — static facts about this source
+  source.yaml         # the registry entry (item 14) — static facts about this source,
+                      #   including its `dedupe:` settings (see step 8)
+  dedupe.py            # optional: text cleaners for duplicate detection (see step 8)
   connector.py         # discover(html, url) -> list[str]; fetch(url) -> bytes
   parser.py             # extract(content, artifact) -> list[ExtractedQuestion]
   normalizer.py        # normalize(extracted, ...) -> NormalizedQuestion
@@ -109,19 +111,41 @@ least one real question from the fixture — not just "some result came back non
 the case(s) your parser deliberately skips (image-only options, missing answers, etc.), and
 `discover()` against the same fixture's real pagination markup.
 
-**8. Write this directory's `README.md`.** What's different from the original handler, and why —
+**8. Declare how duplicates are detected.** Publishing deduplicates every question through the
+shared layer (`prepora_pipeline/dedupe/`, [docs/architecture/dedupe.md](../architecture/dedupe.md)),
+and all a source adds is its profile. In `source.yaml`:
+
+```yaml
+dedupe:
+  identity: position              # or content — see below
+  near_duplicate_threshold: 0.9
+```
+
+Use `identity: position` for sources where question N of a paper is always the same question (past
+papers). Use `identity: content` for sources that serve questions in random order from a pool (MS
+Learn practice assessments), where a question's position means nothing. If the source wraps text
+around its questions that isn't part of them — a "Question 3 of 50:" counter, a fixed instruction
+line — add a `dedupe.py` with `COMPARISON_CLEANERS`, plain `str -> str` functions. They only affect
+how similar two questions look, never what's stored. `connectors/ms-learn/` has both.
+
+Never add duplicate logic of your own. If the shared layer can't express something your source
+needs, that's a missing profile setting: add it to `DedupeProfile` for every source.
+
+**9. Write this directory's `README.md`.** What's different from the original handler, and why —
 future readers (including future you) need this more than they need a restatement of what the code
 already says.
 
-**9. Do not touch `apps/scraper/` or delete anything.** The old handler stays the live
+**10. Do not touch `apps/scraper/` or delete anything.** The old handler stays the live
 implementation until every source has a connector — see item 15's own sequencing ("migrate the
 five handlers one at a time... delete apps/scraper/ once the last handler has moved"). Wiring this
 connector into the actual trigger path, and eventually retiring the old handler and
 `apps/scraper/main.py`'s dispatch entirely, is a separate, later step once every source has moved.
 
-**10. Confirm no file outside this directory changed.** If you touched anything else to make a
+**11. Confirm no file outside this directory changed.** If you touched anything else to make a
 source work, that's a sign a piece of shared machinery is missing (add it to `core/`), not that
-this connector needed a special case.
+this connector needed a special case. The one planned exception: review-queue quality checks for
+failures specific to your source's scraper live in `packages/api/src/lib/sources/<name>.ts`, because
+the review queue is rendered by the deployed site, which can't reach the pipeline.
 
 ## What "Microsoft Learn last" means
 

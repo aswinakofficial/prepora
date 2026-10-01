@@ -12,3 +12,9 @@ crawl_policy:
 rate_limit:
   requests_per_minute: 10
 robots_review_status: not_reviewed
+# Duplicate detection (docs/architecture/dedupe.md). Practice assessments serve questions at random
+# from a pool, so a question is identified by its content, never its position in one scrape.
+# Text cleaners that can't be declared here live in dedupe.py next to this file.
+dedupe:
+  identity: content
+  near_duplicate_threshold: 0.9

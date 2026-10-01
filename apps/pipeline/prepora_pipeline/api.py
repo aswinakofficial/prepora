@@ -15,8 +15,8 @@ from fastapi import Depends, FastAPI, HTTPException
 
 from .contracts import NormalizedQuestion
 from .core.security import require_service_token
-from .stages.dedupe import check_duplicate
-from .stages.publish import HeldResult, PublishError, publish_question
+from .dedupe import check_duplicate, plan_batch
+from .stages.publish import HeldResult, PublishError, SkippedResult, publish_question
 
 load_dotenv()
 
@@ -47,7 +47,8 @@ def publish(
     """Publish one question. Query parameters (all optional, see publish_question()):
     on_near_duplicate=hold returns {"held": true, "decision": {...}} for a possible duplicate
     instead of a 422; link_to_question_id (+ use_new_wording) / publish_as_new carry a reviewer's
-    decision."""
+    decision. A question a reviewer already chose to skip returns {"held": false, "skipped": true,
+    "decision": {...}} and writes nothing."""
     try:
         result = publish_question(
             normalized,
@@ -60,7 +61,9 @@ def publish(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if isinstance(result, HeldResult):
         return {"held": True, "decision": dataclasses.asdict(result.decision)}
-    return {"held": False, **dataclasses.asdict(result)}
+    if isinstance(result, SkippedResult):
+        return {"held": False, "skipped": True, "decision": dataclasses.asdict(result.decision)}
+    return {"held": False, "skipped": False, **dataclasses.asdict(result)}
 
 
 @app.post("/dedupe/check")
@@ -72,3 +75,15 @@ def dedupe_check(normalized: NormalizedQuestion):
     """
     decision = check_duplicate(normalized)
     return dataclasses.asdict(decision)
+
+
+@app.post("/dedupe/batch-plan")
+def dedupe_batch_plan(questions: list[NormalizedQuestion]):
+    """
+    The order to publish one review batch in (dedupe.plan_batch): {"waves": [[0, 2, 3], [1]]} —
+    publish each wave's questions concurrently, one wave after another. Questions that repeat or
+    nearly repeat an earlier one in the same batch come in a later wave than it, so they're
+    checked against it once it's published. Writes nothing.
+    """
+    return {"waves": plan_batch(questions)}
+

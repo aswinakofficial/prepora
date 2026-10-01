@@ -1,3 +1,4 @@
+import { normalizeQuestionText } from "@prepora/content/normalize";
 import type { getDb } from "@prepora/db";
 import { sql } from "drizzle-orm";
 
@@ -6,17 +7,10 @@ import { sql } from "drizzle-orm";
 // Publishing is what really deduplicates (apps/pipeline's stages/publish.py identifies MS Learn
 // questions by content); this is the same comparison, done up front for display.
 
-/** A port of the pipeline's normalize_question_text (stages/content_hash.py), step for step —
- * lowercase, collapse whitespace, drop non-alphanumeric characters (Unicode-aware, like Python's
- * str.isalnum), trim — so this preview counts a question as "already in exam" exactly when
- * publishing would. */
-export function normalizeQuestionText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/[^\p{L}\p{N}\s]/gu, "")
-    .trim();
-}
+// The pipeline's own normalization (apps/pipeline/prepora_pipeline/dedupe/normalize.py), via its
+// one TypeScript port — so this preview counts a question as "already in exam" exactly when
+// publishing would.
+export { normalizeQuestionText };
 
 /** Splits a batch's question texts into ones new to the exam and ones it already has. Repeats
  * within the batch count once. */

@@ -1,25 +1,10 @@
+import { contentHash, normalizeQuestionText } from "./normalize.ts";
 import type { Question } from "./schema.ts";
 
-// ─── Simple content hash for exact duplicate detection ────────────────────────
+// ─── Content hash for exact duplicate detection ───────────────────────────────
+// The same normalization and hash the pipeline publishes with (./normalize.ts).
 
-function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/[^\w\s]/g, "")
-    .trim();
-}
-
-export function contentHash(questionText: string): string {
-  const normalized = normalizeText(questionText);
-  // Simple djb2 hash (deterministic, no crypto needed)
-  let hash = 5381;
-  for (let i = 0; i < normalized.length; i++) {
-    hash = ((hash << 5) + hash) ^ normalized.charCodeAt(i);
-    hash = hash >>> 0; // convert to unsigned 32-bit
-  }
-  return hash.toString(36);
-}
+export { contentHash } from "./normalize.ts";
 
 // ─── Levenshtein distance for near-duplicate detection ────────────────────────
 
@@ -84,7 +69,7 @@ export function findDuplicates(questions: Question[]): DuplicateCandidate[] {
   // Near-duplicate check (O(n²), acceptable for typical paper sizes < 200 questions)
   const texts = questions.map((q) => ({
     number: q.number,
-    normalized: normalizeText(q.questionText),
+    normalized: normalizeQuestionText(q.questionText),
   }));
 
   for (let i = 0; i < texts.length; i++) {

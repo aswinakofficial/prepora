@@ -8,7 +8,8 @@ Currently implements what items 12, 14, 18, 20, and 22 need: `reprocess` (replay
 through a parser, no network access), `prune` (the retention policy), `sync-sources` (load
 connectors/*/source.yaml into the sources table), `publish` (idempotent, occurrence-aware
 publishing of a single NormalizedQuestion), `dedupe-check` (report whether a NormalizedQuestion is
-a duplicate, near-duplicate, or unique, without publishing it), and `import-markdown` (the first
+a duplicate, near-duplicate, or unique, without publishing it), `dedupe-audit` (the same check
+over the whole published corpus), and `import-markdown` (the first
 full discover -> fetch -> parse -> normalize -> publish connector run). A generic `run --connector
 <name>` covering every connector the same way is later roadmap work, once more than one connector
 needs it.
@@ -29,7 +30,8 @@ from prepora_pipeline.core import (
     reprocess_source,
     sync_sources_from_yaml,
 )
-from prepora_pipeline.stages.dedupe import check_duplicate
+from prepora_pipeline.dedupe import check_duplicate
+from prepora_pipeline.dedupe.audit import format_report, run_audit
 from prepora_pipeline.stages.publish import PublishError, publish_question
 
 
@@ -97,6 +99,13 @@ def cmd_dedupe_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dedupe_audit(args: argparse.Namespace) -> int:
+    report = run_audit(min_similarity=args.min_similarity)
+    print(format_report(report, min_similarity=args.min_similarity))
+    # Only true duplicates fail: the other findings are for a person to look at.
+    return 1 if report.exact else 0
+
+
 def cmd_import_markdown(args: argparse.Namespace) -> int:
     results = run_markdown_import(args.content_dir)
     if not results:
@@ -153,6 +162,18 @@ def main(argv: list[str] | None = None) -> int:
         "--file", default="-", help="Path to a NormalizedQuestion JSON file, or '-' for stdin."
     )
     dedupe_check_parser.set_defaults(func=cmd_dedupe_check)
+
+    dedupe_audit_parser = subparsers.add_parser(
+        "dedupe-audit",
+        help="Scan every published question for duplicates (exits 1 if exact duplicates exist).",
+    )
+    dedupe_audit_parser.add_argument(
+        "--min-similarity",
+        type=float,
+        default=0.85,
+        help="Report question pairs whose wording is at least this similar (default: 0.85).",
+    )
+    dedupe_audit_parser.set_defaults(func=cmd_dedupe_audit)
 
     import_markdown_parser = subparsers.add_parser(
         "import-markdown",

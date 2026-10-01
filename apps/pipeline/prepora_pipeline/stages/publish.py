@@ -16,13 +16,10 @@ safely. A NormalizedQuestion whose exam_slug doesn't match a real, already-regis
 fails clearly rather than guessing. Exam variants, sessions, subjects, topics, and courses are
 lower-risk, generic taxonomy and are created on demand if missing.
 
-Reusing an existing canonical question when the *same content* reappears under a different
-stable_content_id (a different exam year, e.g.) is exact-match only here, via
-`questions.content_hash` — the same normalize+hash algorithm as
-packages/content/src/duplicates.ts's contentHash(). Deciding *whether* a match should be reused,
-absorbed as an in-paper repeat, or refused as an unconfirmed near-duplicate is
-docs/roadmap/engineering-roadmap.md item 20's job (stages/dedupe.py) — this stage calls
-check_duplicate() and trusts its answer rather than re-deciding on its own.
+Whether a question is new, already published (in this set or another), or a possible duplicate
+for a person to decide is the shared dedupe layer's call (prepora_pipeline/dedupe,
+docs/architecture/dedupe.md): this stage calls check_duplicate() and does what it decides —
+reusing exactly the question it names — rather than re-matching on its own.
 """
 from dataclasses import dataclass
 
@@ -35,8 +32,15 @@ from prepora_pipeline.contracts import (
 )
 
 from ..core.db import get_db_connection
-from .content_hash import content_hash, normalize_question_text
-from .dedupe import DedupeDecision, check_duplicate
+from ..dedupe import (
+    NEEDS_DECISION,
+    DedupeDecision,
+    check_duplicate,
+    content_hash,
+    effective_identity,
+    find_same_question,
+    normalize_question_text,
+)
 from .stable_id import derive_question_set_slug, derive_stable_content_id
 from .validate import validate_question
 
@@ -63,6 +67,17 @@ class HeldResult:
     decision: DedupeDecision
 
 
+@dataclass
+class SkippedResult:
+    """A reviewer already chose not to publish this exact question (dedupe's "previously_skipped"):
+    nothing was written, and it isn't held again."""
+
+    decision: DedupeDecision
+
+
+_EXACT = ("exact_duplicate_in_set", "exact_duplicate_cross_set")
+
+
 def _humanize(slug: str) -> str:
     return " ".join(word.capitalize() for word in slug.replace("_", "-").split("-"))
 
@@ -74,18 +89,20 @@ def publish_question(
     link_to_question_id: str | None = None,
     use_new_wording: bool = False,
     publish_as_new: bool = False,
-) -> PublishResult | HeldResult:
+) -> PublishResult | HeldResult | SkippedResult:
     """Publish one question.
 
-    A near duplicate (very similar to, but not the same as, a published question) is never merged
-    or published silently. By default it's refused with PublishError; with
+    A possible duplicate — very similar wording, or identical wording with different options or
+    answer — is never merged or published silently. By default it's refused with PublishError; with
     on_near_duplicate="hold" nothing is written and a HeldResult describes the match, so the caller
     can queue it for a person. That person's decision then comes back as either
     link_to_question_id (same question: add this set as another occurrence of it, and remember
     the wording as a variant) or publish_as_new=True (a different question: skip the near-duplicate
     gate). With use_new_wording=True, "same question" keeps this version instead: the existing
     question takes this wording, explanation and option text, and its old wording becomes the
-    remembered variant.
+    remembered variant. publish_as_new=True on identical wording gives the question its own
+    stable id (stable_id.py's distinct=True). A question a reviewer already chose to skip returns
+    SkippedResult unless publish_as_new is set.
     """
     # docs/roadmap/engineering-roadmap.md item 19: nothing publishes without passing the
     # deterministic quality gate first — this replaces the narrower needs_review/answer-None
@@ -116,12 +133,14 @@ def publish_question(
         )
     else:
         dedupe_decision = check_duplicate(validated)
-        if dedupe_decision.outcome == "near_duplicate" and not publish_as_new:
+        if dedupe_decision.outcome in NEEDS_DECISION and not publish_as_new:
             if on_near_duplicate == "hold":
                 return HeldResult(decision=dedupe_decision)
             raise PublishError(
                 f"Question failed the deduplication gate ({dedupe_decision.reason})"
             )
+        if dedupe_decision.outcome == "previously_skipped" and not publish_as_new:
+            return SkippedResult(decision=dedupe_decision)
 
     conn = get_db_connection()
     try:
@@ -152,8 +171,17 @@ def publish_question(
                     cur, link_to_question_id, validated, use_new_wording=use_new_wording
                 )
             else:
-                question_id, question_created = _resolve_or_create_question(
-                    cur, stable_content_id, validated, topic_id
+                question_id, question_created, stable_content_id = _resolve_or_create_question(
+                    cur,
+                    stable_content_id,
+                    validated,
+                    topic_id,
+                    existing_question_id=(
+                        dedupe_decision.existing_question_id
+                        if dedupe_decision.outcome in _EXACT
+                        else None
+                    ),
+                    force_new=publish_as_new,
                 )
 
             occurrence_created = _resolve_or_create_occurrence(
@@ -162,7 +190,7 @@ def publish_question(
                 question_set_id,
                 # Pool sources have no fixed numbering: a question new to the set goes after the
                 # ones already in it, whatever position it had in this particular scrape.
-                None if validated.identity == "content" else validated.number,
+                None if effective_identity(validated) == "content" else validated.number,
             )
             _record_media(cur, question_id, validated.media)
 
@@ -375,10 +403,12 @@ def _link_to_existing_question(
     if row is None:
         raise PublishError(f"Can't link to question {question_id}: it no longer exists.")
     old_text = row[0]
-    if normalize_question_text(old_text) == normalize_question_text(normalized.question_text):
-        return question_id, False
+    same_wording = normalize_question_text(old_text) == normalize_question_text(
+        normalized.question_text
+    )
     if not use_new_wording:
-        _record_variant(cur, question_id, normalized.question_text)
+        if not same_wording:
+            _record_variant(cur, question_id, normalized.question_text)
         return question_id, False
 
     cur.execute(
@@ -420,41 +450,69 @@ def _link_to_existing_question(
         ),
     )
     # The new wording is now the question's own text; the old one becomes the remembered variant.
-    cur.execute(
-        "DELETE FROM question_variants WHERE question_id = %s AND content_hash = %s",
-        (question_id, content_hash(normalized.question_text)),
-    )
-    _record_variant(cur, question_id, old_text)
+    # (Identical wording — a changed option list or answer key — leaves no old wording to keep.)
+    if not same_wording:
+        cur.execute(
+            "DELETE FROM question_variants WHERE question_id = %s AND content_hash = %s",
+            (question_id, content_hash(normalized.question_text)),
+        )
+        _record_variant(cur, question_id, old_text)
     return question_id, False
 
 
 def _resolve_or_create_question(
-    cur, stable_content_id: str, normalized: NormalizedQuestion, topic_id: str | None
-) -> tuple[str, bool]:
-    # One round trip for both lookups (each costs ~100ms against a remote database): a
-    # stable_content_id match wins; otherwise the exact same question content, previously
-    # published under a different stable_content_id (typically: a different exam year), is reused
-    # rather than duplicated. Fuzzy/near-duplicate reuse across different phrasings is item 20's
-    # job, not this exact-match check's.
-    #
-    # content_hash is a 32-bit djb2 — fast to index, but two different questions can share one. A
-    # hash match is therefore only reused once the normalized text is confirmed equal; otherwise a
-    # collision would silently merge a new question into an unrelated one.
-    # Recorded variants (question_variants) are other accepted wordings of a question, so they
-    # match here exactly like the question's own text.
+    cur,
+    stable_content_id: str,
+    normalized: NormalizedQuestion,
+    topic_id: str | None,
+    *,
+    existing_question_id: str | None = None,
+    force_new: bool = False,
+) -> tuple[str, bool, str]:
+    """(question id, created?, stable_content_id) for the question to publish.
+
+    The question dedupe named as this one is reused as-is. Otherwise, under a transaction-scoped
+    lock on the wording's hash, the exact check is repeated: a batch publishes several questions
+    at once, and two identical ones (or the same one from two batches) would each have checked
+    before the other was written — both would have created a question. The lock makes the second
+    wait for the first to commit, and then find it.
+
+    force_new: a reviewer decided this is a different question from the published one it
+    resembles, so nothing is reused; identical wording gets a distinct stable id.
+    """
+    if existing_question_id is not None and not force_new:
+        if _select_id(cur, "SELECT id FROM questions WHERE id = %s", (existing_question_id,)):
+            return existing_question_id, False, stable_content_id
+
     hash_ = content_hash(normalized.question_text)
-    cur.execute(
-        "SELECT id, question_text, stable_content_id = %s AS by_id FROM questions "
-        "WHERE stable_content_id = %s OR content_hash = %s "
-        "UNION ALL "
-        "SELECT question_id, question_text, false FROM question_variants WHERE content_hash = %s "
-        "ORDER BY by_id DESC",
-        (stable_content_id, stable_content_id, hash_, hash_),
-    )
-    wanted = normalize_question_text(normalized.question_text)
-    for existing_id, existing_text, by_id in cur.fetchall():
-        if by_id or normalize_question_text(existing_text) == wanted:
-            return existing_id, False
+    cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"question-text:{hash_}",))
+    if not force_new:
+        same = find_same_question(cur, normalized)
+        if same:
+            return same, False, stable_content_id
+        # The id is taken, but not by this question (that would have matched just above): with
+        # position identity, this paper's question N is already published with other content.
+        # Reusing it would drop this question silently — the old behaviour — so it fails, naming
+        # why. An edit of the same question is caught earlier, as a near duplicate for review.
+        if _select_id(
+            cur, "SELECT id FROM questions WHERE stable_content_id = %s", (stable_content_id,)
+        ):
+            raise PublishError(
+                f"{stable_content_id} is already published as a different question (other "
+                "wording, options or answer). Check the question's number, or publish it as a "
+                "new question."
+            )
+    else:
+        taken = _select_id(
+            cur, "SELECT id FROM questions WHERE stable_content_id = %s", (stable_content_id,)
+        )
+        if taken:
+            stable_content_id = derive_stable_content_id(normalized, distinct=True)
+            already = _select_id(
+                cur, "SELECT id FROM questions WHERE stable_content_id = %s", (stable_content_id,)
+            )
+            if already:
+                return already, False, stable_content_id
 
     slug = stable_content_id.lower()
     cur.execute(
@@ -493,7 +551,7 @@ def _resolve_or_create_question(
 
     _insert_answers(cur, question_id, normalized.answer, option_id_by_key)
 
-    return question_id, True
+    return question_id, True, stable_content_id
 
 
 def _insert_answers(cur, question_id: str, answer, option_id_by_key: dict[str, str]) -> None:
