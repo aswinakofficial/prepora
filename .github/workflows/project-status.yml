@@ -1,0 +1,56 @@
+# Moves issue cards on the "Prepora roadmap" board as work happens: assigned → In progress, a pull
+# request that closes the issue → In review (draft → In progress), closed → Done, and back to Ready
+# when it's unassigned with nothing in flight. The rules live in .github/scripts/project-status.cjs.
+# Claims made with /claim are handled in claim.yml itself (assignments by the workflow token don't
+# trigger other workflows).
+name: Project board status
+
+on:
+  issues:
+    types: [assigned, unassigned, closed, reopened]
+  # pull_request_target so it also runs for pull requests from forks. It never checks out or runs
+  # the pull request's code — only this repository's own scripts from the default branch.
+  pull_request_target:
+    types: [opened, reopened, edited, ready_for_review, converted_to_draft, closed]
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: Issue numbers to sync (space-separated), or "all" for every open issue
+        required: true
+        default: all
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: project-status-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+      - uses: actions/github-script@v7
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+        with:
+          script: |
+            const { syncIssue, syncPullRequest } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/project-status.cjs`);
+            const { owner, repo } = context.repo;
+            if (context.eventName === "issues") {
+              await syncIssue({ getOctokit, core, owner, repo, number: context.payload.issue.number });
+            } else if (context.eventName === "pull_request_target") {
+              await syncPullRequest({ github, getOctokit, core, owner, repo, number: context.payload.pull_request.number });
+            } else {
+              const input = context.payload.inputs.issues.trim();
+              const numbers = input === "all"
+                ? (await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 }))
+                    .filter((i) => !i.pull_request).map((i) => i.number)
+                : input.split(/[\s,]+/).map(Number).filter(Boolean);
+              for (const number of numbers) await syncIssue({ getOctokit, core, owner, repo, number });
+            }

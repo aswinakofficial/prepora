@@ -55,6 +55,27 @@ labelled `status: maintainer` or `status: needs design` can't be claimed yet.
 - Reviews that explain the *why* behind any change we ask for. Every contributor is credited in the
   release notes.
 
+### The project board
+
+The [Prepora roadmap](https://github.com/users/aswinakofficial/projects/1) board moves cards
+automatically: claiming an issue moves it to **In progress**, a pull request that closes it moves it
+to **In review** (a draft stays in progress), and merging closes it into **Done**. If a claim is
+released, the card goes back to **Ready**.
+
+<details>
+<summary>Maintainers: how the board automation works</summary>
+
+The rules live in [`.github/scripts/project-status.cjs`](.github/scripts/project-status.cjs) and run
+from `project-status.yml` (issue and pull-request events), `claim.yml` and `stale-claims.yml`. The
+board belongs to a user account, which the workflows' built-in token can't write to, so they use a
+`PROJECT_TOKEN` repository secret: a fine-grained personal access token owned by the board's owner,
+with **Projects: read and write** (account permission) and read-only access to this repository's
+issues and pull requests. Without the secret, the workflows still run and only skip the board.
+After changing the rules, run **Actions → Project board status → Run workflow** with `all` to
+re-sync every open issue.
+
+</details>
+
 ### Labels
 
 | Label | Meaning |
