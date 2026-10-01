@@ -1,5 +1,6 @@
 # Lets anyone claim an issue by commenting "/claim" (or release it with "/unclaim"), since only
 # people with write access can assign themselves directly. See CONTRIBUTING.md → "Claiming an issue".
+# Also moves the issue's card on the project board (In progress / back to Ready).
 name: Claim issues
 
 on:
@@ -7,6 +8,7 @@ on:
     types: [created]
 
 permissions:
+  contents: read
   issues: write
 
 jobs:
@@ -17,10 +19,19 @@ jobs:
       (startsWith(github.event.comment.body, '/claim') || startsWith(github.event.comment.body, '/unclaim'))
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
       - uses: actions/github-script@v7
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
         with:
           script: |
             const MAX_OPEN_CLAIMS = 2;
+            const { syncIssueSafely } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/project-status.cjs`);
+            const syncBoard = () =>
+              syncIssueSafely({ getOctokit, core, ...context.repo, number: context.payload.issue.number });
             const issue = context.payload.issue;
             const user = context.payload.comment.user.login;
             const command = context.payload.comment.body.trim().split(/\s+/)[0];
@@ -33,6 +44,7 @@ jobs:
               if (!assignees.includes(user)) return;
               await github.rest.issues.removeAssignees({ ...context.repo, issue_number: issue.number, assignees: [user] });
               await reply(`@${user} has released this issue — it's open for someone else to claim.`);
+              await syncBoard();
               return;
             }
             if (command !== "/claim") return;
@@ -53,6 +65,7 @@ jobs:
               return reply(`@${user} you already have ${openClaims} open issues claimed — please finish or \`/unclaim\` one first, so others get a chance too.`);
             }
             await github.rest.issues.addAssignees({ ...context.repo, issue_number: issue.number, assignees: [user] });
+            await syncBoard();
             await reply(
               `@${user} it's yours — thanks! 🙌\n\n` +
               `- Open a pull request that says \`Closes #${issue.number}\` (a **draft PR early** is welcome).\n` +

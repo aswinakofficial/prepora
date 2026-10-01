@@ -1,5 +1,6 @@
 # Releases claimed issues with no activity for 21 days and no open pull request linked to them, so
-# work doesn't sit blocked. Maintainers' own assignments are left alone.
+# work doesn't sit blocked. Maintainers' own assignments are left alone. Released issues move back
+# to Ready on the project board.
 name: Release stale claims
 
 on:
@@ -8,6 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read
   issues: write
   pull-requests: read
 
@@ -15,10 +17,17 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
       - uses: actions/github-script@v7
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
         with:
           script: |
             const STALE_DAYS = 21;
+            const { syncIssueSafely } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/project-status.cjs`);
             const cutoff = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
             const issues = await github.paginate(github.rest.issues.listForRepo, {
               ...context.repo, state: "open", assignee: "*", per_page: 100,
@@ -46,5 +55,6 @@ jobs:
                   body: `@${login} there's been no activity here for ${STALE_DAYS} days, so this issue has been released for someone else. Thanks for your interest — comment \`/claim\` again any time if you'd like to pick it back up.`,
                 });
                 core.info(`released #${issue.number} from ${login}`);
+                await syncIssueSafely({ getOctokit, core, ...context.repo, number: issue.number });
               }
             }
