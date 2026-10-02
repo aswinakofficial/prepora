@@ -21,6 +21,7 @@ from prepora_pipeline.core.pdf_text import (
     group_lines,
     normalize_text,
     render_region,
+    strip_running_graphics,
     strip_running_text,
 )
 
@@ -272,3 +273,21 @@ def test_render_region_returns_a_png_of_the_right_size():
     height = int.from_bytes(png[20:24], "big")
     assert abs(width - round(100 * 200 / 72)) <= 2
     assert abs(height - round(50 * 200 / 72)) <= 2
+
+
+def test_running_graphics_go_and_a_pages_own_figure_stays():
+    out = io.BytesIO()
+    c = canvas.Canvas(out, pagesize=A4)
+    for number in range(3):
+        c.rect(20, 20, 40, 40, fill=1)  # a logo on every page
+        if number == 1:
+            c.rect(200, 300, 120, 80, fill=1)  # this page's own figure
+        c.drawString(100, 700, f"Invented page {number}")
+        c.showPage()
+    c.save()
+    pages = extract_pages(out.getvalue())
+    assert all(any(g.kind == "rect" for g in p.graphics) for p in pages)
+    stripped = strip_running_graphics(pages)
+    assert [len(p.graphics) for p in stripped] == [0, 1, 0]
+    figure = stripped[1].graphics[0]
+    assert (round(figure.x0), round(figure.x1)) == (200, 320)

@@ -8,6 +8,7 @@ GATE's official question papers and answer keys, from the organizing institute's
 | `source.yaml` | The registry entry (`sync-sources`). Position identity: question N of a paper is fixed. |
 | `catalog.py` | The papers to import, as a hand-written map. GATE's file naming is too irregular to guess. |
 | `key_parser.py` | The answer-key table → `GateKeyRow` (MCQ/MSQ letters, NAT ranges, `MTA`). |
+| `paper_parser.py` | The question paper → `GateQuestion`: stem (code fenced), options, marks heading, a crop region, and flags (`figure`, `math`, `layout`) when the text alone can't be trusted. |
 
 **What's special about GATE**
 - Keys are separate PDFs, joined to the paper by question number.
