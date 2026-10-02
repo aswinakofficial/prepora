@@ -9,3 +9,6 @@ fastapi
 uvicorn
 pytest
 ruff
+pdfplumber
+pypdfium2
+reportlab

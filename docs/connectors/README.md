@@ -147,6 +147,36 @@ this connector needed a special case. The one planned exception: review-queue qu
 failures specific to your source's scraper live in `packages/api/src/lib/sources/<name>.ts`, because
 the review queue is rendered by the deployed site, which can't reach the pipeline.
 
+## Parsing PDFs
+
+Many sources publish PDFs (question papers and separate answer keys). Don't write a PDF parser
+per connector; use the shared stages in `apps/pipeline/prepora_pipeline/core/`
+([spec](../specs/02-pdf-stages.md)):
+
+- `pdf_text.py`: words with positions (`extract_pages`), lines (`group_lines`), removing
+  running headers and footers (`strip_running_text`), and a PNG crop of any page region
+  (`render_region`, for figures and garbled equations).
+- `pdf_segment.py`: split a paper into questions by their label column (`segment`), then a
+  question into stem and options (`split_options`).
+- `answer_keys.py`: read a key table through a header profile (`parse_key_table`) and match it to
+  the questions (`join_by_number`). That match reports every gap rather than guessing.
+
+```python
+from prepora_pipeline.core.answer_keys import HeaderProfile, join_by_number, parse_key_table
+from prepora_pipeline.core.pdf_segment import segment, split_options
+from prepora_pipeline.core.pdf_text import extract_pages, strip_running_text
+
+pages = strip_running_text(extract_pages(paper_pdf_bytes))
+blocks = segment(pages, label=re.compile(r"^Q\.(\d+)$"), label_max_x=90)
+profile = HeaderProfile("mysource-2026", {"number": ("Q. No.",), "key": ("Key", "Answer")})
+report = join_by_number(blocks, parse_key_table(extract_pages(key_pdf_bytes), profile))
+assert report.ok, (report.missing_in_key, report.missing_in_paper)
+stem, options = split_options(report.matched[0][0])
+```
+
+Test with PDFs generated in the test (see `apps/pipeline/test_pdf_stages.py`): real layouts, with
+invented text.
+
 ## What "Microsoft Learn last" means
 
 `docs/roadmap/engineering-roadmap.md` item 15 explicitly calls out Microsoft Learn as the hardest
