@@ -164,7 +164,7 @@ question_answers  + provenance, claimId, numericMin, numericMax, rangeGroup
 /exams/{exam}/{…node path}                   any node: children, papers, facets
 /exams/{exam}/{…node path}/{paper}           a paper: sections, numbering
 /exams/{exam}/{…node path}/{paper}/q/{n}     a question in its paper (prev/next)
-/questions/{publicId}/{slug}                 CANONICAL question page (lists every paper it appeared in)
+/questions/{slug}                            CANONICAL question page (lists every paper it appeared in)
 /bodies/{org}[/{group}]                      organization hub (AWS → Associate)
 /subjects/{s}, /topics/{s}/{t}               taxonomy browsing
 ```
@@ -179,10 +179,11 @@ Examples:
 
 - **Routing.** A splat route `exams/$examSlug/$.tsx` resolves `(examId, path)` to a node. If that
   fails, it drops the last segment and resolves the paper by `(nodeId, slug)`.
-- **Canonical questions.** `questions.publicId` is a short, immutable identifier. Question pages are
-  canonical and don't depend on the hierarchy, so a question keeps its URL when nodes move or
-  duplicates merge. The slug is cosmetic and corrected with a 301. In-paper views set
-  `rel=canonical` to the question page.
+- **Canonical questions.** `/questions/{slug}`: `questions.slug` is already unique and never
+  changes after publishing (it's the stable ID, lowercased), so the `publicId` column first proposed
+  here isn't needed ([Spec 1](../specs/01-question-urls.md)). Question pages are canonical and
+  don't depend on the hierarchy, so a question keeps its URL when nodes move or duplicates merge.
+  In-paper views set `rel=canonical` to the question page.
 - **Old URLs.** `/questions/{exam}/{variant}/{year}/{subject}/{slug}`, `/question-sets/{slug}` and
   `/exams/{exam}/subjects/{s}` 301 to the new pages, through the existing `redirects` table. When a
   node's path changes, a redirect is written automatically.
@@ -193,7 +194,7 @@ Examples:
 reindex job:
 
 ```
-questionId, publicId, language, questionType, status,
+questionId, slug, language, questionType, status,
 examTypeSlugs[], orgSlugs[], examSlugs[], nodeIds[], levelValues[],   -- "gate:paper:cs", "*:year:2026"
 years[], subjectIds[], topicIds[], syllabusCodes[], paperKinds[],
 answerProvenance, hasAnswer, hasExplanation, sourceCount,
@@ -281,11 +282,15 @@ No gaps.
 
 ## Foundation steps
 
-Each step ships on its own. Migration numbers continue after the dedupe branch's 0016.
+Each step ships on its own. **The order of work, and exactly how each step is built, are in
+[docs/specs](../specs/README.md).** They were narrowed on 2026-10-02 for a single maintainer:
+S0 → P → minimal S4 → image storage → GATE pilot → S1. S3 (beyond one answer-provenance column),
+S5, S6, S7, O and the AI step are deferred until a track needs them. The table below lists every
+step.
 
 | Step | What | Unblocks |
 |---|---|---|
-| S0 | Remove the fabricated exam-page set; `publicId` and the canonical question route with 301s; fix lookup for sessions with no year | Stable URLs |
+| S0 | Remove the fabricated exam-page set; canonical `/questions/{slug}` route with 301s from old URLs | Stable URLs |
 | S1 | Templates, levels, nodes, placements and exam groups; migrate MS Learn (`cert-simple`); splat route, breadcrumbs, exam pages that show their levels | ISTQB, AWS, HashiCorp, Databricks |
 | S2 | Pipeline contract v2 (`hierarchy[]`, paper, section, number label, marks, external ID, answer status/provenance, ranges); stable ID v2 (existing IDs never rewritten) | Every new connector |
 | S3 | `question_sources`, `answer_claims`, the resolver and conflict queue; back-fill MS Learn; the optional AI suggestion job and confirmation UI | Multiple sources; AI answers |

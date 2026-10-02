@@ -46,3 +46,62 @@ Playwright test suite, run via `pnpm test:e2e`) for durable, repeatable regressi
    backend output.
 4. Diagnose, fix, verify (typecheck/lint/tests as appropriate), and re-run the same UI steps to
    confirm before reporting done.
+
+# Working agreements
+
+These apply to every change, whichever model or person makes it.
+
+## What to work on
+
+- The order of work is [docs/specs/README.md](docs/specs/README.md). Take the next spec whose
+  dependencies are merged; don't start a spec marked **Draft**.
+- Implement what the spec says. If the spec is wrong or silent on a real decision, stop and ask the
+  owner — don't invent the design. Record the answer in the spec in the same PR.
+- Keep scope to the spec's issue(s). Notice something else? Open (or suggest) a separate issue.
+
+## Issue workflow (the board moves itself)
+
+1. **Start:** assign the issue to the owner (`gh issue edit N --add-assignee aswinakofficial`) — the
+   project board moves it to *In progress*.
+2. **Branch** from up-to-date `main`: `feat/…`, `fix/…`, `docs/…`, `chore/…`.
+3. **PR:** the description says `Closes #N` for every issue it finishes (this moves cards to
+   *In review*), summarises what and why, and lists how it was tested. End PR bodies with the
+   attribution line from the session's instructions.
+4. **Merge** only when CI is green and the branch is up to date with `main` (branch protection
+   requires both). Use merge commits (`gh pr merge N --merge`).
+5. **After merge:** comment on each closed issue with a short completion note — what changed, the
+   PR, how it was verified, and any follow-ups (opened as new issues). If the issue belongs to an
+   epic, tick its checkbox in the epic's body. Update the spec's status in docs/specs/README.md.
+
+## Checks before every PR
+
+```
+pnpm lint && pnpm typecheck && pnpm test          # with DATABASE_URL pointing at the LOCAL db for DB tests
+(cd apps/pipeline && venv/bin/ruff check . && venv/bin/pytest -q)
+(cd apps/scraper && venv/bin/ruff check . && venv/bin/pytest -q)
+pnpm db:check                                       # whenever packages/db or drizzle/ changed
+```
+
+Run DB-backed tests against the **local** database (`scripts/dev-db.sh start`; URL from
+`scripts/dev-db.sh url`), never production. Python venvs are uv-managed Python 3.12
+(`uv venv --python 3.12 venv && uv pip install --python venv/bin/python -r requirements.txt`).
+
+## Production safety
+
+- The root `.env` points at the **production** Neon database. Never run migrations, back-fills,
+  deletes, `sync-sources`, imports or publishing against it without the owner's explicit go-ahead
+  in the conversation — even if a spec says the step is needed. Read-only queries are fine.
+- Merging to `main` deploys the site (Cloudflare Pages). A schema change must be migrated on
+  production before code that depends on it is used; say so in the PR.
+- Scraping and publishing are local-only by design (`lib/local-only-services.ts`); don't weaken that.
+- Never enter, print or commit credentials (API keys, tokens, database URLs). Secrets are set by the
+  owner (`gh secret set …`, Cloudflare dashboard).
+
+## Content policy
+
+- The repo holds code only — no scraped or third-party question content. Test fixtures use real
+  layouts with **invented** text (generate PDFs in tests rather than committing real ones).
+- Use a source only as its dossier ([docs/sources](docs/sources/README.md)) and licence allow;
+  reference-only sources may cross-check, never be displayed. Never use certification dump sites.
+- Nothing invented is published; every answer records its provenance; AI output is optional,
+  flagged and reviewer-confirmed ([ADR-015](docs/adr/015-ai-assistance.md)).

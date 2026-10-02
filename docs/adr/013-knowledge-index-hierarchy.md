@@ -47,7 +47,7 @@ Option 3.
   template.
 - **Placements:** `question_set_placements` lets one paper sit in several places.
 - **Shared courses:** `courses` becomes a shared catalogue of course codes.
-- **Canonical question URLs** (`/questions/{publicId}/{slug}`) don't depend on the hierarchy.
+- **Canonical question URLs** (`/questions/{slug}`, using the existing unique slug — see [Spec 1](../specs/01-question-urls.md)) don't depend on the hierarchy.
 
 ## Consequences
 
