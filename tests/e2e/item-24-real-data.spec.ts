@@ -77,6 +77,8 @@ test.describe("topics/$topicSlug — real data, honest empty state", () => {
         title: `E2E Set ${marker}`,
         slug: `e2e-set-${marker}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning();
     const questionText = `What is the e2e-marker-${marker} constant?`;
@@ -196,6 +198,8 @@ test.describe("question detail page — real data, anonymous reveal", () => {
         title: `E2E Set ${marker}`,
         slug: `e2e-set-${marker}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning();
     const questionText = `What is the e2e-detail-marker-${marker}?`;
@@ -215,7 +219,11 @@ test.describe("question detail page — real data, anonymous reveal", () => {
     await db
       .insert(questionOptions)
       .values({ questionId: question.id, optionKey: "B", optionText: "Wrong answer", sequence: 2 });
-    await db.insert(questionAnswers).values({ questionId: question.id, correctOptionId: optA.id });
+    await db.insert(questionAnswers).values({
+      questionId: question.id,
+      correctOptionId: optA.id,
+      provenance: "official_sample_key",
+    });
     await db.insert(questionOccurrences).values({ questionId: question.id, questionSetId: set.id });
 
     try {

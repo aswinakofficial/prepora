@@ -122,6 +122,8 @@ describe.skipIf(!DATABASE_URL)("search", () => {
         title: `Test Set ${unique}`,
         slug: `test-set-${unique}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     const [question] = await db
@@ -364,6 +366,8 @@ describe.skipIf(!DATABASE_URL)("search", () => {
           title: `Perf Set ${marker}`,
           slug: `perf-set-${marker}`,
           publicationStatus: "published",
+          paperKind: "official_practice",
+          keyStatus: "final",
         })
         .returning({ id: questionSets.id });
 

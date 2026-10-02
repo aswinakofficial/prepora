@@ -22,7 +22,8 @@ def _year_or_session(normalized: NormalizedQuestion):
 
 def derive_stable_content_id(normalized: NormalizedQuestion, *, distinct: bool = False) -> str:
     """
-    Position identity (the default): {EXAM}-{VARIANT}-{YEAR-or-SESSION}-{SUBJECT}-Q{number},
+    Position identity (the default): {EXAM}-{VARIANT}-{YEAR-or-SESSION}-{SUBJECT}-Q{number}, with
+    -{SHIFT} before -Q{number} when the paper has a sitting (docs/specs/03-paper-structure-min.md),
     following agents/content/schema.md's "Stable IDs" convention (e.g. KPSC-AE-2025-CIVIL-Q001) —
     right for exam papers, where "question 7 of the 2025 paper" is a fixed thing.
 
@@ -48,7 +49,10 @@ def derive_stable_content_id(normalized: NormalizedQuestion, *, distinct: bool =
     else:
         if normalized.number is None:
             raise ValueError("Cannot derive a stable_content_id without a question number.")
-        stable_id = f"{_stable_base(normalized)}-Q{normalized.number:03d}"
+        # The sitting, when there is one, so GATE's CS-1 and CS-2 of one year don't collide. IDs
+        # without a shift are unchanged.
+        sitting = f"-{_slug_component(normalized.shift)}" if normalized.shift else ""
+        stable_id = f"{_stable_base(normalized)}{sitting}-Q{normalized.number:03d}"
     if distinct:
         shape = shape_of(normalized)
         signature = "\x1f".join(sorted(shape.options)) + "\x1e" + "\x1f".join(sorted(shape.correct))

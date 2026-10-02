@@ -109,3 +109,31 @@ export const removedResourceStatusEnum = pgEnum("removed_resource_status", [
   "confirmed_removed",
   "restored",
 ]);
+
+// docs/specs/03-paper-structure-min.md — the minimum of the knowledge index's paper structure (S4)
+// that GATE needs. Facts about one paper live on the occurrence; the answer's provenance stands in
+// for the full multi-source design (S3) until that's built.
+export const answerStatusEnum = pgEnum("answer_status", [
+  "scored",
+  "marks_to_all",
+  "dropped",
+  "cancelled",
+]);
+
+export const answerProvenanceEnum = pgEnum("answer_provenance", [
+  "official_final",
+  "official_provisional",
+  "official_sample_key",
+  "reviewer",
+  "ai_suggested_confirmed",
+  "community",
+]);
+
+export const paperKindEnum = pgEnum("paper_kind", [
+  "past_paper",
+  "official_practice",
+  "sample_paper",
+  "model_paper",
+]);
+
+export const keyStatusEnum = pgEnum("key_status", ["none", "provisional", "final", "revised"]);

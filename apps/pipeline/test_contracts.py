@@ -21,6 +21,7 @@ from prepora_pipeline.contracts import (
     MultipleCorrectAnswer,
     NormalizedOption,
     NormalizedQuestion,
+    NumericalAnswer,
     RawArtifact,
     ValidatedQuestion,
 )
@@ -161,9 +162,43 @@ class TestNormalizedQuestion:
         assert restored.answer.correct_keys == ["A", "B"]
 
 
+    def test_v5_fields_default_to_a_scored_past_paper_with_a_final_official_key(self):
+        q = NormalizedQuestion(**valid_normalized_kwargs())
+        assert (q.answer_status, q.answer_provenance, q.paper_kind, q.key_status) == (
+            "scored",
+            "official_final",
+            "past_paper",
+            "final",
+        )
+        assert q.contract_version == "5"
+
+    def test_numeric_ranges_round_trip(self):
+        kwargs = valid_normalized_kwargs()
+        kwargs["question_type"] = "numerical"
+        kwargs["options"] = []
+        kwargs["answer"] = NumericalAnswer(
+            answer="-0.61 to -0.57 OR 0.57 to 0.61", ranges=[(-0.61, -0.57), (0.57, 0.61)]
+        )
+        original = NormalizedQuestion(**kwargs)
+        restored = NormalizedQuestion.model_validate_json(original.model_dump_json())
+        assert restored.answer.ranges == [(-0.61, -0.57), (0.57, 0.61)]
+
+    def test_rejects_a_numeric_range_whose_lower_bound_is_above_its_upper(self):
+        with pytest.raises(ValidationError, match="lower bound above"):
+            NumericalAnswer(answer="4.26 to 4.24", ranges=[(4.26, 4.24)])
+
+
 class TestValidatedQuestion:
     def test_accepts_valid_input(self):
         ValidatedQuestion(**valid_normalized_kwargs())
+
+    def test_no_answer_is_allowed_only_when_the_question_is_not_scored(self):
+        kwargs = valid_normalized_kwargs()
+        del kwargs["answer"]
+        for status in ("marks_to_all", "dropped", "cancelled"):
+            assert ValidatedQuestion(**kwargs, answer_status=status).answer is None
+        with pytest.raises(ValidationError, match="scored question needs an answer"):
+            ValidatedQuestion(**kwargs, answer_status="scored")
 
     def test_rejects_missing_answer(self):
         kwargs = valid_normalized_kwargs()

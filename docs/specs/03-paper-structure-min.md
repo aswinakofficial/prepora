@@ -4,6 +4,7 @@
 **Milestone:** S4 · Paper structure
 **Depends on:** Spec 1 (it builds on `getBySlug` and the new question page)
 **Production database:** yes, one migration with back-fills. Needs the owner's go-ahead.
+**Status:** implemented (migration `drizzle/0018_paper_structure_min.sql`)
 
 ## Context
 
@@ -203,3 +204,31 @@ explicitly. `pnpm db:check` must pass.
   and say so in the input's placeholder.
 - **Upserting occurrences changes semantics.** Re-approving a batch can now change `answer_status`
   on published occurrences. That's intended (revised keys), but it's covered by a test.
+
+## Decided during implementation
+
+- **Where "no answer unless not scored" is enforced.** On `ValidatedQuestion`, not
+  `NormalizedQuestion`. A NormalizedQuestion without an answer is how a producer flags one for
+  review, and `validate.py` reports it as `MISSING_ANSWER` (now only when `answer_status` is
+  `scored`). Rejecting it at construction would have turned that report into a parse error.
+- **No `NUMERIC_RANGE_INVALID` code in `validate.py`.** `NumericalAnswer` already rejects a range
+  with lo > hi when it's built, so the stage could never see one. The publish API returns that as
+  a 422 with the validator's message.
+- **Occurrence upserts skip unchanged rows.** `ON CONFLICT … DO UPDATE … WHERE (facts) IS DISTINCT
+  FROM (new facts)`, so re-approving an unchanged batch writes nothing. `RETURNING (xmax = 0)` tells
+  an insert from an update. Pool sources (content identity) update an existing occurrence the same
+  way before their append path.
+- **Key status order.** The `key_status` enum is declared `none < provisional < final < revised`, so
+  "only moves forward" is a plain `key_status < $new` comparison in SQL.
+- **Dedupe shape for ranges.** A ranged answer's shape is its ranges as `"lo..hi"` strings, built
+  from floats on both sides (the contract's floats, the database's numerics), so a republished
+  ranged question matches itself.
+- **Shared grading.** `packages/api/src/lib/numeric-answer.ts` (no imports) grades on the server
+  and, through `@prepora/api/src/shared`, in practice. A key without ranges matches by trimmed text
+  or by numeric value ("4.50" = "4.5").
+- **Practice payload.** `exams.getBySlug` carries `numericRanges`, `numericAnswer`, `hasAnswer` and
+  the occurrence's `answerStatus`/`marks`/`negativeMarks`. Practice holds a typed answer as a
+  one-element selection, so the existing completion and recording flow is unchanged. In Learn mode
+  a typed answer is checked on "Check answer", not as soon as it's complete.
+- **`packages/content`** uses camelCase answer fields, so it doesn't mirror the contract field for
+  field. It's left alone; the contract's comment now says `ranges` isn't mirrored.

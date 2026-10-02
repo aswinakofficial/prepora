@@ -60,7 +60,9 @@ describe.skipIf(!DATABASE_URL)("attempts", () => {
       .insert(questionOptions)
       .values({ questionId: q.id, optionKey: "B", optionText: "Wrong", sequence: 2 })
       .returning({ id: questionOptions.id });
-    await db.insert(questionAnswers).values({ questionId: q.id, correctOptionId: optA.id });
+    await db
+      .insert(questionAnswers)
+      .values({ questionId: q.id, correctOptionId: optA.id, provenance: "official_sample_key" });
 
     return { questionId: q.id, correctOptionId: optA.id, wrongOptionId: optB.id };
   }
@@ -91,8 +93,8 @@ describe.skipIf(!DATABASE_URL)("attempts", () => {
       .returning({ id: questionOptions.id, key: questionOptions.optionKey });
     const id = (key: string) => opts.find((o) => o.key === key)?.id as string;
     await db.insert(questionAnswers).values([
-      { questionId: q.id, correctOptionId: id("A") },
-      { questionId: q.id, correctOptionId: id("C") },
+      { questionId: q.id, correctOptionId: id("A"), provenance: "official_sample_key" },
+      { questionId: q.id, correctOptionId: id("C"), provenance: "official_sample_key" },
     ]);
 
     const submit = (keys: string[]) =>
@@ -108,6 +110,84 @@ describe.skipIf(!DATABASE_URL)("attempts", () => {
     const rows = await db.select().from(attempts).where(eq(attempts.questionId, q.id));
     const stored = rows.find((r) => r.isCorrect);
     expect(new Set(stored?.selectedOptionIds)).toEqual(new Set([id("A"), id("C")]));
+  });
+
+  it("grades a numerical answer against every accepted range and stores what was typed", async () => {
+    const db = getDb();
+    const unique = randomUUID().slice(0, 8);
+    const [q] = await db
+      .insert(questions)
+      .values({
+        slug: `test-numeric-${unique}`,
+        questionText: `Invented numeric question ${unique}`,
+        questionType: "numerical",
+        status: "published",
+      })
+      .returning({ id: questions.id });
+    seededQuestionIds.push(q.id);
+    const display = "-0.61 to -0.57 OR 0.57 to 0.61";
+    await db.insert(questionAnswers).values([
+      {
+        questionId: q.id,
+        numericalAnswer: display,
+        numericMin: -0.61,
+        numericMax: -0.57,
+        rangeGroup: 0,
+        provenance: "official_final",
+      },
+      {
+        questionId: q.id,
+        numericalAnswer: display,
+        numericMin: 0.57,
+        numericMax: 0.61,
+        rangeGroup: 1,
+        provenance: "official_final",
+      },
+    ]);
+    const submit = (numericAnswer: string) =>
+      recordAttempt(db, { questionId: q.id, numericAnswer, sessionId: `anon-${unique}` });
+
+    const inFirst = await submit("-0.6");
+    expect(inFirst?.isCorrect).toBe(true);
+    expect(inFirst?.correctNumericRanges).toEqual([
+      [-0.61, -0.57],
+      [0.57, 0.61],
+    ]);
+    expect(inFirst?.numericAnswerDisplay).toBe(display);
+    expect((await submit("0.61"))?.isCorrect).toBe(true); // the second range, inclusive
+    expect((await submit("0,58"))?.isCorrect).toBe(true); // a comma with no "."
+    expect((await submit("0.62"))?.isCorrect).toBe(false); // outside
+    expect((await submit("0"))?.isCorrect).toBe(false); // between the ranges
+    expect((await submit("about 0.6"))?.isCorrect).toBe(false); // not a number
+
+    const rows = await db.select().from(attempts).where(eq(attempts.questionId, q.id));
+    expect(rows.map((r) => r.textAnswer).sort()).toEqual(
+      ["-0.6", "0.61", "0,58", "0.62", "0", "about 0.6"].sort(),
+    );
+  });
+
+  it("grades a numerical answer without ranges by its value", async () => {
+    const db = getDb();
+    const unique = randomUUID().slice(0, 8);
+    const [q] = await db
+      .insert(questions)
+      .values({
+        slug: `test-numeric-exact-${unique}`,
+        questionText: `Invented exact question ${unique}`,
+        questionType: "numerical",
+        status: "published",
+      })
+      .returning({ id: questions.id });
+    seededQuestionIds.push(q.id);
+    await db
+      .insert(questionAnswers)
+      .values({ questionId: q.id, numericalAnswer: "4.5", provenance: "official_final" });
+
+    const submit = (numericAnswer: string) =>
+      recordAttempt(db, { questionId: q.id, numericAnswer });
+    expect((await submit(" 4.5 "))?.isCorrect).toBe(true);
+    expect((await submit("4.50"))?.isCorrect).toBe(true);
+    expect((await submit("4.6"))?.isCorrect).toBe(false);
   });
 
   it("a correct submission writes exactly one attempt with isCorrect=true", async () => {

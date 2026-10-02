@@ -14,7 +14,7 @@ not yet built) — this module only defines the target type it must produce.
 """
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .versions import CONTRACT_VERSION
 
@@ -32,6 +32,20 @@ QuestionType = Literal[
 Difficulty = Literal["easy", "medium", "hard", "expert"]
 
 SourceType = Literal["official", "user_submitted", "editorial", "generated", "unknown"]
+
+# docs/specs/03-paper-structure-min.md — mirror packages/db/src/schema/shared.ts's enums of the
+# same names.
+AnswerStatus = Literal["scored", "marks_to_all", "dropped", "cancelled"]
+AnswerProvenance = Literal[
+    "official_final",
+    "official_provisional",
+    "official_sample_key",
+    "reviewer",
+    "ai_suggested_confirmed",
+    "community",
+]
+PaperKind = Literal["past_paper", "official_practice", "sample_paper", "model_paper"]
+KeyStatus = Literal["none", "provisional", "final", "revised"]
 
 
 class NormalizedOption(BaseModel):
@@ -69,12 +83,23 @@ class TextAnswer(BaseModel):
 
 class NumericalAnswer(BaseModel):
     type: Literal["numerical"] = "numerical"
-    answer: str = Field(min_length=1)
+    answer: str = Field(min_length=1)  # for display, e.g. "4.24 to 4.26"
+    # Accepted ranges, inclusive — "-0.61 to -0.57 OR 0.57 to 0.61" is two. Unset: `answer` is
+    # compared as text.
+    ranges: list[tuple[float, float]] | None = None
+
+    @field_validator("ranges")
+    @classmethod
+    def _ranges_are_ordered(cls, ranges):
+        for lo, hi in ranges or []:
+            if lo > hi:
+                raise ValueError(f"Numeric range {lo} to {hi} has its lower bound above its upper.")
+        return ranges
 
 
-# Mirrors packages/content/src/schema.ts's AnswerSchema discriminated union exactly, field for
-# field, so a NormalizedQuestion round-trips through the same shape whether it came from Python or
-# TypeScript.
+# Mirrors packages/content/src/schema.ts's AnswerSchema discriminated union field for field, so a
+# NormalizedQuestion round-trips through the same shape whether it came from Python or TypeScript —
+# except NumericalAnswer.ranges, which authored Markdown content has no use for yet.
 NormalizedAnswer = Annotated[
     McqAnswer | MultipleCorrectAnswer | TextAnswer | NumericalAnswer,
     Field(discriminator="type"),
@@ -112,10 +137,23 @@ class NormalizedQuestion(BaseModel):
 
     # Question content.
     number: int | None = Field(default=None, gt=0)
+    # Facts about the question in this paper (docs/specs/03-paper-structure-min.md): its section
+    # ("General Aptitude"), its number as printed ("Q.31"), and its marks.
+    section: str | None = None
+    number_label: str | None = None
+    marks: float | None = None
+    negative_marks: float | None = None
     question_text: str = Field(min_length=1)
     question_type: QuestionType = "mcq"
     options: list[NormalizedOption] = Field(default_factory=list)
     answer: NormalizedAnswer | None = None
+    # Not "scored" when the official key gave marks to everyone, or dropped or cancelled the
+    # question — then there's honestly no answer, and `answer` may be None.
+    answer_status: AnswerStatus = "scored"
+    # Who says `answer` is right, and what kind of paper this is and how settled its key.
+    answer_provenance: AnswerProvenance = "official_final"
+    paper_kind: PaperKind = "past_paper"
+    key_status: KeyStatus = "final"
     explanation: str | None = None
     topic_slug: str | None = None
     # Images in the stem, an option or the explanation, in display order.

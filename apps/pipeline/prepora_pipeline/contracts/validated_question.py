@@ -21,10 +21,15 @@ from .normalized_question import (
 
 
 class ValidatedQuestion(NormalizedQuestion):
-    answer: NormalizedAnswer  # required — MISSING_ANSWER is not representable once validated
+    # Required for a scored question — MISSING_ANSWER is not representable once validated. Only a
+    # question whose key gave marks to everyone, or dropped or cancelled it, has none.
+    answer: NormalizedAnswer | None = None
 
     @model_validator(mode="after")
     def _check_option_keys(self) -> "ValidatedQuestion":
+        if self.answer is None and self.answer_status == "scored":
+            raise ValueError("A scored question needs an answer.")
+
         keys = [opt.key for opt in self.options]
         if len(keys) != len(set(keys)):
             raise ValueError(f"Duplicate option keys in a validated question: {keys!r}")

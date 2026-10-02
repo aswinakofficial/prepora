@@ -1,6 +1,7 @@
 import type { getDb } from "@prepora/db";
 import { attempts, practiceSessions, questions } from "@prepora/db/schema";
 import { eq } from "drizzle-orm";
+import { gradeNumericAnswer, numericKey } from "./numeric-answer.js";
 import { loadQuestionImages, type QuestionImage } from "./question-media.js";
 
 /**
@@ -20,6 +21,8 @@ export async function recordAttempt(
     /** Every option chosen. Single-answer callers may pass `selectedOptionId` instead. */
     selectedOptionIds?: string[];
     selectedOptionId?: string;
+    /** The typed answer to a numerical question, e.g. "4.25" (or "4,25"). */
+    numericAnswer?: string;
     userId?: string | null;
     sessionId?: string | null;
     practiceSessionId?: string | null;
@@ -31,6 +34,10 @@ export async function recordAttempt(
   correctOptionIds: string[];
   /** The first correct option — kept for single-answer callers. */
   correctOptionId: string | null | undefined;
+  /** A numerical question's accepted ranges, inclusive — empty when it's graded as text. */
+  correctNumericRanges: Array<[number, number]>;
+  /** A numerical question's answer as the key prints it, e.g. "4.24 to 4.26". */
+  numericAnswerDisplay: string | null;
   explanation: string | null;
   explanationImages: QuestionImage[];
 } | null> {
@@ -49,10 +56,13 @@ export async function recordAttempt(
   const selected = [
     ...new Set(input.selectedOptionIds ?? (input.selectedOptionId ? [input.selectedOptionId] : [])),
   ];
+  const numeric = numericKey(q.answers);
   const isCorrect =
-    selected.length > 0 &&
-    selected.length === correctOptionIds.length &&
-    selected.every((id) => correctOptionIds.includes(id));
+    input.numericAnswer !== undefined
+      ? gradeNumericAnswer(input.numericAnswer, numeric)
+      : selected.length > 0 &&
+        selected.length === correctOptionIds.length &&
+        selected.every((id) => correctOptionIds.includes(id));
 
   await db.insert(attempts).values({
     userId: input.userId ?? null,
@@ -60,6 +70,8 @@ export async function recordAttempt(
     questionId: q.id,
     selectedOptionId: selected[0] ?? null,
     selectedOptionIds: selected,
+    // The raw input, as typed — what was graded is reproducible from it.
+    textAnswer: input.numericAnswer ?? null,
     isCorrect,
     practiceSessionId: input.practiceSessionId ?? null,
   });
@@ -69,6 +81,8 @@ export async function recordAttempt(
     isCorrect,
     correctOptionIds,
     correctOptionId: correctOptionIds[0] ?? null,
+    correctNumericRanges: numeric.ranges,
+    numericAnswerDisplay: numeric.display,
     explanation: q.explanation,
     explanationImages: (await loadQuestionImages(db, [q.id], ["explanation"])).get(q.id) ?? [],
   };

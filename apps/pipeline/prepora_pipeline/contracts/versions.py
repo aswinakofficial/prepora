@@ -16,5 +16,7 @@ is expected to define and pass its own parser_version string (e.g. "ms-learn-v3"
 an ExtractedQuestion; there is no repo-wide "the" parser version.
 """
 
-CONTRACT_VERSION = "4"  # 2: .question_set_title; 3: .media; 4: .identity
+# 2: .question_set_title; 3: .media; 4: .identity; 5: marks, section, answer status and
+# provenance, paper kind, key status, numeric ranges (docs/specs/03-paper-structure-min.md)
+CONTRACT_VERSION = "5"
 PIPELINE_VERSION = "1"

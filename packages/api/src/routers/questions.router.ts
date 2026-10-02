@@ -39,6 +39,12 @@ export const questionsRouter = {
       return {
         id: q.id,
         text: q.questionText,
+        // "numerical" questions take a typed answer, graded by submitAnswer against the key's
+        // ranges — which never leave the server before an answer is submitted.
+        questionType: q.questionType,
+        // False when there's nothing to score (marks to all, dropped, cancelled): the page says
+        // why, from the appearances' answerStatus, instead of offering a reveal.
+        hasAnswer: q.answers.length > 0,
         images,
         // How many options make up the answer (3 for "Choose 3"), so the page can collect that
         // many before revealing — the count only, never which ones.
@@ -108,19 +114,26 @@ export const questionsRouter = {
         // One option for a single-answer question; every chosen option for a "Choose N" one.
         selectedOptionIds: z.array(z.string()).min(1).optional(),
         selectedOptionId: z.string().optional(),
+        // The typed answer to a numerical question.
+        numericAnswer: z.string().trim().min(1).max(64).optional(),
         sessionId: z.string().optional(),
         practiceSessionId: z.string().optional(),
       }),
     )
     .handler(async ({ input, context }) => {
-      if (!input.selectedOptionIds?.length && !input.selectedOptionId) {
-        throw new ORPCError("BAD_REQUEST", { message: "Select at least one option." });
+      if (
+        !input.selectedOptionIds?.length &&
+        !input.selectedOptionId &&
+        input.numericAnswer === undefined
+      ) {
+        throw new ORPCError("BAD_REQUEST", { message: "Select an option or enter an answer." });
       }
       const db = getDb();
       const result = await recordAttempt(db, {
         questionId: input.id,
         selectedOptionIds: input.selectedOptionIds,
         selectedOptionId: input.selectedOptionId,
+        numericAnswer: input.numericAnswer,
         userId: context.user?.id,
         sessionId: input.sessionId,
         practiceSessionId: input.practiceSessionId,

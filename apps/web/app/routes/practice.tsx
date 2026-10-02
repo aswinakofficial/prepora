@@ -1,3 +1,4 @@
+import { formatNumericRange, gradeNumericAnswer } from "@prepora/api/src/shared";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { BookOpen, Clock, ExternalLink, Flag, Sparkles, Zap } from "lucide-react";
@@ -63,6 +64,12 @@ interface Question {
   /** Every correct option — more than one for a "Choose N" question. */
   correctKeys?: string[];
   questionType?: string;
+  /** A numerical question's accepted ranges, inclusive (docs/specs/03-paper-structure-min.md). */
+  numericRanges?: Array<[number, number]>;
+  /** A numerical question's answer as the key prints it. */
+  numericAnswer?: string | null;
+  /** False when the key leaves nothing to score (marks to all, dropped, cancelled). */
+  hasAnswer?: boolean;
   explanation: string;
   images?: QuestionImage[];
   topic: string;
@@ -182,12 +189,22 @@ function PracticePage() {
   // Learn mode records a question's attempt once — the first time its answer is complete — not
   // again every time the user changes their selection afterwards.
   const [learnRecorded, setLearnRecorded] = useState<Record<string, boolean>>({});
+  // A numerical answer being typed in Learn mode, checked only when asked — a selection is
+  // checked as soon as it's complete, which for a typed answer would be its first keystroke.
+  const [learnDrafts, setLearnDrafts] = useState<Record<string, string>>({});
 
   const { data: realExamData, isLoading: isLoadingExam } = useQuery(
     orpc.exams.getBySlug.queryOptions({ input: { examSlug: examSlug || "" } }),
   );
 
-  const activeQuestions: Question[] = (realExamData?.questions as any) ?? [];
+  const examQuestions: Question[] = (realExamData?.questions as any) ?? [];
+  // A question whose key gave marks to everyone, or dropped or cancelled it, has nothing to
+  // practise against: it's skipped, and counted as "not scored" in the results.
+  const activeQuestions = useMemo(
+    () => examQuestions.filter((q) => q.hasAnswer !== false),
+    [examQuestions],
+  );
+  const notScored = examQuestions.length - activeQuestions.length;
 
   // docs/roadmap/engineering-roadmap.md item 25: results now persist server-side instead of
   // living only in this component's React state. `correctKey` on each question is still sent by
@@ -244,6 +261,17 @@ function PracticePage() {
   // Fire-and-forget: keeps the interaction optimistic (the UI never waits on this) while still
   // giving every answer a real, server-verified attempts row.
   const recordAttempt = (question: Question, optionKeys: string[]) => {
+    if (isNumerical(question)) {
+      if (!optionKeys[0]) return;
+      submitAnswer({
+        id: question.id,
+        numericAnswer: optionKeys[0],
+        sessionId: anonymousSessionId,
+        practiceSessionId: practiceSessionId ?? undefined,
+      });
+      trackEvent("answer_reveal", { entityType: "question", entityId: question.id });
+      return;
+    }
     const optionIds = question.options.filter((o) => optionKeys.includes(o.key)).map((o) => o.id);
     if (optionIds.length === 0) return;
     submitAnswer({
@@ -282,7 +310,7 @@ function PracticePage() {
     activeQuestions.forEach((q) => {
       if (answers[q.id]?.length) {
         attempted++;
-        if (isSelectionCorrect(answers[q.id], correctKeysOf(q))) correct++;
+        if (isAnswerCorrect(q, answers[q.id])) correct++;
       }
     });
     return { correct, attempted, total: activeQuestions.length };
@@ -497,8 +525,33 @@ function PracticePage() {
                       <QuestionImages images={q.images} placement="question" />
                       <SelectionHint required={required} selected={userAns.length} />
 
+                      {isNumerical(q) && (
+                        <div className="border-t border-slate-900 pt-6">
+                          <NumericAnswerField
+                            id={`numeric-${q.id}`}
+                            value={isAnswered ? userAns[0] : (learnDrafts[q.id] ?? "")}
+                            onChange={(value) =>
+                              setLearnDrafts((prev) => ({ ...prev, [q.id]: value }))
+                            }
+                            onCheck={() => {
+                              const typed = (learnDrafts[q.id] ?? "").trim();
+                              if (!typed || isAnswered) return;
+                              setLearnAnswers((prev) => ({ ...prev, [q.id]: [typed] }));
+                              if (!learnRecorded[q.id]) {
+                                recordAttempt(q, [typed]);
+                                setLearnRecorded((prev) => ({ ...prev, [q.id]: true }));
+                              }
+                            }}
+                            checked={isAnswered}
+                            correct={isAnswered && isAnswerCorrect(q, userAns)}
+                          />
+                        </div>
+                      )}
+
                       {/* Options Feed */}
-                      <div className="space-y-2 border-t border-slate-900 pt-6">
+                      <div
+                        className={`space-y-2 border-t border-slate-900 pt-6 ${q.options.length === 0 ? "hidden" : ""}`}
+                      >
                         {q.options.map((opt) => {
                           const isSelected = userAns.includes(opt.key);
                           const isCorrect = correctKeys.includes(opt.key);
@@ -588,8 +641,14 @@ function PracticePage() {
                               VERIFIED SOLUTION
                             </span>
                             <span className="text-slate-500">
-                              CORRECT ANSWER: {correctKeys.length > 1 ? "OPTIONS" : "OPTION"}{" "}
-                              {formatKeys(correctKeys)}
+                              {isNumerical(q) ? (
+                                <>ACCEPTED: {acceptedNumeric(q)}</>
+                              ) : (
+                                <>
+                                  CORRECT ANSWER: {correctKeys.length > 1 ? "OPTIONS" : "OPTION"}{" "}
+                                  {formatKeys(correctKeys)}
+                                </>
+                              )}
                             </span>
                           </div>
                           <ResolutionText text={resolution.explanation} />
@@ -682,8 +741,31 @@ function PracticePage() {
                 className="-mt-10 mb-8"
               />
 
+              {isNumerical(currentQ) && (
+                <div className="mb-16 border-t border-slate-900 pt-8">
+                  <NumericAnswerField
+                    id={`numeric-${currentQ.id}`}
+                    value={selectedKeys[0] ?? ""}
+                    onChange={(value) =>
+                      setAnswers((prev) => ({
+                        ...prev,
+                        [currentQ.id]: value.trim() ? [value] : [],
+                      }))
+                    }
+                    onCheck={handleCheckAnswer}
+                    checked={!!isAnsSubmitted}
+                    correct={!!isAnsSubmitted && isAnswerCorrect(currentQ, selectedKeys)}
+                    accepted={isAnsSubmitted ? acceptedNumeric(currentQ) : null}
+                    // Simulation checks through its own "Execute query" control.
+                    showCheckButton={false}
+                  />
+                </div>
+              )}
+
               {/* Options List */}
-              <div className="space-y-0.5 mb-16 border-t border-slate-900 pt-8">
+              <div
+                className={`space-y-0.5 mb-16 border-t border-slate-900 pt-8 ${currentQ.options.length === 0 ? "hidden" : ""}`}
+              >
                 {currentQ.options.map((opt) => {
                   const isSelected = selectedKeys.includes(opt.key);
                   const isCorrect = currentCorrectKeys.includes(opt.key);
@@ -888,7 +970,12 @@ function PracticePage() {
   };
 
   const stats = [
-    { label: "Score", value: `${correct}`, suffix: `/${total}`, note: "correct answers" },
+    {
+      label: "Score",
+      value: `${correct}`,
+      suffix: `/${total}`,
+      note: notScored > 0 ? `correct answers · ${notScored} not scored` : "correct answers",
+    },
     {
       label: "Accuracy",
       value: `${accuracyPct}`,
@@ -1046,6 +1133,99 @@ function PracticeSessionSkeleton({ mode }: { mode: "simulation" | "learn" }) {
         </aside>
       </div>
     </SkeletonRegion>
+  );
+}
+
+function isNumerical(q: Question): boolean {
+  return q.questionType === "numerical";
+}
+
+// Right or wrong, for an option selection or — for a numerical question — the typed answer, held
+// as a selection of one. Graded on the client like options (see the item 25 note above); the
+// server grades the same way when the attempt is recorded.
+function isAnswerCorrect(q: Question, answer: string[] | undefined): boolean {
+  if (isNumerical(q)) {
+    return (
+      !!answer?.[0] &&
+      gradeNumericAnswer(answer[0], {
+        ranges: q.numericRanges ?? [],
+        display: q.numericAnswer ?? null,
+      })
+    );
+  }
+  return isSelectionCorrect(answer, correctKeysOf(q));
+}
+
+// "4.24 to 4.26", or every range of an answer with more than one.
+function acceptedNumeric(q: Question): string {
+  return q.numericRanges?.length
+    ? q.numericRanges.map(formatNumericRange).join(" or ")
+    : (q.numericAnswer ?? "");
+}
+
+function NumericAnswerField({
+  id,
+  value,
+  onChange,
+  onCheck,
+  checked,
+  correct,
+  accepted = null,
+  showCheckButton = true,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  onCheck: () => void;
+  checked: boolean;
+  correct: boolean;
+  /** Shown after checking, when the page doesn't show it elsewhere. */
+  accepted?: string | null;
+  /** Off where the page has its own check control; Enter still checks. */
+  showCheckButton?: boolean;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="block font-mono text-[10px] uppercase tracking-widest text-slate-500 mb-3"
+      >
+        Your answer
+      </label>
+      <div className="flex flex-wrap items-center gap-4">
+        <input
+          id={id}
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onCheck()}
+          disabled={checked}
+          placeholder="e.g. 4.25 or 4,25"
+          className="w-64 max-w-full bg-transparent border-b border-slate-700 focus:border-white outline-none text-xl text-white py-2 placeholder:text-slate-700 disabled:text-slate-400"
+        />
+        {!checked ? (
+          showCheckButton && (
+            <button
+              type="button"
+              onClick={onCheck}
+              disabled={!value.trim()}
+              className="px-4 py-2 border border-slate-600 disabled:opacity-30 text-[10px] font-mono uppercase tracking-widest text-slate-300 hover:text-white hover:border-white transition-colors"
+            >
+              Check answer
+            </button>
+          )
+        ) : (
+          <span
+            className={`font-mono text-[10px] uppercase tracking-widest ${correct ? "text-emerald-400" : "text-rose-400"}`}
+          >
+            {correct ? "✓ Correct" : "✕ Incorrect"}
+            {accepted ? ` · Accepted: ${accepted}` : ""}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

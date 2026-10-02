@@ -215,6 +215,11 @@ function reviewElementToNormalizedQuestion(
           question_type: "multiple_correct" as const,
           answer: { type: "multiple_correct" as const, correct_keys: keys },
         }),
+    // MS Learn practice assessments are this mapper's only producer: the vendor's own practice
+    // questions, answered by its own key (docs/specs/03-paper-structure-min.md).
+    answer_provenance: "official_sample_key" as const,
+    paper_kind: "official_practice" as const,
+    key_status: "final" as const,
     explanation: explanationWithReadingLinks(
       stripScraperBoilerplate(el.explanation),
       el.additionalReadingLinks,
