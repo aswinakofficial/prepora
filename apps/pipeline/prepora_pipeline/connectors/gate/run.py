@@ -14,7 +14,7 @@ from ...core.artifact_store import ArtifactStore, FilesystemArtifactStore
 from ...core.db import get_db_connection
 from ...core.http_client import fetch as http_fetch
 from ...core.pdf_text import extract_pages
-from ...core.review_batches import NORMALIZED_FORMAT, create_review_batch
+from ...core.review_batches import NORMALIZED_FORMAT, create_review_batch, pending_batch_for
 from ...stages.validate import validate_question
 from .catalog import PaperSpec
 from .key_parser import parse_answer_key
@@ -36,6 +36,7 @@ class ImportReport:
     invalid: list[tuple[int, str]] = field(default_factory=list)  # (number, why)
     join_gaps: list[str] = field(default_factory=list)
     batch_id: str | None = None
+    already_pending: str | None = None  # a batch for this paper already waiting in review
 
     @property
     def clean_rate(self) -> float:
@@ -50,6 +51,11 @@ class ImportReport:
         out += [f"  join gap: {gap}" for gap in self.join_gaps]
         out += [f"  held back Q.{n}: {', '.join(why)}" for n, why in self.held_back]
         out += [f"  invalid Q.{n}: {why}" for n, why in self.invalid]
+        if self.already_pending:
+            out.append(
+                f"  not written: batch {self.already_pending} for this paper is still waiting in "
+                "review. Approve or reject it first."
+            )
         if self.batch_id:
             out.append(f"  review batch: {self.batch_id}")
         return out
@@ -67,6 +73,7 @@ def import_paper(
     fetch: Callable[[str], bytes] = _fetch_pdf,
     store: ArtifactStore | None = None,
     write_batch: Callable[..., str] = create_review_batch,
+    find_pending: Callable[[str], str | None] = pending_batch_for,
     register: bool = True,
 ) -> ImportReport:
     store = store or FilesystemArtifactStore()
@@ -127,7 +134,10 @@ def import_paper(
         elements.append(_element(normalized, key.raw_key))
 
     report.in_batch = len(elements)
-    if elements:
+    # One batch per paper in the queue at a time: a re-run (after a parser fix, say) mustn't leave
+    # an older parse waiting next to the new one, where either could be approved.
+    report.already_pending = find_pending(paper.qp_url) if elements else None
+    if elements and not report.already_pending:
         report.batch_id = write_batch(
             paper.qp_url,
             elements,

@@ -1202,12 +1202,17 @@ export const adminRouter = {
           const elements = parsedData?.extractedElements || [];
           // How much of this batch the exam doesn't have yet — a re-scrape of an assessment is
           // mostly questions already published, and only the new ones will be added.
-          const examSlug = await resolveRegisteredExamSlug(
-            db,
-            meta.exam || meta.targetExam || "",
-            row.sourceUrl,
-            examRows,
-          );
+          // A normalized batch's questions name their exam exactly; others resolve it by name.
+          const declared = isNormalizedBatch(meta) ? elements[0]?.normalized?.exam_slug : null;
+          const examSlug =
+            typeof declared === "string"
+              ? declared
+              : await resolveRegisteredExamSlug(
+                  db,
+                  meta.exam || meta.targetExam || "",
+                  row.sourceUrl,
+                  examRows,
+                );
           const { newCount, existingCount } = countNewQuestions(
             elements
               .map((el: { questionText?: unknown }) => el?.questionText)

@@ -32,3 +32,19 @@ def create_review_batch(
         return batch_id
     finally:
         conn.close()
+
+
+def pending_batch_for(source_url: str) -> str | None:
+    """The id of a batch from this source URL still waiting in the review queue, if any."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM scraped_questions WHERE source_url = %s AND status = 'pending' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (source_url,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()

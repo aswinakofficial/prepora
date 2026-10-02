@@ -91,7 +91,7 @@ class _Store:
         return RawArtifact.model_construct(sha256=sha, **kw)
 
 
-def _run(key_rows, boxes=None):
+def _run(key_rows, boxes=None, pending=None):
     files = {PAPER.qp_url: invented_paper(boxes=boxes), PAPER.key_url: key_pdf(key_rows)}
     batches = []
     report = import_paper(
@@ -99,6 +99,7 @@ def _run(key_rows, boxes=None):
         fetch=files.__getitem__,
         store=_Store(),
         write_batch=lambda *batch: batches.append(batch) or "b1",
+        find_pending=lambda url: pending,
         register=False,
     )
     return report, batches
@@ -128,6 +129,12 @@ class TestImport:
         assert all(not e["normalized"]["needs_review"] for e in elements)
         assert "clean" in report.lines()[0]
 
+    def test_a_paper_already_waiting_in_review_isnt_queued_twice(self):
+        report, batches = _run(KEY_ROWS, pending="older-batch")
+        assert batches == [] and report.batch_id is None
+        assert report.already_pending == "older-batch"
+        assert "still waiting in review" in "\n".join(report.lines())
+
     def test_an_incomplete_join_writes_nothing(self):
         report, batches = _run(KEY_ROWS[:3])  # the key has no row for Q.4
         assert batches == [] and report.batch_id is None
@@ -147,9 +154,11 @@ def test_import_registers_gate_and_writes_a_real_review_batch():
     files = {PAPER.qp_url: invented_paper(), PAPER.key_url: key_pdf(KEY_ROWS)}
     batch_ids = []
     try:
-        for _ in range(2):  # registering is idempotent
-            report = import_paper(PAPER, fetch=files.__getitem__, store=_Store())
-            batch_ids.append(report.batch_id)
+        first = import_paper(PAPER, fetch=files.__getitem__, store=_Store())
+        batch_ids.append(first.batch_id)
+        # Registering again is idempotent, and the paper isn't queued a second time.
+        again = import_paper(PAPER, fetch=files.__getitem__, store=_Store())
+        assert again.batch_id is None and again.already_pending == first.batch_id
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
