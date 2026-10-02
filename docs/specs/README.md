@@ -15,7 +15,7 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 
 | # | Spec | Issues | Depends on | Status |
 |---|---|---|---|---|
-| 1 | [S0 · Question URLs that work](01-question-urls.md) | #19, #34, #26 | — | Ready |
+| 1 | [S0 · Question URLs that work](01-question-urls.md) | #19, #34, #26 | — | **Done** (#53) — prod migration 0017 pending |
 | 2 | [P · Shared PDF stages](02-pdf-stages.md) | #29, #30 | — | Ready |
 | 3 | [S4-min · Marks, sections, answer status, numeric answers](03-paper-structure-min.md) | #45 | 1 | Ready |
 | 4 | [M · Image storage on R2](04-media-storage.md) | #46 | — | Ready — **needs the owner** (Cloudflare) |
