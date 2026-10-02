@@ -1,69 +1,99 @@
-# Prepora — Vision and roadmap
+# Prepora — Vision and goals
 
-> **Every past exam question in one place — searchable, explained, and used to predict what comes
-> next.**
+> **Every exam question in the world, in one place: sourced, verified, searchable, and used to help
+> learners prepare for what comes next.**
 
-Previous-year questions are the most reliable way to prepare for an exam, and the hardest thing to
-find: scattered across PDFs, forums and paywalled sites, rarely with trustworthy answers, almost
-never with explanations. Prepora's goal is to make them **open, organised and useful** for every
-learner — and then to go beyond a question bank: a knowledge system you can ask questions of, and
-predicted papers that help you prepare for the exam that's coming, not only the ones already past.
+Past exam questions are the most reliable way to prepare for an exam, and the hardest thing to
+find. They're scattered across PDFs, forums and paywalled sites, rarely have trustworthy answers,
+and almost never come with explanations. Prepora's goal is to become the **world's largest open,
+trustworthy index of exam questions**, across countries, languages, exam bodies and levels, and to
+make that knowledge useful to every learner for free.
 
-This page is the "why" and the "where next". For the day-to-day engineering plan see
-[docs/roadmap/engineering-roadmap.md](roadmap/engineering-roadmap.md); to get involved see
+This page is the "why" and the "where next". The order work happens in is
+[docs/specs/README.md](specs/README.md); the architecture behind the index is
+[docs/architecture/knowledge-index.md](architecture/knowledge-index.md); to get involved see
 [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
-## Principles
+## What we stand for
 
 These decide the hard trade-offs. A change that breaks one of them needs a very good reason.
 
-1. **Sourced, reviewed, always labelled.** Every published question traces back to where it came
-   from, and a person approves every batch before it goes live. Nothing is published without an
-   official answer or a person's confirmation, and every answer says where it came from. Where an
-   official answer doesn't exist, an optional AI step may *suggest* one, but it's published only
-   after a reviewer confirms it, and it stays labelled "AI-suggested, reviewed"
-   ([ADR-015](adr/015-ai-assistance.md)). Missing data is never filled in silently.
-2. **Honest about uncertainty.** Predictions are labelled as predictions, show what they were built
-   from, and publish how accurate the method has been on real past papers.
-3. **Open.** The code is MIT-licensed and built in public. The repository holds code only — no
-   scraped content — so anyone can run their own instance.
-4. **For every learner.** Free to use, fast on a phone and a slow connection, and — over time —
-   available in the languages students actually study in.
-5. **Architecture before breadth.** Build the mechanisms (pipeline, review, dedupe, provenance) well
-   once, then add exams and sources incrementally on top of them.
+1. **Sourced, reviewed, always labelled.** Every question traces back to its origin, and every
+   answer says where it came from: official key, reviewer, or AI-suggested and confirmed by a
+   person ([ADR-015](adr/015-ai-assistance.md)). Nothing is published silently, and missing data is
+   never filled in.
+2. **Honest about uncertainty.** Predictions and AI help are always labelled, explained and
+   measured.
+3. **Open.** The code is MIT-licensed and built in public. The repository holds code, not scraped
+   content, so anyone can run their own instance.
+4. **For every learner.** Free, fast on a phone and a slow connection, and available in the
+   languages students study in.
+5. **Architecture before breadth.** Build the mechanisms (pipeline, review, dedupe, provenance)
+   once and well, then add sources incrementally.
+6. **Respect for sources.** We use official and permitted sources, ask for permission where it's
+   needed ([register](sources/permissions.md)), attribute properly, and never use certification
+   dump sites ([not onboarded](sources/not-onboarded.md)).
 
 ---
 
-## Pillar 1 · Every past question, in one place
+## Goal 1 · Every past question, in one place
 
-**Status: available now, growing.**
+**Status: now.**
 
-How it works today: scrapers and connectors collect questions from a source → an admin reviews each
-batch in the review queue → the pipeline validates it, detects duplicates across all sources (so
-re-collecting a source only adds what's new), and publishes it with its provenance → the website
-serves it for browsing, search and practice.
+- **Every exam type:** certifications, government recruitment, competitive entrance exams and
+  university exams.
+- **Multiple sources per exam:** official papers and keys, plus permitted third-party and open
+  datasets, merged without duplicates ([ADR-014](adr/014-multi-source-provenance.md)).
+- **Browsable by each exam's own hierarchy** (exam → paper → year → sitting, or university →
+  course → semester) and **searchable across all of them**
+  ([ADR-013](adr/013-knowledge-index-hierarchy.md)).
+- **Real papers, represented faithfully:** sections, marks, negative marks, numeric-range answers,
+  cancelled or marks-to-all questions, and answer-key revisions.
+
+How it works today: connectors collect questions from a source, an admin reviews each batch, and
+the pipeline validates it, detects duplicates across all sources (so re-collecting a source only
+adds what's new) and publishes it with its provenance. The website serves it for browsing, search
+and practice.
 
 **Done**
-- Multi-exam-type catalogue: certification, government, competitive and university exams.
-- Review queue with quality checks and "new vs already published" counts per batch.
-- Deduplication across sources and re-scrapes; idempotent publishing.
-- Connectors: Microsoft Learn practice assessments, IndiaBix, and Markdown question sets.
+- Multi-exam-type catalogue, review queue with quality checks, cross-source deduplication and
+  idempotent publishing.
+- Connectors: Microsoft Learn practice assessments and Markdown question sets.
+- One permanent URL per question (`/questions/{slug}`), listing every paper it appeared in.
+- Shared PDF stages: positioned text, question segmentation and answer-key tables.
 - Practice: Learn and Simulation modes, multi-answer and image questions, search.
+- Source research dossiers for every planned source ([docs/sources](sources/README.md)).
 
-**Next**
-- More sources — Kerala PSC, GATE, SSC, UPSC, NEET and university papers — each as a connector
-  ([guide](connectors/README.md)).
-- Community question submissions (the Contribute flow) and "report an error in this question".
-- Consistent topic and difficulty tagging across exams — the foundation the other two pillars stand
-  on.
-- Hosted pipeline and object storage (Cloudflare R2) for question images, so collection doesn't
-  depend on one laptop.
+**Near-term milestones**, in order ([specs](specs/README.md)): marks, sections and numeric answers →
+image storage → **GATE CS pilot** → exam hierarchies → Kerala PSC, ISTQB/AWS, and Kerala
+universities.
 
 ---
 
-## Pillar 2 · A knowledge system anyone can query
+## Goal 2 · Global scale
+
+**Status: growing.** The foundations are being built; nothing here is at global scale yet.
+
+- **Countries and languages:** language and region become first-class fields, and translations of
+  the same question are linked (for example a paper's English, Malayalam and Hindi editions), so
+  search can show one result per question.
+- **Scale target:** tens of millions of questions from thousands of exam bodies worldwide.
+- **Infrastructure that grows in stages**, each step taken when measurements say it's needed, not
+  before:
+  1. edge caching and object storage (Cloudflare Pages and R2);
+  2. a dedicated search engine behind the existing search interface, and read replicas, once
+     PostgreSQL search stops meeting its targets (around 2M questions or p95 above 300 ms; see the
+     [knowledge-index plan](architecture/knowledge-index.md));
+  3. an analytics/ML platform (warehouse or lakehouse) only when data volume demands it.
+- **Ingestion at scale:** orchestrated, parallel, idempotent pipelines
+  ([ADR-012](adr/012-job-queue-deferral.md) records when a job queue becomes worth it), with OCR and
+  transcription for scanned and image-based papers.
+
+---
+
+## Goal 3 · A knowledge system anyone can query
 
 **Status: next.**
 
@@ -90,7 +120,7 @@ phone screen.
 
 ---
 
-## Pillar 3 · Question prediction
+## Goal 4 · Question prediction
 
 **Status: planned.**
 
@@ -126,20 +156,35 @@ and how to measure "a good predicted paper".
 
 ---
 
-## How big decisions are made
+## Goal 5 · Trust and community
 
-- **Ideas and questions** — [GitHub Discussions](https://github.com/aswinakofficial/prepora/discussions).
-- **RFCs for large features** — the knowledge system and prediction start as an RFC discussion, so
-  the design is agreed before code is written. Anyone can propose one.
-- **Architecture decisions** are recorded in [docs/adr](adr/).
+**Status: ongoing.**
 
-## How you can help, by pillar
+- Every answer shows its provenance. When sources disagree, the disagreement goes to a person to
+  resolve, never to whichever source was collected last.
+- Community contributions (the Contribute flow) and "report an error in this question".
+- AI assistance stays optional and labelled, and a person confirms it before anything is published.
 
-| Pillar | Good ways to start |
+---
+
+## How we work
+
+- **Build from written specs, in order:** one issue → one branch → one reviewed PR
+  ([working agreements](../CLAUDE.md)).
+- **Research a source first:** legitimacy, licence, format and answer quality, before writing a
+  connector ([playbook](sources/README.md)).
+- **Big features start as RFCs** in [GitHub Discussions](https://github.com/aswinakofficial/prepora/discussions),
+  so the design is agreed before code is written. Anyone can propose one.
+- **Architecture decisions are recorded as ADRs** in [docs/adr](adr/).
+
+## How you can help
+
+| Area | Good ways to start |
 |---|---|
-| 1 · One place | Write a connector for an exam source; add a past paper in Markdown; improve the review queue; report wrong answers. |
-| 2 · Knowledge system | Join the RFC; build the embedding stage; assemble the evaluation set; design the "Ask" interface. |
-| 3 · Prediction | Join the RFC; improve topic tagging; build the backtesting harness; prototype a forecasting model on one exam. |
-| Everywhere | Docs, design, accessibility, translations, testing. |
+| Sources | Research an exam source, write a connector, contribute a past paper. |
+| Platform | Pipeline stages, search, the review queue, performance. |
+| Knowledge system | Embeddings, evaluation sets, the "Ask" interface. |
+| Prediction | Topic tagging, the backtesting harness, forecasting models. |
+| Everywhere | Design, accessibility, translations, docs, testing. |
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) to set up a local copy in about ten minutes.

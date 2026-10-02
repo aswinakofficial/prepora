@@ -2,12 +2,12 @@
 
 # Prepora
 
-**Every past exam question in one place — searchable, explained, and used to predict what comes next.**
+**Every exam question in the world, in one place: sourced, verified, searchable, and used to help learners prepare for what comes next.**
 
 An open-source exam-preparation platform for students everywhere: certification, government,
 competitive and university exams.
 
-[**Website**](https://prepora.xpar.in) · [**Vision & roadmap**](docs/vision.md) ·
+[**Website**](https://prepora.xpar.in) · [**Vision & goals**](docs/vision.md) ·
 [**Contribute**](CONTRIBUTING.md) · [**Discussions**](https://github.com/aswinakofficial/prepora/discussions)
 
 [![CI](https://github.com/aswinakofficial/prepora/actions/workflows/ci.yml/badge.svg)](https://github.com/aswinakofficial/prepora/actions/workflows/ci.yml)
@@ -27,36 +27,26 @@ find. They are scattered across PDFs, forums, coaching-centre notes and paywalle
 answers you can trust, and almost never with explanations. Students who can pay for compilations
 get ahead; everyone else searches.
 
-Prepora gathers them into one open, well-organised place, keeps them honest (every question is
-reviewed and traceable to its source), and then goes further: it lets you **ask** the collection
-questions, and it studies years of papers to **predict** what an upcoming exam is likely to ask.
+Prepora's goal is to become the world's largest open, trustworthy index of exam questions, across
+countries, languages, exam bodies and levels, and to make it useful to every learner for free. Every
+question traces back to its source, every answer says where it came from, and nothing is published
+without a person's review.
 
-## The three pillars
+## Goals
 
-### 1. Every past question, in one place — *available now, growing*
+1. **Every past question, in one place** — *now.* Every exam type, several sources per exam merged
+   without duplicates, browsable by each exam's own hierarchy and searchable across all of them,
+   with real papers represented faithfully (sections, marks, numeric ranges, revised keys).
+2. **Global scale** — *growing.* Language and region as first-class fields, linked translations,
+   and infrastructure that grows in measured stages toward tens of millions of questions.
+3. **A knowledge system anyone can query** — *next.* Ask in plain language and get answers grounded
+   in real exam questions, with citations; "questions like this one" across exams and languages.
+4. **Question prediction** — *planned.* Predicted practice papers built from multi-year topic
+   trends, backtested against real papers, and always labelled as practice, never a leak.
+5. **Trust and community** — *ongoing.* Provenance on every answer, human review of disagreements,
+   community contributions and error reports, AI help that's optional and confirmed by a person.
 
-A pipeline gathers questions from many sources — official papers, practice assessments, contributed
-question sets — and a human reviewer approves every batch before it is published. Duplicates are
-detected across sources, so re-collecting a source only adds what is new, and each question keeps a
-link to where it came from.
-
-### 2. A knowledge system anyone can query — *next*
-
-Ask in plain language — *"How is the bending moment of a simply supported beam calculated?"*,
-*"Which topics does GATE CS repeat every year?"* — and get answers grounded in real exam questions
-and their explanations, with citations back to the source papers. Built on the same reviewed,
-provenance-stamped data as the rest of the site, never on unverified web content.
-
-### 3. Question prediction — *planned*
-
-For an upcoming exam — say NEET next year — Prepora will study every previous paper, learn how
-topics, weightage and question styles have shifted over the years, and generate a **predicted
-question paper** for students to practise with. Each predicted paper shows which trends it was built
-from, and the method is tested against real past papers (predict 2024 from the years before it,
-then compare with the actual 2024 paper) with the results published — so students can see how much
-to trust it.
-
-Read the full [vision and roadmap](docs/vision.md).
+Read the full [vision and goals](docs/vision.md).
 
 ## What you can do today
 
