@@ -4,6 +4,7 @@
 **Milestone:** P · PDF stages
 **Depends on:** nothing
 **Production database:** no
+**Status:** implemented
 
 ## Context
 
@@ -169,6 +170,16 @@ Then run `cd apps/pipeline && venv/bin/ruff check . && venv/bin/pytest -q`.
   picked up automatically.
 - [docs/connectors/README.md](../connectors/README.md) gains a short "Parsing PDFs" section pointing
   at these three modules, with a 10-line example.
+
+## Decided during implementation
+
+- **Extra word attribute:** `Word` also carries `fontname` (from pdfplumber), so a connector can
+  tell code (Courier) from prose. The GATE paper parser needs this.
+- **Cells, not words:** a key table's row is first split into cells by horizontal gaps (`cell_gap`,
+  default 8pt), and each cell goes to the column whose header center is nearest. Assigning single
+  words split multi-word answers like "4.24 to 4.26" across columns.
+- **Option markers:** `split_options` matches the marker against each *word*
+  (`^\(([A-D])\)(.*)$`), not against the line, and keeps any text glued to it (`(A)127`).
 
 ## Risks
 - **pdfminer word grouping varies with PDF producers**, so tolerances are parameters, not constants.
