@@ -34,6 +34,7 @@ import {
   publishingLockReason,
   scrapingLockReason,
 } from "../lib/local-only-services.js";
+import { isNormalizedBatch, normalizedElements } from "../lib/normalized-batches.js";
 import {
   computeSourceHealthStats,
   EMPTY_SOURCE_HEALTH_STATS,
@@ -659,13 +660,19 @@ async function processOneReviewItem(
   const elements = parsedData?.extractedElements || [];
   const meta = { ...(parsedData?.metadata || {}) };
   const examName = meta.exam || meta.targetExam || "unknown-exam";
+  // A pipeline connector's batch (GATE) carries each question complete, exam included: nothing to
+  // resolve or register, and every question publishes as it is (lib/normalized-batches.ts).
+  const isNormalized = isNormalizedBatch(meta);
+  const normalizedBatch = isNormalized ? normalizedElements(elements) : null;
 
   // Publish into the exam this batch already belongs to when one is registered; otherwise admin
   // approval is the one point a brand-new exam is safe to auto-register — see
   // ensureExamRegistered's docstring. Must run before the publish loop below, since /publish
   // rejects any exam_slug that doesn't already resolve to a real exams row.
-  let examSlug = await resolveRegisteredExamSlug(db, examName, item[0].sourceUrl);
-  if (!examSlug) {
+  let examSlug = isNormalized
+    ? undefined
+    : ((await resolveRegisteredExamSlug(db, examName, item[0].sourceUrl)) ?? undefined);
+  if (!examSlug && !isNormalized) {
     const code = extractExamCode(examName);
     examSlug = code ?? slugify(examName);
     await ensureExamRegistered(db, {
@@ -688,7 +695,11 @@ async function processOneReviewItem(
   // silently published with no correct answer at all. Each element publishes independently so one
   // bad item (most likely: exam/subject metadata that doesn't match a registered catalog slug —
   // see reviewElementToNormalizedQuestion's docstring) doesn't block the rest of the batch.
-  const publishable = elements.filter((el: any) => el.questionText && el.options && el.answer) as {
+  const publishable = (
+    normalizedBatch
+      ? normalizedBatch.publishable.map((p) => p.element)
+      : elements.filter((el: any) => el.questionText && el.options && el.answer)
+  ) as {
     questionText: string;
     options: string[];
     answer: string;
@@ -696,8 +707,14 @@ async function processOneReviewItem(
     additionalReadingLinks?: Array<{ text?: string; url?: string }>;
     images?: ScrapedImage[];
   }[];
+  // Each question's number: its position, or for a normalized batch its number in the paper.
+  const numberOf = (index: number) => normalizedBatch?.publishable[index].number ?? index + 1;
 
+  const normalizedByElement = new Map<object, Record<string, unknown>>(
+    normalizedBatch?.publishable.map((p) => [p.element, p.normalized]) ?? [],
+  );
   const toNormalized = (el: (typeof publishable)[number], number: number) =>
+    normalizedByElement.get(el) ??
     reviewElementToNormalizedQuestion(el, meta, number, examSlug, item[0].sourceUrl);
 
   let publishCount = 0;
@@ -706,7 +723,7 @@ async function processOneReviewItem(
   let addedCount = 0;
   let heldCount = 0;
   let skippedCount = 0;
-  const failed: ReviewFailure[] = [];
+  const failed: ReviewFailure[] = [...(normalizedBatch?.failed ?? [])];
   const publishOne = async (el: (typeof publishable)[number], number: number) => {
     try {
       const normalized = toNormalized(el, number);
@@ -756,15 +773,15 @@ async function processOneReviewItem(
   // repeats an earlier one in the same batch is published only after it, so it's checked against
   // it — published at the same moment, neither would see the other.
   if (publishable.length > 0) {
-    const waves = await planPublishWaves(publishable.map((el, i) => toNormalized(el, i + 1)));
+    const waves = await planPublishWaves(publishable.map((el, i) => toNormalized(el, numberOf(i))));
     const [firstWave, ...laterWaves] = waves;
-    await publishOne(publishable[firstWave[0]], firstWave[0] + 1);
+    await publishOne(publishable[firstWave[0]], numberOf(firstWave[0]));
     for (const wave of [firstWave.slice(1), ...laterWaves]) {
       let next = 0;
       const worker = async () => {
         while (next < wave.length) {
           const index = wave[next++];
-          await publishOne(publishable[index], index + 1);
+          await publishOne(publishable[index], numberOf(index));
         }
       };
       await Promise.all(Array.from({ length: PUBLISH_CONCURRENCY }, worker));

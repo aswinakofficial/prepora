@@ -1,4 +1,5 @@
 import { answerKeysForReviewElement } from "./review-answers.js";
+import { gateQualityChecks } from "./sources/gate.js";
 import { msLearnQualityChecks } from "./sources/ms-learn.js";
 
 // Checks a scraped review batch for extraction failures, so a reviewer sees them before approving
@@ -19,6 +20,8 @@ export interface ReviewElement {
   answer?: string;
   explanation?: string | null;
   additionalReadingLinks?: Array<{ text?: string; url?: string }>;
+  /** A pipeline connector's complete question (normalized-v1 batches, lib/normalized-batches.ts). */
+  normalized?: Record<string, unknown>;
 }
 
 export interface QualityCheck {
@@ -35,12 +38,18 @@ export interface SourceQualityChecks {
   checks: QualityCheck[];
 }
 
-export const SOURCE_QUALITY_CHECKS: SourceQualityChecks[] = [msLearnQualityChecks];
+export const SOURCE_QUALITY_CHECKS: SourceQualityChecks[] = [
+  msLearnQualityChecks,
+  gateQualityChecks,
+];
 
 const GENERIC_CHECKS: QualityCheck[] = [
   {
     code: "answer_not_in_options",
     test: (el) => {
+      // A complete question's answer is structured and was validated by the pipeline; its display
+      // answer ("4.24 to 4.26", "Marks to all") isn't an option's text.
+      if (el.normalized) return false;
       if (!el.options || !el.answer) return true;
       try {
         answerKeysForReviewElement({ options: el.options, answer: el.answer });

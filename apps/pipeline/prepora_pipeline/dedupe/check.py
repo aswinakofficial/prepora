@@ -25,7 +25,10 @@ from typing import Literal
 
 from ..contracts import NormalizedQuestion
 from ..core.db import get_db_connection
-from ..stages.stable_id import derive_question_set_slug
+
+# The module, not the name: stages.stable_id imports this package, so importing the name here broke
+# `import prepora_pipeline.stages.validate` whenever it came first. Resolved at call time instead.
+from ..stages import stable_id
 from .candidates import Candidate, find_exact, find_similar, within_reach
 from .fingerprint import AnswerShape, numbers_in, shape_of, shape_of_published
 from .normalize import normalize_question_text
@@ -131,7 +134,7 @@ def _decide_exact(cur, normalized, shape: AnswerShape, exact: list[Candidate]):
         if c.question_set_id:
             set_ids_by_question[c.question_id].add(c.question_set_id)
 
-    this_set_id = _existing_question_set_id(cur, derive_question_set_slug(normalized))
+    this_set_id = _existing_question_set_id(cur, stable_id.derive_question_set_slug(normalized))
     shapes = {qid: shape_of_published(cur, qid) for qid in set_ids_by_question}
     same = [qid for qid, s in shapes.items() if s.matches(shape)]
     if same:
