@@ -9,7 +9,7 @@ import {
   timestamp,
   unique,
 } from "drizzle-orm/pg-core";
-import { id, publishingStatusEnum, timestamps } from "./shared.ts";
+import { id, keyStatusEnum, paperKindEnum, publishingStatusEnum, timestamps } from "./shared.ts";
 
 // ─── Organizations ──────────────────────────────────────────────────────────
 // The body behind an exam (conducts/administers/publishes it) — see
@@ -206,6 +206,10 @@ export const questionSets = pgTable(
     sourceUrl: text("source_url"),
     publicationStatus: publishingStatusEnum("publication_status").notNull().default("draft"),
     publishedAt: text("published_at"),
+    // What the paper is, and how settled its answer key is — so a page can say "Past paper · final
+    // official key" (docs/specs/03-paper-structure-min.md). No defaults: every writer states them.
+    paperKind: paperKindEnum("paper_kind").notNull(),
+    keyStatus: keyStatusEnum("key_status").notNull(),
     ...timestamps,
   },
   (t) => [

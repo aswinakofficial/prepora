@@ -72,6 +72,8 @@ test.describe("practice — attempts and sessions persist to the real database",
         title: `E2E Set ${marker}`,
         slug: `e2e-set-${marker}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning();
 
@@ -95,7 +97,9 @@ test.describe("practice — attempts and sessions persist to the real database",
     await db
       .insert(questionOptions)
       .values({ questionId: q1.id, optionKey: "B", optionText: `Q1 wrong ${marker}`, sequence: 2 });
-    await db.insert(questionAnswers).values({ questionId: q1.id, correctOptionId: q1optA.id });
+    await db
+      .insert(questionAnswers)
+      .values({ questionId: q1.id, correctOptionId: q1optA.id, provenance: "official_sample_key" });
     await db
       .insert(questionOccurrences)
       .values({ questionId: q1.id, questionSetId: set.id, originalQuestionNumber: 1 });
@@ -120,7 +124,9 @@ test.describe("practice — attempts and sessions persist to the real database",
     await db
       .insert(questionOptions)
       .values({ questionId: q2.id, optionKey: "B", optionText: `Q2 wrong ${marker}`, sequence: 2 });
-    await db.insert(questionAnswers).values({ questionId: q2.id, correctOptionId: q2optA.id });
+    await db
+      .insert(questionAnswers)
+      .values({ questionId: q2.id, correctOptionId: q2optA.id, provenance: "official_sample_key" });
     await db
       .insert(questionOccurrences)
       .values({ questionId: q2.id, questionSetId: set.id, originalQuestionNumber: 2 });

@@ -146,6 +146,14 @@ export const examsRouter = {
             correctKey: q.correctKey,
             correctKeys: q.correctKeys,
             questionType: q.questionType,
+            // Practice grades a numerical answer on the client, like correctKey for options.
+            numericRanges: q.numericRanges,
+            numericAnswer: q.numericAnswer,
+            // Nothing to score (marks to all, dropped, cancelled): practice skips it.
+            hasAnswer: q.hasAnswer,
+            answerStatus: occ.answerStatus,
+            marks: occ.marks,
+            negativeMarks: occ.negativeMarks,
             explanation: q.explanation,
             images: q.images,
             topic: q.topicName || occ.subjectName || exam.name,

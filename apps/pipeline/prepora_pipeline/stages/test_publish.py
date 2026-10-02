@@ -10,7 +10,12 @@ import uuid
 
 import pytest
 
-from prepora_pipeline.contracts import McqAnswer, NormalizedOption, NormalizedQuestion
+from prepora_pipeline.contracts import (
+    McqAnswer,
+    NormalizedOption,
+    NormalizedQuestion,
+    NumericalAnswer,
+)
 from prepora_pipeline.core.db import get_db_connection
 
 from .publish import PublishError, publish_question
@@ -519,3 +524,138 @@ def test_concurrent_pool_appends_get_distinct_numbers(test_exam, test_subject):
         )
     numbers = [number for _, number in _occurrences(first.question_set_id)]
     assert numbers == list(range(1, 10))
+
+
+# ─── Paper structure: marks, answer status, numeric ranges (docs/specs/03-paper-structure-min.md)
+
+
+def _numeric(test_exam, test_subject, **overrides):
+    return _normalized(
+        test_exam, test_subject, question_text="How many invented units fit in a crate?"
+    ).model_copy(
+        update={
+            "question_type": "numerical",
+            "options": [],
+            "answer": NumericalAnswer(
+                answer="-0.61 to -0.57 OR 0.57 to 0.61", ranges=[(-0.61, -0.57), (0.57, 0.61)]
+            ),
+            **overrides,
+        }
+    )
+
+
+def _answers(question_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT numeric_min::float, numeric_max::float, range_group, numerical_answer, "
+                "provenance FROM question_answers WHERE question_id = %s ORDER BY range_group",
+                (question_id,),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def _occurrence_facts(question_id):
+    return _row(
+        "SELECT section_label, number_label, marks::float, negative_marks::float, answer_status "
+        "FROM question_occurrences WHERE question_id = %s",
+        (question_id,),
+    )
+
+
+def test_a_numeric_answer_with_two_ranges_writes_one_row_per_range(test_exam, test_subject):
+    result = publish_question(
+        _numeric(test_exam, test_subject, answer_provenance="official_provisional")
+    )
+    display = "-0.61 to -0.57 OR 0.57 to 0.61"
+    assert _answers(result.question_id) == [
+        (-0.61, -0.57, 0, display, "official_provisional"),
+        (0.57, 0.61, 1, display, "official_provisional"),
+    ]
+    # Republishing finds the same question: its ranges are its answer shape.
+    again = publish_question(_numeric(test_exam, test_subject))
+    assert again.question_id == result.question_id
+    assert not again.question_created
+
+
+def test_occurrence_facts_are_written_and_a_revised_key_updates_them(test_exam, test_subject):
+    paper = {"section": "General Aptitude", "number_label": "Q.1", "marks": 1.0}
+    first = publish_question(
+        _normalized(test_exam, test_subject, question_text="Pick the invented colour.").model_copy(
+            update={**paper, "negative_marks": 1 / 3}
+        )
+    )
+    assert first.occurrence_created
+    assert _occurrence_facts(first.question_id) == ("General Aptitude", "Q.1", 1.0, 0.33, "scored")
+
+    # The revised key gives marks to everyone: same question, same paper, new status.
+    revised = publish_question(
+        _normalized(test_exam, test_subject, question_text="Pick the invented colour.").model_copy(
+            update={**paper, "negative_marks": 1 / 3, "answer_status": "marks_to_all"}
+        )
+    )
+    assert revised.question_id == first.question_id
+    assert not revised.occurrence_created
+    assert _occurrence_facts(first.question_id)[4] == "marks_to_all"
+
+
+def test_an_unchanged_pool_republish_does_not_rewrite_its_occurrence(test_exam, test_subject):
+    question = _pooled(
+        test_exam, test_subject, question_text="Which invented tide is highest?", number=1
+    ).model_copy(update={"marks": 1.0, "negative_marks": 1 / 3})
+    first = publish_question(question)
+
+    def updated_at():
+        return _row(
+            "SELECT updated_at FROM question_occurrences WHERE question_id = %s",
+            (first.question_id,),
+        )[0]
+
+    before = updated_at()
+    publish_question(question)
+    assert updated_at() == before  # 1/3 compares equal to the stored 0.33
+    publish_question(question.model_copy(update={"answer_status": "dropped"}))
+    assert _occurrence_facts(first.question_id)[4] == "dropped"
+
+
+def test_a_question_with_marks_to_all_publishes_without_answer_rows(test_exam, test_subject):
+    result = publish_question(
+        _normalized(test_exam, test_subject, question_text="An invented question with no key.")
+        .model_copy(update={"answer": None, "answer_status": "marks_to_all"})
+    )
+    assert _answers(result.question_id) == []
+    assert _occurrence_facts(result.question_id)[4] == "marks_to_all"
+
+
+def test_a_sets_key_status_only_moves_forward(test_exam, test_subject):
+    stems = {
+        1: "Which invented planet has rings?",
+        2: "How do zeppelins in the invented fleet refuel?",
+        3: "Name the composer of the invented anthem.",
+        4: "What does the invented tax on salt fund?",
+    }
+
+    def publish(number, key_status):
+        return publish_question(
+            _normalized(
+                test_exam, test_subject, question_text=stems[number], number=number
+            ).model_copy(update={"key_status": key_status, "paper_kind": "past_paper"})
+        )
+
+    set_id = publish(1, "provisional").question_set_id
+
+    def status():
+        return _row(
+            "SELECT paper_kind, key_status FROM question_sets WHERE id = %s", (set_id,)
+        )
+
+    assert status() == ("past_paper", "provisional")
+    publish(2, "final")
+    assert status() == ("past_paper", "final")
+    publish(3, "provisional")  # an older key never relabels the set
+    assert status() == ("past_paper", "final")
+    publish(4, "revised")
+    assert status() == ("past_paper", "revised")

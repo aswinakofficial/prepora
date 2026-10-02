@@ -191,6 +191,7 @@ def publish_question(
                 # Pool sources have no fixed numbering: a question new to the set goes after the
                 # ones already in it, whatever position it had in this particular scrape.
                 None if effective_identity(validated) == "content" else validated.number,
+                validated,
             )
             _record_media(cur, question_id, validated.media)
 
@@ -337,12 +338,25 @@ def _resolve_or_create_course(cur, variant_id: str, subject_id: str, course_slug
     )
 
 
+_KEY_ORDER = ("none", "provisional", "final", "revised")  # the key_status enum's own order
+
+
 def _resolve_or_create_question_set(
     cur, variant_id: str, session_id: str, subject_id: str, normalized: NormalizedQuestion
 ) -> str:
     slug = derive_question_set_slug(normalized)
-    existing = _select_id(cur, "SELECT id FROM question_sets WHERE slug = %s", (slug,))
-    if existing:
+    cur.execute("SELECT id, key_status FROM question_sets WHERE slug = %s", (slug,))
+    found = cur.fetchone()
+    if found:
+        existing, key_status = found
+        # A key only moves forward — none < provisional < final < revised — so publishing from an
+        # older key never relabels the set. The re-check in SQL keeps a concurrent move safe.
+        if _KEY_ORDER.index(normalized.key_status) > _KEY_ORDER.index(key_status):
+            cur.execute(
+                "UPDATE question_sets SET key_status = %s, updated_at = now() "
+                "WHERE id = %s AND key_status < %s::key_status",
+                (normalized.key_status, existing, normalized.key_status),
+            )
         return existing
 
     # A connector that knows what the set is actually called (e.g. "Official Microsoft Practice
@@ -363,8 +377,8 @@ def _resolve_or_create_question_set(
         (slug,),
         "INSERT INTO question_sets "
         "(exam_variant_id, exam_session_id, subject_id, shift_label, title, slug, source_type, "
-        "source_url, source_document, publication_status) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'published')",
+        "source_url, source_document, paper_kind, key_status, publication_status) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'published')",
         (
             variant_id,
             session_id,
@@ -375,6 +389,8 @@ def _resolve_or_create_question_set(
             normalized.source_type,
             normalized.source_url,
             normalized.source_document,
+            normalized.paper_kind,
+            normalized.key_status,
         ),
     )
 
@@ -437,7 +453,7 @@ def _link_to_existing_question(
         )
         option_id_by_key[option.key] = option_id
     cur.execute("DELETE FROM question_answers WHERE question_id = %s", (question_id,))
-    _insert_answers(cur, question_id, normalized.answer, option_id_by_key)
+    _insert_answers(cur, question_id, normalized, option_id_by_key)
 
     cur.execute(
         "UPDATE questions SET question_text = %s, content_hash = %s, "
@@ -549,12 +565,20 @@ def _resolve_or_create_question(
         )
         option_id_by_key = dict(cur.fetchall())
 
-    _insert_answers(cur, question_id, normalized.answer, option_id_by_key)
+    _insert_answers(cur, question_id, normalized, option_id_by_key)
 
     return question_id, True, stable_content_id
 
 
-def _insert_answers(cur, question_id: str, answer, option_id_by_key: dict[str, str]) -> None:
+def _insert_answers(
+    cur, question_id: str, normalized: NormalizedQuestion, option_id_by_key: dict[str, str]
+) -> None:
+    """The question's answer rows, each stating its provenance. A question with no answer to score
+    (marks to all, dropped, cancelled — validate.py allows it only then) gets none."""
+    answer = normalized.answer
+    provenance = normalized.answer_provenance
+    if answer is None:
+        return
     if isinstance(answer, McqAnswer):
         option_id = option_id_by_key.get(answer.correct_key)
         if option_id is None:
@@ -564,8 +588,9 @@ def _insert_answers(cur, question_id: str, answer, option_id_by_key: dict[str, s
                 "text (item 18's own fix)."
             )
         cur.execute(
-            "INSERT INTO question_answers (question_id, correct_option_id) VALUES (%s, %s)",
-            (question_id, option_id),
+            "INSERT INTO question_answers (question_id, correct_option_id, provenance) "
+            "VALUES (%s, %s, %s)",
+            (question_id, option_id, provenance),
         )
     elif isinstance(answer, MultipleCorrectAnswer):
         missing = [k for k in answer.correct_keys if k not in option_id_by_key]
@@ -576,19 +601,30 @@ def _insert_answers(cur, question_id: str, answer, option_id_by_key: dict[str, s
             )
         for key in answer.correct_keys:
             cur.execute(
-                "INSERT INTO question_answers (question_id, correct_option_id, is_correct) "
-                "VALUES (%s, %s, true)",
-                (question_id, option_id_by_key[key]),
+                "INSERT INTO question_answers "
+                "(question_id, correct_option_id, is_correct, provenance) "
+                "VALUES (%s, %s, true, %s)",
+                (question_id, option_id_by_key[key], provenance),
             )
     elif isinstance(answer, TextAnswer):
         cur.execute(
-            "INSERT INTO question_answers (question_id, text_answer) VALUES (%s, %s)",
-            (question_id, answer.answer),
+            "INSERT INTO question_answers (question_id, text_answer, provenance) "
+            "VALUES (%s, %s, %s)",
+            (question_id, answer.answer, provenance),
         )
+    elif isinstance(answer, NumericalAnswer) and answer.ranges:
+        # One row per accepted range, each carrying the display text ("4.24 to 4.26").
+        for group, (lo, hi) in enumerate(answer.ranges):
+            cur.execute(
+                "INSERT INTO question_answers (question_id, numerical_answer, numeric_min, "
+                "numeric_max, range_group, provenance) VALUES (%s, %s, %s, %s, %s, %s)",
+                (question_id, answer.answer, lo, hi, group, provenance),
+            )
     elif isinstance(answer, NumericalAnswer):
         cur.execute(
-            "INSERT INTO question_answers (question_id, numerical_answer) VALUES (%s, %s)",
-            (question_id, answer.answer),
+            "INSERT INTO question_answers (question_id, numerical_answer, provenance) "
+            "VALUES (%s, %s, %s)",
+            (question_id, answer.answer, provenance),
         )
     else:
         raise PublishError(f"Unknown answer type: {type(answer)!r}")
@@ -638,33 +674,82 @@ def _record_media(cur, question_id: str, media) -> None:
     )
 
 
+_OCCURRENCE_FACTS = ("section_label", "number_label", "marks", "negative_marks", "answer_status")
+
+
+def _occurrence_facts(normalized: NormalizedQuestion) -> tuple:
+    # Marks are stored as numeric(5,2): rounded the same way here, so GATE's 1/3 compares equal to
+    # the stored 0.33 and an unchanged republish writes nothing.
+    def two_places(value):
+        return None if value is None else round(value, 2)
+
+    return (
+        normalized.section,
+        normalized.number_label,
+        two_places(normalized.marks),
+        two_places(normalized.negative_marks),
+        normalized.answer_status,
+    )
+
+
+def _fact_text(value) -> str:
+    # How Postgres prints a fact as text: numeric(5,2) always with two decimals.
+    return f"{value:.2f}" if isinstance(value, float) else str(value)
+
+
 def _resolve_or_create_occurrence(
-    cur, question_id: str, question_set_id: str, original_question_number: int | None
+    cur,
+    question_id: str,
+    question_set_id: str,
+    original_question_number: int | None,
+    normalized: NormalizedQuestion,
 ) -> bool:
-    # One round trip: question_occurrences_unique (question_id, question_set_id) makes an
-    # existing occurrence a no-op, and RETURNING tells us whether a row was actually inserted.
+    """Whether a new occurrence was created. An existing one takes this publish's facts about the
+    paper — section, number label, marks, answer status — since a revised key can change them
+    (docs/specs/03-paper-structure-min.md); one whose facts are unchanged isn't written at all."""
+    facts = _occurrence_facts(normalized)
+    columns = ", ".join(_OCCURRENCE_FACTS)
     # Without a number (content identity), the occurrence takes the next one in its set so new
     # questions append. Concurrent publishes into the same set would otherwise read the same MAX
     # and tie, so appends to one set are serialized by a transaction-scoped advisory lock (held
     # only for the short remainder of this publish).
     if original_question_number is None:
-        # A re-scraped question usually already has its occurrence — that's a no-op, and must not
-        # queue behind the lock (which is held to commit) and serialize the whole batch.
+        # A re-scraped question usually already has its occurrence — one read, an update only if
+        # its facts changed, and it must not queue behind the lock (which is held to commit) and
+        # serialize the whole batch.
         cur.execute(
-            "SELECT 1 FROM question_occurrences WHERE question_id = %s AND question_set_id = %s",
+            f"SELECT id, {', '.join(f'{c}::text' for c in _OCCURRENCE_FACTS)} "
+            "FROM question_occurrences WHERE question_id = %s AND question_set_id = %s",
             (question_id, question_set_id),
         )
-        if cur.fetchone():
+        row = cur.fetchone()
+        if row:
+            stored = tuple(row[1:])
+            if stored != tuple(None if f is None else _fact_text(f) for f in facts):
+                cur.execute(
+                    f"UPDATE question_occurrences SET ({columns}) = ROW(%s, %s, %s, %s, %s), "
+                    "updated_at = now() WHERE id = %s",
+                    (*facts, row[0]),
+                )
             return False
         cur.execute(
             "SELECT pg_advisory_xact_lock(hashtext(%s))", (f"occurrence-append:{question_set_id}",)
         )
+    # One round trip: question_occurrences_unique (question_id, question_set_id) turns an existing
+    # occurrence into an update of its facts (skipped when they're unchanged, so no row comes
+    # back), and xmax = 0 tells a freshly inserted row from an updated one.
     cur.execute(
         "INSERT INTO question_occurrences "
-        "(question_id, question_set_id, original_question_number) VALUES (%s, %s, "
+        f"(question_id, question_set_id, original_question_number, {columns}) VALUES (%s, %s, "
         "COALESCE(%s, (SELECT COALESCE(MAX(original_question_number), 0) + 1 "
-        "FROM question_occurrences WHERE question_set_id = %s))) "
-        "ON CONFLICT (question_id, question_set_id) DO NOTHING RETURNING id",
-        (question_id, question_set_id, original_question_number, question_set_id),
+        "FROM question_occurrences WHERE question_set_id = %s)), %s, %s, %s, %s, %s) "
+        "ON CONFLICT (question_id, question_set_id) DO UPDATE SET "
+        + ", ".join(f"{c} = EXCLUDED.{c}" for c in _OCCURRENCE_FACTS)
+        + ", updated_at = now() "
+        f"WHERE (question_occurrences.{', question_occurrences.'.join(_OCCURRENCE_FACTS)}) "
+        f"IS DISTINCT FROM (EXCLUDED.{', EXCLUDED.'.join(_OCCURRENCE_FACTS)}) "
+        "RETURNING (xmax = 0)",
+        (question_id, question_set_id, original_question_number, question_set_id, *facts),
     )
-    return cur.fetchone() is not None
+    row = cur.fetchone()
+    return bool(row and row[0])

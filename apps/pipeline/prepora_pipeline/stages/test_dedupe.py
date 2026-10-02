@@ -337,6 +337,8 @@ class TestPerformanceAgainstALargeCorpus:
                         f"Perf Set {run_id}-{i}",
                         f"perf-set-{run_id}-{i}",
                         "published",
+                        "past_paper",
+                        "final",
                     )
                     for i in range(self.NUM_SUBJECTS)
                 ]
@@ -344,7 +346,7 @@ class TestPerformanceAgainstALargeCorpus:
                     cur,
                     "INSERT INTO question_sets "
                     "(id, exam_variant_id, exam_session_id, subject_id, title, slug, "
-                    "publication_status) VALUES %s",
+                    "publication_status, paper_kind, key_status) VALUES %s",
                     question_set_rows,
                 )
                 question_set_ids = [row[0] for row in question_set_rows]

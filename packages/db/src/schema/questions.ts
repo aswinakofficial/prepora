@@ -1,8 +1,19 @@
 import { relations, sql } from "drizzle-orm";
-import { boolean, index, integer, pgTable, text, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  numeric,
+  pgTable,
+  text,
+  unique,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { questionSets, topics } from "./catalog.ts";
 import {
   aiSourceEnum,
+  answerProvenanceEnum,
+  answerStatusEnum,
   difficultyEnum,
   id,
   publishingStatusEnum,
@@ -93,8 +104,15 @@ export const questionAnswers = pgTable(
     correctOptionId: text("correct_option_id").references(() => questionOptions.id),
     // For non-MCQ types:
     textAnswer: text("text_answer"),
-    numericalAnswer: text("numerical_answer"),
+    numericalAnswer: text("numerical_answer"), // for display, e.g. "4.24 to 4.26"
+    // A numerical answer accepted as a range, inclusive: one row per range, so "-0.61 to -0.57 OR
+    // 0.57 to 0.61" is two rows, range_group 0 and 1 (docs/specs/03-paper-structure-min.md).
+    numericMin: numeric("numeric_min", { mode: "number" }),
+    numericMax: numeric("numeric_max", { mode: "number" }),
+    rangeGroup: integer("range_group"),
     isCorrect: boolean("is_correct").notNull().default(true), // for multiple_correct
+    // Who says this is the answer. No default: every writer states it.
+    provenance: answerProvenanceEnum("provenance").notNull(),
     ...timestamps,
   },
   (t) => [index("question_answers_question_id_idx").on(t.questionId)],
@@ -115,6 +133,13 @@ export const questionOccurrences = pgTable(
     originalQuestionNumber: integer("original_question_number"),
     pageNumber: integer("page_number"),
     sourceReference: text("source_reference"),
+    // Facts about the question in this one paper (docs/specs/03-paper-structure-min.md).
+    sectionLabel: text("section_label"), // "General Aptitude"
+    numberLabel: text("number_label"), // the number as printed, e.g. "Q.31"
+    marks: numeric("marks", { precision: 5, scale: 2, mode: "number" }),
+    negativeMarks: numeric("negative_marks", { precision: 5, scale: 2, mode: "number" }),
+    // Not "scored" when the official key gave marks to everyone, or dropped or cancelled it.
+    answerStatus: answerStatusEnum("answer_status").notNull().default("scored"),
     ...timestamps,
   },
   (t) => [

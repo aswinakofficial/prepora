@@ -129,6 +129,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
         title: `Set ${unique}`,
         slug: `set-${unique}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     chain.questionSetIds.push(set.id);
@@ -165,6 +167,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
         title: `Set ${unique}`,
         slug: `set-${unique}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     chain.questionSetIds.push(set.id);
@@ -194,6 +198,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
         title: `Set 2024 ${unique}`,
         slug: `set-2024-${unique}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     const [set2025] = await db
@@ -205,6 +211,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
         title: `Set 2025 ${unique}`,
         slug: `set-2025-${unique}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     chain.questionSetIds.push(set2024.id, set2025.id);
@@ -245,6 +253,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
         title: `Set ${unique}`,
         slug: `set-${unique}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     chain.questionSetIds.push(set.id);
@@ -271,6 +281,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
         title: `Set ${unique}`,
         slug: `set-${unique}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     chain.questionSetIds.push(set.id);
@@ -311,6 +323,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
         title: `Draft Set ${unique}`,
         slug: `draft-set-${unique}`,
         publicationStatus: "draft",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     chain.questionSetIds.push(draftSet.id);

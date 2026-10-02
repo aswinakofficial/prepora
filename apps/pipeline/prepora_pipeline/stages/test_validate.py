@@ -134,6 +134,11 @@ class TestPortedRules:
         r = validate_question(_valid_question(test_exam, answer=None))
         assert any(i.code == "MISSING_ANSWER" and i.severity == "error" for i in r.issues)
 
+    def test_a_question_with_marks_to_all_needs_no_answer(self, test_exam):
+        r = validate_question(_valid_question(test_exam, answer=None, answer_status="marks_to_all"))
+        assert r.valid, r.issues
+        assert r.validated is not None and r.validated.answer is None
+
     def test_invalid_answer_key_flags_an_mcq_key_absent_from_options(self, test_exam):
         r = validate_question(_valid_question(test_exam, answer=McqAnswer(correct_key="Z")))
         assert any(i.code == "INVALID_ANSWER_KEY" and i.severity == "error" for i in r.issues)

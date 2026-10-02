@@ -119,7 +119,9 @@ def validate_question(
             )
         )
 
-    if normalized.answer is None:
+    # A question the official key gave marks to everyone, or dropped or cancelled, honestly has no
+    # answer (docs/specs/03-paper-structure-min.md).
+    if normalized.answer is None and normalized.answer_status == "scored":
         issues.append(ValidationIssue("error", "MISSING_ANSWER", "No answer found"))
 
     for media in normalized.media:
