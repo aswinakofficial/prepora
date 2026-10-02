@@ -83,7 +83,14 @@ class TestAnswerKey:
 
     @pytest.mark.parametrize(
         ("qtype", "raw"),
-        [("MCQ", "E"), ("MCQ", "A;B"), ("MSQ", "A;Z"), ("NAT", "5 to 4"), ("NAT", "about 5")],
+        [
+            ("MCQ", "E"),
+            ("MCQ", "A;B"),
+            ("MSQ", "A;Z"),
+            ("MSQ", "A;A;C"),
+            ("NAT", "5 to 4"),
+            ("NAT", "about 5"),
+        ],
     )
     def test_a_bad_value_raises(self, qtype, raw):
         with pytest.raises(GateKeyError):
@@ -93,6 +100,9 @@ class TestAnswerKey:
         rows = [*ROWS[:1], ("2", "3", "NAT", "CS-1", "5 to 4", "2")]
         with pytest.raises(GateKeyError, match=r"Q\.2"):
             parse_answer_key(extract_pages(key_pdf(rows)))
+
+    def test_a_typographic_minus_reads_as_negative(self):
+        assert parse_answer_value("NAT", "\u22120.61 to \u20130.57") == ("ranges", [(-0.61, -0.57)])
 
     def test_an_unknown_question_type_raises(self):
         with pytest.raises(GateKeyError, match="Unknown question type"):

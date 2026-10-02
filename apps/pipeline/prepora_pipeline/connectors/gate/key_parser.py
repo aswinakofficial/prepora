@@ -56,14 +56,20 @@ _NUMBER = r"-?\d+(?:\.\d+)?"
 _RANGE = re.compile(rf"^({_NUMBER})\s*to\s*({_NUMBER})$")
 
 
+# NFKC leaves typographic minus signs and dashes alone; a key may print any of them.
+_MINUS = str.maketrans({"\u2212": "-", "\u2013": "-", "\u2012": "-", "\ufe63": "-"})
+
+
 def parse_answer_value(qtype: str, raw: str) -> Answer:
-    text = " ".join(raw.split())
+    text = " ".join(raw.translate(_MINUS).split())
     if text.upper() == "MTA":
         return ("mta", None)
     if qtype in ("MCQ", "MSQ"):
         letters = [part.strip().upper() for part in re.split(r"[;,]", text)]
         if not letters or any(letter not in ("A", "B", "C", "D") for letter in letters):
             raise GateKeyError(f"{qtype} key {raw!r} isn't a list of options A–D.")
+        if len(set(letters)) != len(letters):
+            raise GateKeyError(f"{qtype} key {raw!r} repeats an option.")
         if qtype == "MCQ" and len(letters) != 1:
             raise GateKeyError(f"MCQ key {raw!r} has more than one option.")
         return ("keys", letters)
