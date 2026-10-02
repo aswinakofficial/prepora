@@ -19,6 +19,12 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
 
 
+# Who stands behind a hand-authored answer (docs/specs/03-paper-structure-min.md): only a paper
+# marked "official" carries the official key; anything else was answered by a person, so it's never
+# labelled as an official key.
+_PROVENANCE = {"official": "official_final", "user_submitted": "community"}
+
+
 def normalize(
     frontmatter: MarkdownFrontmatter,
     parsed: ParsedQuestion,
@@ -44,6 +50,8 @@ def normalize(
         question_type=parsed.question_type,
         options=[NormalizedOption(key=key, text=text) for key, text in parsed.options],
         answer=parsed.answer,
+        answer_provenance=_PROVENANCE.get(frontmatter.source_type, "reviewer"),
+        paper_kind="past_paper" if frontmatter.source_type == "official" else "model_paper",
         explanation=parsed.explanation,
         topic_slug=_slugify(parsed.topic) if parsed.topic else None,
         difficulty=parsed.difficulty,

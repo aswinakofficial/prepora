@@ -17,7 +17,7 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 |---|---|---|---|---|
 | 1 | [S0 · Question URLs that work](01-question-urls.md) | #19, #34, #26 | — | **Done** (#53, migrated) |
 | 2 | [P · Shared PDF stages](02-pdf-stages.md) | #29, #30 | — | **Done** |
-| 3 | [S4-min · Marks, sections, answer status, numeric answers](03-paper-structure-min.md) | #45 | 1 | Ready |
+| 3 | [S4-min · Marks, sections, answer status, numeric answers](03-paper-structure-min.md) | #45 | 1 | **Done** (#56, migrated) |
 | 4 | [M · Image storage on R2](04-media-storage.md) | #46 | — | Ready — **needs the owner** (Cloudflare) |
 | 5 | [GATE CS pilot](05-gate-pilot.md) | #27, #47, #48, #49 | 2, 3, 4 | Ready |
 | 6 | [S1 · Exam hierarchies](06-hierarchy.md) | #35 | 5 | Draft — **revisit after the GATE pilot** |

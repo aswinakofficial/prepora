@@ -68,6 +68,8 @@ test.describe("search palette to question page", () => {
         title: `E2E Set ${marker}`,
         slug: `e2e-set-${marker}`,
         publicationStatus: "published",
+        paperKind: "official_practice",
+        keyStatus: "final",
       })
       .returning({ id: questionSets.id });
     const [question] = await db

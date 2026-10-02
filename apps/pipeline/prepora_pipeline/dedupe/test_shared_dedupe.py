@@ -286,8 +286,8 @@ class TestAudit:
                     (copy_id, a.question_id),
                 )
                 cur.execute(
-                    "INSERT INTO question_answers (question_id, correct_option_id) "
-                    "SELECT %s, o2.id FROM question_answers qa "
+                    "INSERT INTO question_answers (question_id, correct_option_id, provenance) "
+                    "SELECT %s, o2.id, qa.provenance FROM question_answers qa "
                     "JOIN question_options o1 ON o1.id = qa.correct_option_id "
                     "JOIN question_options o2 "
                     "ON o2.question_id = %s AND o2.option_key = o1.option_key "

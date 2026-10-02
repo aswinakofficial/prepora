@@ -1,3 +1,4 @@
+import { formatNumericRange } from "@prepora/api/src/shared";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -47,10 +48,35 @@ function shortTitle(text: string): string {
   return oneLine.length > 60 ? `${oneLine.slice(0, 60).trimEnd()}…` : oneLine;
 }
 
+// docs/specs/03-paper-structure-min.md: why a question has no answer to score.
+const NO_SCORE_NOTE: Record<string, string> = {
+  marks_to_all: "No answer to score: marks were awarded to everyone",
+  dropped: "This question was dropped",
+  cancelled: "This question was cancelled",
+};
+
+// Marks as exam papers print them: GATE's −⅓ is stored as 0.33.
+const FRACTIONS: Record<string, string> = { "0.25": "¼", "0.33": "⅓", "0.5": "½", "0.67": "⅔" };
+
+function formatMarks(value: number): string {
+  const whole = Math.trunc(value);
+  const fraction = FRACTIONS[(value - whole).toFixed(2).replace(/0$/, "")];
+  if (!fraction) return String(value);
+  return whole === 0 ? fraction : `${whole}${fraction}`;
+}
+
+/** "1 mark · −⅓ for a wrong answer" */
+function marksLine(marks: number, negativeMarks: number | null): string {
+  const scored = `${formatMarks(marks)} ${marks === 1 ? "mark" : "marks"}`;
+  return negativeMarks ? `${scored} · −${formatMarks(negativeMarks)} for a wrong answer` : scored;
+}
+
 function QuestionPage() {
   const { questionSlug } = Route.useParams();
   // Option ids chosen so far: one for a single-answer question, `answerCount` for "Choose N".
   const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
+  // The typed answer to a numerical question.
+  const [numericInput, setNumericInput] = useState("");
 
   const { data: question, isLoading } = useQuery(
     orpc.questions.getBySlug.queryOptions({ input: { questionSlug } }),
@@ -72,16 +98,23 @@ function QuestionPage() {
     }
   }, [question]);
 
+  const isNumerical = question?.questionType === "numerical";
+  // An official key that gave marks to everyone, or dropped or cancelled the question, leaves no
+  // answer to reveal — the page says which instead.
+  const unscoredIn = question?.appearances.find((a) => a.answerStatus !== "scored");
+  const noScoreStatus = question?.hasAnswer ? undefined : unscoredIn?.answerStatus;
   const required = question?.answerCount ?? 1;
-  const isComplete = isSelectionComplete(selectedOptionIds, required);
+  const isComplete = isNumerical
+    ? numericInput.trim() !== ""
+    : isSelectionComplete(selectedOptionIds, required);
 
   const handleReveal = () => {
     if (isComplete && question) {
-      submitAnswer({
-        id: question.id,
-        selectedOptionIds,
-        sessionId: getAnonymousSessionId(),
-      });
+      submitAnswer(
+        isNumerical
+          ? { id: question.id, numericAnswer: numericInput, sessionId: getAnonymousSessionId() }
+          : { id: question.id, selectedOptionIds, sessionId: getAnonymousSessionId() },
+      );
       trackEvent("answer_reveal", { entityType: "question", entityId: question.id });
     }
   };
@@ -89,6 +122,12 @@ function QuestionPage() {
   const isRevealed = !!result;
   const correctOptions =
     question?.options.filter((o) => result?.correctOptionIds?.includes(o.id)) ?? [];
+  // "4.24 to 4.26", or "-0.61 to -0.57 or 0.57 to 0.61" for an answer with two ranges.
+  const acceptedNumeric = result
+    ? result.correctNumericRanges.length > 0
+      ? result.correctNumericRanges.map(formatNumericRange).join(" or ")
+      : result.numericAnswerDisplay
+    : null;
 
   if (isLoading) {
     // The question page's shape: breadcrumb, question text, options, reveal button.
@@ -154,10 +193,14 @@ function QuestionPage() {
             name: question.text,
             text: question.text,
             url: `${CANONICAL_ORIGIN}/questions/${questionSlug}`,
-            suggestedAnswer: question.options.map((opt) => ({
-              "@type": "Answer",
-              text: opt.text,
-            })),
+            ...(question.options.length > 0
+              ? {
+                  suggestedAnswer: question.options.map((opt) => ({
+                    "@type": "Answer",
+                    text: opt.text,
+                  })),
+                }
+              : {}),
             ...(isRevealed && correctOptions.length > 0
               ? {
                   // Every correct option — a "Choose N" question has more than one.
@@ -166,6 +209,9 @@ function QuestionPage() {
                     text: option.text,
                   })),
                 }
+              : {}),
+            ...(isRevealed && acceptedNumeric
+              ? { acceptedAnswer: { "@type": "Answer", text: acceptedNumeric } }
               : {}),
           }),
         }}
@@ -224,7 +270,20 @@ function QuestionPage() {
           </p>
           <QuestionImages images={question.images} placement="question" className="-mt-8 mb-16" />
 
-          {required > 1 && (
+          {primary?.marks != null && (
+            <p className="-mt-8 mb-10 font-mono text-xs uppercase tracking-widest text-slate-500">
+              {marksLine(primary.marks, primary.negativeMarks)}
+            </p>
+          )}
+
+          {/* Scored somewhere, but not in every paper: say which one. */}
+          {question.hasAnswer && unscoredIn && (
+            <p className="-mt-6 mb-10 font-mono text-xs tracking-widest text-slate-500">
+              {unscoredIn.questionSetTitle}: {NO_SCORE_NOTE[unscoredIn.answerStatus].toLowerCase()}
+            </p>
+          )}
+
+          {required > 1 && !isNumerical && (
             <p className="-mt-8 mb-10 font-mono text-xs uppercase tracking-widest text-slate-400">
               Select {required} answers · {selectedOptionIds.length} of {required} selected
             </p>
@@ -240,9 +299,10 @@ function QuestionPage() {
                   !isRevealed &&
                   setSelectedOptionIds((prev) => toggleSelection(prev, opt.id, required))
                 }
-                disabled={isRevealed}
+                // Nothing to check when the key scored no answer.
+                disabled={isRevealed || !!noScoreStatus}
                 className={`flex text-left transition-colors group ${
-                  isRevealed ? "cursor-default" : "cursor-pointer"
+                  isRevealed || noScoreStatus ? "cursor-default" : "cursor-pointer"
                 }`}
               >
                 <span
@@ -273,7 +333,34 @@ function QuestionPage() {
             ))}
           </div>
 
-          {!isRevealed ? (
+          {isNumerical && !noScoreStatus && (
+            <div className="mb-12">
+              <label
+                htmlFor="numeric-answer"
+                className="block font-mono text-xs uppercase tracking-widest text-slate-500 mb-3"
+              >
+                Your answer
+              </label>
+              <input
+                id="numeric-answer"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={numericInput}
+                onChange={(e) => setNumericInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleReveal()}
+                disabled={isRevealed}
+                placeholder="e.g. 4.25 or 4,25"
+                className="w-64 max-w-full bg-transparent border-b border-slate-700 focus:border-white outline-none text-xl text-white py-2 placeholder:text-slate-700 disabled:text-slate-400"
+              />
+            </div>
+          )}
+
+          {noScoreStatus ? (
+            <p className="font-mono text-sm tracking-widest uppercase text-slate-400">
+              {NO_SCORE_NOTE[noScoreStatus]}
+            </p>
+          ) : !isRevealed ? (
             <button
               type="button"
               onClick={handleReveal}
@@ -284,7 +371,7 @@ function QuestionPage() {
                   : "text-slate-700 border-slate-900 cursor-not-allowed"
               }`}
             >
-              {isPending ? "Checking…" : "Reveal answer"}
+              {isPending ? "Checking…" : isNumerical ? "Check answer" : "Reveal answer"}
             </button>
           ) : (
             <div className="animate-fade-up">
@@ -301,6 +388,7 @@ function QuestionPage() {
                       {option.key} · {option.text}
                     </li>
                   ))}
+                  {isNumerical && acceptedNumeric && <li>Accepted: {acceptedNumeric}</li>}
                 </ul>
               </div>
 

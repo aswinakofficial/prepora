@@ -67,6 +67,8 @@ describe.skipIf(!DATABASE_URL)("findPublishedQuestionBySlug", () => {
           title: `Practice ${unique}`,
           slug: `practice-${unique}`,
           publicationStatus: "published" as const,
+          paperKind: "official_practice" as const,
+          keyStatus: "final" as const,
         },
         {
           examVariantId: variant.id,
@@ -74,6 +76,8 @@ describe.skipIf(!DATABASE_URL)("findPublishedQuestionBySlug", () => {
           title: `Paper 2025 ${unique}`,
           slug: `paper-2025-${unique}`,
           publicationStatus: "published" as const,
+          paperKind: "official_practice" as const,
+          keyStatus: "final" as const,
         },
       ])
       .returning({ id: questionSets.id });
@@ -87,7 +91,16 @@ describe.skipIf(!DATABASE_URL)("findPublishedQuestionBySlug", () => {
     const [published, draft] = created;
     await db.insert(questionOccurrences).values([
       { questionId: published.id, questionSetId: sets[0].id, originalQuestionNumber: 12 },
-      { questionId: published.id, questionSetId: sets[1].id, originalQuestionNumber: 3 },
+      {
+        questionId: published.id,
+        questionSetId: sets[1].id,
+        originalQuestionNumber: 3,
+        sectionLabel: "General Aptitude",
+        numberLabel: "Q.3",
+        marks: 2,
+        negativeMarks: 0.67,
+        answerStatus: "marks_to_all" as const,
+      },
       { questionId: draft.id, questionSetId: sets[0].id },
     ]);
 
@@ -110,6 +123,7 @@ describe.skipIf(!DATABASE_URL)("findPublishedQuestionBySlug", () => {
     const found = await findPublishedQuestionBySlug(getDb(), `pub-${unique}`);
 
     expect(found?.id).toBe(publishedId);
+    expect(found?.questionType).toBe("mcq");
     expect(found?.appearances).toEqual([
       {
         examSlug: exam.slug,
@@ -119,6 +133,11 @@ describe.skipIf(!DATABASE_URL)("findPublishedQuestionBySlug", () => {
         year: 2025,
         sessionLabel: "2025",
         originalQuestionNumber: 3,
+        sectionLabel: "General Aptitude",
+        numberLabel: "Q.3",
+        marks: 2,
+        negativeMarks: 0.67,
+        answerStatus: "marks_to_all",
       },
       {
         examSlug: exam.slug,
@@ -128,6 +147,11 @@ describe.skipIf(!DATABASE_URL)("findPublishedQuestionBySlug", () => {
         year: null,
         sessionLabel: "Version 1",
         originalQuestionNumber: 12,
+        sectionLabel: null,
+        numberLabel: null,
+        marks: null,
+        negativeMarks: null,
+        answerStatus: "scored",
       },
     ]);
   });

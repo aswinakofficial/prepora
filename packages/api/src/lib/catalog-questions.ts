@@ -1,6 +1,7 @@
 import type { getDb } from "@prepora/db";
 import { questions } from "@prepora/db/schema";
 import { inArray, sql } from "drizzle-orm";
+import { numericKey } from "./numeric-answer.js";
 import { loadQuestionImages, type QuestionImage } from "./question-media.js";
 
 // docs/roadmap/engineering-roadmap.md item 24: shared catalog-traversal logic for every page that
@@ -11,7 +12,18 @@ import { loadQuestionImages, type QuestionImage } from "./question-media.js";
 // blob instead of the real catalog in the first place — one query shape drifted from reality
 // while nobody else needed to touch it).
 
-export interface QuestionOccurrenceContext {
+export type AnswerStatus = "scored" | "marks_to_all" | "dropped" | "cancelled";
+
+/** Facts about a question in one paper (docs/specs/03-paper-structure-min.md). */
+export interface OccurrenceFacts {
+  sectionLabel: string | null;
+  numberLabel: string | null;
+  marks: number | null;
+  negativeMarks: number | null;
+  answerStatus: AnswerStatus;
+}
+
+export interface QuestionOccurrenceContext extends OccurrenceFacts {
   questionId: string;
   questionSetId: string;
   questionSetSlug: string;
@@ -24,6 +36,14 @@ export interface QuestionOccurrenceContext {
   subjectName: string | null;
   originalQuestionNumber: number | null;
 }
+
+// numeric(5,2) comes back from the driver as a string; these are numbers to the page.
+const OCCURRENCE_FACTS = sql`
+      o.section_label AS "sectionLabel",
+      o.number_label AS "numberLabel",
+      o.marks::float8 AS "marks",
+      o.negative_marks::float8 AS "negativeMarks",
+      o.answer_status AS "answerStatus"`;
 
 /**
  * Every occurrence of every published question under a given exam, one row per occurrence (a
@@ -45,7 +65,8 @@ export async function listPublishedOccurrencesForExam(
       es.year,
       s.slug AS "subjectSlug",
       s.name AS "subjectName",
-      o.original_question_number AS "originalQuestionNumber"
+      o.original_question_number AS "originalQuestionNumber",
+      ${OCCURRENCE_FACTS}
     FROM questions q
     JOIN question_occurrences o ON o.question_id = q.id
     JOIN question_sets qs ON qs.id = o.question_set_id
@@ -74,7 +95,8 @@ export async function listPublishedOccurrencesForQuestionSet(
       es.year,
       s.slug AS "subjectSlug",
       s.name AS "subjectName",
-      o.original_question_number AS "originalQuestionNumber"
+      o.original_question_number AS "originalQuestionNumber",
+      ${OCCURRENCE_FACTS}
     FROM questions q
     JOIN question_occurrences o ON o.question_id = q.id
     JOIN question_sets qs ON qs.id = o.question_set_id
@@ -103,7 +125,8 @@ export async function listPublishedOccurrencesForTopic(
       es.year,
       s.slug AS "subjectSlug",
       s.name AS "subjectName",
-      o.original_question_number AS "originalQuestionNumber"
+      o.original_question_number AS "originalQuestionNumber",
+      ${OCCURRENCE_FACTS}
     FROM questions q
     JOIN question_occurrences o ON o.question_id = q.id
     JOIN question_sets qs ON qs.id = o.question_set_id
@@ -178,6 +201,12 @@ export interface QuestionWithAnswer {
   /** The first of correctKeys, kept for single-answer callers. */
   correctKey: string | null;
   questionType: string;
+  /** A numerical question's accepted ranges, inclusive; empty when it's graded as text. */
+  numericRanges: Array<[number, number]>;
+  /** A numerical question's answer as the key prints it, e.g. "4.24 to 4.26". */
+  numericAnswer: string | null;
+  /** False when there's nothing to score: marks to all, dropped or cancelled. */
+  hasAnswer: boolean;
   images: QuestionImage[];
 }
 
@@ -217,6 +246,7 @@ export async function loadQuestionsWithAnswers(
         .map((a) => a.correctOptionId as string),
     );
     const correctKeys = sortedOptions.filter((o) => correctIds.has(o.id)).map((o) => o.optionKey);
+    const numeric = numericKey(row.answers);
 
     byId.set(row.id, {
       id: row.id,
@@ -231,6 +261,9 @@ export async function loadQuestionsWithAnswers(
       correctKeys,
       correctKey: correctKeys[0] ?? null,
       questionType: row.questionType,
+      numericRanges: numeric.ranges,
+      numericAnswer: numeric.display,
+      hasAnswer: row.answers.length > 0,
       images: imagesById.get(row.id) ?? [],
     });
   }
@@ -238,7 +271,7 @@ export async function loadQuestionsWithAnswers(
 }
 
 /** One paper a published question appeared in, for the question page's "Appeared in" list. */
-export interface QuestionAppearance {
+export interface QuestionAppearance extends OccurrenceFacts {
   examSlug: string;
   examName: string;
   questionSetSlug: string;
@@ -257,15 +290,22 @@ export interface QuestionAppearance {
 export async function findPublishedQuestionBySlug(
   db: ReturnType<typeof getDb>,
   slug: string,
-): Promise<{ id: string; topicName: string | null; appearances: QuestionAppearance[] } | null> {
+): Promise<{
+  id: string;
+  topicName: string | null;
+  questionType: string;
+  appearances: QuestionAppearance[];
+} | null> {
   const found = await db.execute(sql`
-    SELECT q.id AS "id", t.name AS "topicName"
+    SELECT q.id AS "id", t.name AS "topicName", q.question_type AS "questionType"
     FROM questions q
     LEFT JOIN topics t ON t.id = q.topic_id
     WHERE q.slug = ${slug} AND q.status = 'published'
     LIMIT 1
   `);
-  const question = found.rows[0] as unknown as { id: string; topicName: string | null } | undefined;
+  const question = found.rows[0] as unknown as
+    | { id: string; topicName: string | null; questionType: string }
+    | undefined;
   if (!question) return null;
 
   const appearances = await db.execute(sql`
@@ -276,7 +316,8 @@ export async function findPublishedQuestionBySlug(
       qs.title AS "questionSetTitle",
       es.year AS "year",
       es.label AS "sessionLabel",
-      o.original_question_number AS "originalQuestionNumber"
+      o.original_question_number AS "originalQuestionNumber",
+      ${OCCURRENCE_FACTS}
     FROM question_occurrences o
     JOIN question_sets qs ON qs.id = o.question_set_id
     JOIN exam_variants ev ON ev.id = qs.exam_variant_id

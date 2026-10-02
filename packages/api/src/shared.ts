@@ -42,3 +42,10 @@ export const WIPE_DATABASE_KEEP_TABLES = [
   "sources",
   "feature_flags",
 ];
+
+export {
+  formatNumericRange,
+  gradeNumericAnswer,
+  type NumericKey,
+  parseNumericAnswer,
+} from "./lib/numeric-answer.js";

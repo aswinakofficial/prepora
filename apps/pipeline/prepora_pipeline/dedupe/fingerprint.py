@@ -41,6 +41,12 @@ class AnswerShape:
         return self.options_match(other) and self.answer_match(other)
 
 
+def range_text(lo, hi) -> str:
+    """A numeric range as one comparable string, the same whether the bounds are the contract's
+    floats or the database's Decimals ("4.24..4.26")."""
+    return f"{float(lo)}..{float(hi)}"
+
+
 def shape_of(question: NormalizedQuestion) -> AnswerShape:
     by_key = {opt.key: normalize_question_text(opt.text) for opt in question.options}
     answer = question.answer
@@ -48,6 +54,8 @@ def shape_of(question: NormalizedQuestion) -> AnswerShape:
         correct = {by_key[answer.correct_key]} if answer.correct_key in by_key else set()
     elif isinstance(answer, MultipleCorrectAnswer):
         correct = {by_key[k] for k in answer.correct_keys if k in by_key}
+    elif isinstance(answer, NumericalAnswer) and answer.ranges:
+        correct = {range_text(lo, hi) for lo, hi in answer.ranges}
     elif isinstance(answer, (TextAnswer, NumericalAnswer)):
         correct = {normalize_question_text(str(answer.answer))}
     else:
@@ -68,11 +76,14 @@ def shape_of_published(cur, question_id: str) -> AnswerShape:
         if is_correct:
             correct.add(normalize_question_text(text))
     cur.execute(
-        "SELECT text_answer, numerical_answer FROM question_answers WHERE question_id = %s "
-        "AND correct_option_id IS NULL",
+        "SELECT text_answer, numerical_answer, numeric_min, numeric_max FROM question_answers "
+        "WHERE question_id = %s AND correct_option_id IS NULL",
         (question_id,),
     )
-    for text_answer, numerical_answer in cur.fetchall():
+    for text_answer, numerical_answer, numeric_min, numeric_max in cur.fetchall():
+        if numeric_min is not None and numeric_max is not None:
+            correct.add(range_text(numeric_min, numeric_max))
+            continue
         value = text_answer if text_answer is not None else numerical_answer
         if value is not None:
             correct.add(normalize_question_text(str(value)))
