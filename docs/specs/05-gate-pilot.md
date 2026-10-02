@@ -258,3 +258,28 @@ Test cases:
   robots.txt returning 404 means no rules, which is "allowed".
 - **`GateKeyRow.raw_key`** keeps the cell as printed, for a NAT answer's display text.
 - **An MCQ key with more than one letter raises**, as does a marks value other than 1 or 2.
+- **Paper parser measurements (#47).** On the four pilot papers: all 260 questions are found, with
+  the right numbers. Their options match the key's question types: A–D for MCQ and MSQ, none for
+  NAT. The marks headings agree with the key on every question.
+  - Labels sit at x ≈ 78pt. The margin at x ≈ 72pt holds only the section title and the marks
+    headings, which also start with "Q.n". They're read for marks, then dropped.
+  - Two labels are extracted as two words ("Q." and "4"), so the parser joins them.
+- **Figure detection uses the PDF's graphics, not text alone.** Figures are embedded images or
+  vector drawings that text extraction never sees. `core.pdf_text` now returns each page's
+  graphics, and `strip_running_graphics` drops furniture repeated on most pages (watermark, logo,
+  borders). GATE lays every question out in a table, so hairline rectangles don't count; images,
+  lines, curves and filled boxes do.
+- **The garble detector has more rules than the spec listed,** each found on the real papers:
+  - a sub- or superscript row less than 9pt below its line;
+  - a word in a font under 0.8× its line's size (an inline superscript, "Θ(n 2 )" for Θ(n²));
+  - a gap of 40pt or more inside a stem line (tables, side-by-side pseudocode);
+  - an option with no text (an image option).
+
+  The spec's rule (a), math alphanumerics left after NFKC, can't fire, because NFKC maps them to
+  plain letters. It's kept for private-use glyphs.
+- **The honest crop rate is lower than the spec's 85% bar.** 143 of 260 questions (55%) need no
+  crop. Flags: 82 math, 40 layout, 34 figure, overlapping. Spot checks found the flags genuine,
+  mostly subscripts and superscripts that extraction flattens ("Let L and L be…" for L₁ and L₂).
+  The two false-positive patterns found (option markers, two values spaced on one line) are tuned
+  out. Lowering the bar or silencing true positives would publish wrong text, so this goes to the
+  owner at the pilot run (#49).

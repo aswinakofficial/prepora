@@ -14,7 +14,8 @@ raw files through core/artifact_store.py; storing a rendered crop is core/media_
 import io
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from typing import Literal
 
 import pdfplumber
 import pypdfium2
@@ -46,12 +47,26 @@ class Line:
         return " ".join(w.text for w in self.words)
 
 
+@dataclass(frozen=True)
+class Graphic:
+    """Something drawn rather than written: an embedded image, or a vector rectangle, line or
+    curve. Text extraction never sees these, so they're how a figure shows itself."""
+
+    kind: Literal["image", "rect", "line", "curve"]
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+    page: int
+
+
 @dataclass
 class Page:
     number: int  # 0-based
     width: float
     height: float
     words: list[Word]
+    graphics: list[Graphic] = field(default_factory=list)
 
 
 def normalize_text(text: str) -> str:
@@ -78,8 +93,25 @@ def extract_pages(pdf_bytes: bytes) -> list[Page]:
                     keep_blank_chars=False, use_text_flow=False, extra_attrs=["size", "fontname"]
                 )
             ]
+            graphics = [
+                Graphic(kind, float(g["x0"]), float(g["top"]), float(g["x1"]), float(g["bottom"]),
+                        number)
+                for kind, items in (
+                    ("image", page.images),
+                    ("rect", page.rects),
+                    ("line", page.lines),
+                    ("curve", page.curves),
+                )
+                for g in items
+            ]
             pages.append(
-                Page(number=number, width=float(page.width), height=float(page.height), words=words)
+                Page(
+                    number=number,
+                    width=float(page.width),
+                    height=float(page.height),
+                    words=words,
+                    graphics=graphics,
+                )
             )
     return pages
 
@@ -140,10 +172,29 @@ def strip_running_text(
             if key in running
             for word in line.words
         }
-        stripped.append(
-            Page(page.number, page.width, page.height, [w for w in page.words if id(w) not in drop])
-        )
+        stripped.append(replace(page, words=[w for w in page.words if id(w) not in drop]))
     return stripped
+
+
+def strip_running_graphics(pages: list[Page], *, min_share: float = 0.6) -> list[Page]:
+    """
+    Removes page furniture: graphics (a watermark, a logo, border rectangles) drawn at the same
+    place, rounded to the point, on at least `min_share` of the pages. What's left is the content's
+    own figures and tables. A one-page document is returned unchanged.
+    """
+    if len(pages) < 2:
+        return pages
+
+    def key(g: Graphic) -> tuple:
+        return (g.kind, round(g.x0), round(g.top), round(g.x1), round(g.bottom))
+
+    seen_on: dict[tuple, set[int]] = {}
+    for page in pages:
+        for g in page.graphics:
+            seen_on.setdefault(key(g), set()).add(page.number)
+    threshold = max(2, round(min_share * len(pages)))
+    running = {k for k, on in seen_on.items() if len(on) >= threshold}
+    return [replace(p, graphics=[g for g in p.graphics if key(g) not in running]) for p in pages]
 
 
 def render_region(

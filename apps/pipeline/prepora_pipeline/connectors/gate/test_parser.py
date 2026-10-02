@@ -13,18 +13,24 @@ from prepora_pipeline.core.pdf_text import extract_pages
 
 from .catalog import PAPERS, find_papers
 from .key_parser import GateKeyError, parse_answer_key, parse_answer_value
+from .paper_parser import parse_paper
 
 WIDTH, HEIGHT = A4
 
 
-def make_pdf(pages: list[list[tuple[float, float, str]]], size: int = 10) -> bytes:
-    """Each page is a list of (x, top, text), `top` in points from the top edge."""
+def make_pdf(pages: list[list[tuple]], size: int = 10, boxes=None) -> bytes:
+    """Each page is a list of (x, top, text) or (x, top, text, font, size), `top` in points from
+    the top edge. `boxes` maps a page index to filled (x, top, width, height) boxes: a figure."""
     out = io.BytesIO()
     c = canvas.Canvas(out, pagesize=A4)
-    for items in pages:
-        c.setFont("Helvetica", size)
-        for x, top, text in items:
-            c.drawString(x, HEIGHT - top - size, text)
+    for index, items in enumerate(pages):
+        for item in items:
+            x, top, text = item[:3]
+            font, font_size = (item[3], item[4]) if len(item) == 5 else ("Helvetica", size)
+            c.setFont(font, font_size)
+            c.drawString(x, HEIGHT - top - font_size, text)
+        for x, top, w, h in (boxes or {}).get(index, []):
+            c.rect(x, HEIGHT - top - h, w, h, fill=1)
         c.showPage()
     c.save()
     return out.getvalue()
@@ -118,3 +124,140 @@ def test_the_catalog_lists_the_four_pilot_papers():
     }
     assert [p.sitting for p in find_papers(year=2026)] == ["CS-1", "CS-2"]
     assert all(p.qp_url.startswith("https://gate2026.iitg.ac.in/") for p in PAPERS)
+
+
+# ─── Question papers (#47). GATE's layout: labels at x=78, the section and marks headings in the
+# margin at x=72, text at x=120, options at x=78, a running header and footer.
+
+
+def paper_page(number: int, total: int, items: list[tuple]) -> list[tuple]:
+    return [
+        (295, 26, "Invented Science & Technology (XX1)"),
+        *items,
+        (72, 807, f"Organizing Institute: Invented Institute Page {number} of {total}"),
+    ]
+
+
+def invented_paper(boxes=None) -> bytes:
+    pages = [
+        paper_page(
+            1,
+            3,
+            [
+                (72, 93, "General Aptitude (GA)"),
+                (72, 116, "Q.1 – Q.2 Carry ONE mark Each"),
+                (78, 151, "Q.1"),
+                (120, 151, "The antonym of the invented word glimmer is ________."),
+                (78, 190, "(A) dull"),
+                (78, 210, "(B) bright"),
+                (78, 230, "(C) shiny"),
+                (78, 250, "(D) gleam"),
+                # Q.2's first line sits 8pt above its own label.
+                (120, 392, "A long invented question whose text starts"),
+                (78, 400, "Q.2"),
+                (120, 406, "a little above its own label. Which are invented?"),
+                (78, 440, "(A) Zed"),
+                (300, 440, "(B) Quill"),
+                (78, 460, "(C) Lune"),
+                (300, 460, "(D) Mire"),
+            ],
+        ),
+        paper_page(
+            2,
+            3,
+            [
+                (72, 93, "Q.3 – Q.4 Carry TWO marks Each"),
+                (78, 120, "Q.3"),
+                (120, 120, "Consider the following invented C code:"),
+                (140, 140, "int x = 1;", "Courier", 10),
+                (164, 154, "x = x + 1;", "Courier", 10),  # 4 Courier characters in
+                (120, 180, "The value printed is ________. (Answer in integer)"),
+                (120, 210, "________"),
+            ],
+        ),
+        paper_page(
+            3,
+            3,
+            [
+                (78, 120, "Q.4"),
+                (120, 120, "Which invented figure below is a circle?"),
+                (78, 300, "(A)"),
+                (78, 340, "(B)"),
+                (78, 380, "(C)"),
+                (78, 420, "(D)"),
+            ],
+        ),
+    ]
+    return make_pdf(pages, boxes=boxes)
+
+
+class TestPaper:
+    def test_every_question_with_its_stem_options_and_marks(self):
+        questions = parse_paper(extract_pages(invented_paper()))
+        assert [q.number for q in questions] == [1, 2, 3, 4]
+        assert [q.label for q in questions] == ["Q.1", "Q.2", "Q.3", "Q.4"]
+        assert [q.marks_heading for q in questions] == [1, 1, 2, 2]
+        q1, q2, q3, _ = questions
+        assert q1.text == "The antonym of the invented word glimmer is ________."
+        assert q1.options == {"A": "dull", "B": "bright", "C": "shiny", "D": "gleam"}
+        # The line above Q.2's label is Q.2's, and two-column options are read in order.
+        assert q2.text.startswith("A long invented question whose text starts a little above")
+        assert q2.options == {"A": "Zed", "B": "Quill", "C": "Lune", "D": "Mire"}
+        assert not any("General Aptitude" in q.text or "Carry" in q.text for q in questions)
+        assert not any("Organizing Institute" in q.text for q in questions)
+        assert q3.page == 1
+
+    def test_a_nat_question_has_no_options_its_code_is_fenced_and_its_blank_line_is_gone(self):
+        q3 = parse_paper(extract_pages(invented_paper()))[2]
+        assert q3.options == {}
+        assert q3.text == (
+            "Consider the following invented C code:\n\n"
+            "```\nint x = 1;\n    x = x + 1;\n```\n\n"
+            "The value printed is ________. (Answer in integer)"
+        )
+        assert not q3.flags
+
+    def test_image_only_options_and_a_drawn_figure_flag_a_crop(self):
+        questions = parse_paper(extract_pages(invented_paper(boxes={2: [(140, 290, 60, 40)]})))
+        q4 = questions[3]
+        assert q4.options == {"A": "", "B": "", "C": "", "D": ""}
+        assert q4.flags == ["figure"]
+        x0, top, x1, bottom = q4.region
+        assert top < 120 and bottom >= 420 and x0 < 78 and x1 > 500  # label, figure and options
+        assert not questions[0].flags and not questions[1].flags
+
+    def test_a_split_label_is_joined(self):
+        pdf = make_pdf([[(78, 120, "Q."), (92, 120, "7"), (120, 120, "An invented question?")]])
+        questions = parse_paper(extract_pages(pdf))
+        assert [(q.number, q.text) for q in questions] == [(7, "An invented question?")]
+
+
+class TestGarbleDetector:
+    def _one(self, items, boxes=None):
+        return parse_paper(extract_pages(make_pdf([[(78, 120, "Q.1"), *items]], boxes=boxes)))[0]
+
+    def test_a_plain_question_isnt_flagged(self):
+        q = self._one([(120, 120, "What is the invented capital of Zed?"), (78, 160, "(A) Mire")])
+        assert q.flags == []
+
+    def test_a_superscript_in_a_smaller_font_is_math(self):
+        q = self._one(
+            [
+                (120, 120, "The invented cost is n", "Helvetica", 12),
+                (240, 117, "2", "Helvetica", 8),
+                (250, 120, "per item.", "Helvetica", 12),
+            ]
+        )
+        assert q.flags == ["math"]
+
+    def test_a_row_of_subscripts_just_below_its_line_is_math(self):
+        q = self._one([(120, 120, "Let L and L be invented languages."), (132, 126, "1")])
+        assert "math" in q.flags
+
+    def test_a_table_laid_out_in_columns_is_layout(self):
+        q = self._one([(120, 120, "List I"), (320, 120, "List II"), (120, 140, "P. Zed")])
+        assert q.flags == ["layout"]
+
+    def test_a_tall_block_with_almost_no_words_is_a_figure(self):
+        q = self._one([(120, 120, "Invented figure:"), (78, 300, "(A) One")])
+        assert q.flags == ["figure"]
