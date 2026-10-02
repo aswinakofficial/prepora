@@ -21,6 +21,7 @@ for a person to decide is the shared dedupe layer's call (prepora_pipeline/dedup
 docs/architecture/dedupe.md): this stage calls check_duplicate() and does what it decides —
 reusing exactly the question it names — rather than re-matching on its own.
 """
+import os
 from dataclasses import dataclass
 
 from prepora_pipeline.contracts import (
@@ -142,6 +143,13 @@ def publish_question(
             )
         if dedupe_decision.outcome == "previously_skipped" and not publish_as_new:
             return SkippedResult(decision=dedupe_decision)
+
+    # docs/specs/04-media-storage.md: images reach R2 before anything is written, and outside the
+    # transaction, so slow uploads never hold its locks. A failed publish leaves at most an unused,
+    # content-addressed object behind.
+    remote = _remote_media_store() if validated.media else None
+    if remote is not None:
+        upload_missing_media(remote, [(m.storage_key, m.mime_type) for m in validated.media])
 
     conn = get_db_connection()
     try:
@@ -632,23 +640,49 @@ def _insert_answers(
 
 
 def upload_missing_media(
-    remote: MediaStore, items: list[tuple[str, str]], local: MediaStore | None = None
-) -> int:
-    """Copies each (storage key, mime type) the remote store doesn't have yet from the local store;
-    how many were uploaded. An image missing locally can't be published, so it raises."""
+    remote: MediaStore,
+    items: list[tuple[str, str]],
+    local: MediaStore | None = None,
+    *,
+    skip_missing: bool = False,
+) -> tuple[int, list[str]]:
+    """Copies each (storage key, mime type) the remote store doesn't have yet from the local store.
+    (how many were uploaded, keys missing locally). An image missing locally can't be published,
+    so it raises — unless skip_missing, for media-sync's report of everything missing."""
     local = local or FilesystemMediaStore()
     uploaded = 0
+    missing: list[str] = []
     for storage_key, mime_type in dict.fromkeys(items):
         if remote.exists(storage_key):
             continue
         if not local.exists(storage_key):
+            if skip_missing:
+                missing.append(storage_key)
+                continue
             raise PublishError(
                 f"Image {storage_key} isn't in the local media store, so it can't be uploaded. "
                 "Re-collect the source that referenced it."
             )
         remote.put(storage_key, local.get(storage_key), mime_type)
         uploaded += 1
-    return uploaded
+    return uploaded, missing
+
+
+_remote_store: tuple[tuple, MediaStore] | None = None
+
+
+def _remote_media_store() -> MediaStore | None:
+    """The store published images must reach, or None when that's the local one. Built once per
+    configuration, so a batch reuses one R2 client and its connections."""
+    global _remote_store
+    config = tuple(
+        os.environ.get(name)
+        for name in ("MEDIA_STORE", "STORAGE_ENDPOINT", "STORAGE_ACCESS_KEY", "STORAGE_BUCKET")
+    )
+    if _remote_store is None or _remote_store[0] != config:
+        _remote_store = (config, media_store_from_env())
+    store = _remote_store[1]
+    return None if isinstance(store, FilesystemMediaStore) else store
 
 
 def _record_media(cur, question_id: str, media) -> None:
@@ -657,15 +691,11 @@ def _record_media(cur, question_id: str, media) -> None:
     Idempotent like the rest of publishing: re-publishing the same question adds only images it
     doesn't already have, matched on (storage key, placement, option), in one round trip.
 
-    With MEDIA_STORE=r2, each image is first copied from the local store to R2, where the deployed
-    site serves it (docs/specs/04-media-storage.md): a published question never points at an image
-    production can't show.
+    With MEDIA_STORE=r2, publish_question has already copied each image to R2 (before opening its
+    transaction), so a published question never points at an image production can't show.
     """
     if not media:
         return
-    remote = media_store_from_env()
-    if not isinstance(remote, FilesystemMediaStore):
-        upload_missing_media(remote, [(item.storage_key, item.mime_type) for item in media])
     rows = []
     positions: dict[tuple[str, str | None], int] = {}
     for item in media:

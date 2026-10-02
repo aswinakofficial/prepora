@@ -109,10 +109,14 @@ images in production.
 
 ## Decided during implementation
 
-- **Uploads copy from the local store.** `upload_missing_media` (in `stages/publish.py`) copies each
-  referenced key the remote store doesn't have from `FilesystemMediaStore`, then the rows are
-  written. `media-sync` uses the same function over every `media` row, so publishing and the
-  back-fill can't drift apart. An image used twice uploads once.
+- **Uploads copy from the local store, before the transaction.** `upload_missing_media` (in
+  `stages/publish.py`) copies each referenced key the remote store doesn't have from
+  `FilesystemMediaStore`. `publish_question` calls it after validation and dedupe but **before**
+  opening its database transaction, so slow uploads never hold its locks; a publish that then fails
+  leaves at most an unused, content-addressed object. `media-sync` uses the same function over
+  every `media` row, reporting every image missing locally rather than stopping at the first. An
+  image used twice uploads once.
+- **One R2 client per configuration,** cached in `publish.py`, so a batch reuses its connections.
 - **`MediaStore.put(key, bytes, mime)`** joins the interface (copying between stores by key). Only
   `R2MediaStore` implements it; `store()` on R2 works too, for a scraper that writes there directly
   one day.

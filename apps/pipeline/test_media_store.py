@@ -144,30 +144,76 @@ def test_publishing_uploads_local_images_and_refuses_missing_ones(tmp_path):
     remote = R2MediaStore(client=FakeS3(), bucket="b")
 
     items = [(stored.storage_key, "image/png")] * 2  # the same image used twice uploads once
-    assert upload_missing_media(remote, items, local) == 1
-    assert upload_missing_media(remote, items, local) == 0
+    assert upload_missing_media(remote, items, local) == (1, [])
+    assert upload_missing_media(remote, items, local) == (0, [])
     assert remote.get(stored.storage_key) == PNG
 
     missing = "cd/" + "c" * 64 + ".png"
     with pytest.raises(PublishError, match="isn't in the local media store"):
         upload_missing_media(remote, [(missing, "image/png")], local)
+    # media-sync's mode: report every missing image instead of stopping at the first.
+    both = [(missing, "image/png"), (stored.storage_key, "image/png")]
+    assert upload_missing_media(remote, both, local, skip_missing=True) == (0, [missing])
 
 
-def test_record_media_uploads_before_writing_rows(monkeypatch, tmp_path):
-    from prepora_pipeline.contracts import NormalizedMedia
+def test_publish_refuses_a_missing_image_before_touching_the_database(monkeypatch, tmp_path):
+    from prepora_pipeline.contracts import (
+        McqAnswer,
+        NormalizedMedia,
+        NormalizedOption,
+        ValidatedQuestion,
+    )
     from prepora_pipeline.core.media_store import R2MediaStore
     from prepora_pipeline.stages import publish
+    from prepora_pipeline.stages.validate import ValidationReport
 
     monkeypatch.setenv("MEDIA_STORAGE_DIR", str(tmp_path))
     remote = R2MediaStore(client=FakeS3(), bucket="b")
-    monkeypatch.setattr(publish, "media_store_from_env", lambda: remote)
-    missing = NormalizedMedia(
-        placement="question", storage_key="cd/" + "c" * 64 + ".png", mime_type="image/png"
+    monkeypatch.setattr(publish, "_remote_media_store", lambda: remote)
+    question = publish.NormalizedQuestion(
+        exam_slug="invented",
+        exam_variant_slug="standard",
+        subject_slug="invented",
+        number=1,
+        question_text="Which invented figure is shown?",
+        options=[NormalizedOption(key="A", text="One"), NormalizedOption(key="B", text="Two")],
+        answer=McqAnswer(correct_key="A"),
+        media=[
+            NormalizedMedia(
+                placement="question", storage_key="cd/" + "c" * 64 + ".png", mime_type="image/png"
+            )
+        ],
+        parser_version="test-v1",
+    )
+    validated = ValidatedQuestion(**question.model_dump())
+    monkeypatch.setattr(
+        publish,
+        "validate_question",
+        lambda q: ValidationReport(
+            valid=True, confidence="ambiguous", issues=[], validated=validated
+        ),
+    )
+    monkeypatch.setattr(
+        publish, "check_duplicate", lambda q: publish.DedupeDecision(outcome="unique", reason="")
     )
 
-    class NoWrites:
-        def execute(self, *args):
-            raise AssertionError("rows were written for an image production can't show")
+    def no_database():
+        raise AssertionError("opened the database for a question whose image can't be shown")
 
-    with pytest.raises(publish.PublishError):
-        publish._record_media(NoWrites(), "question-id", [missing])
+    monkeypatch.setattr(publish, "get_db_connection", no_database)
+    with pytest.raises(publish.PublishError, match="isn't in the local media store"):
+        publish.publish_question(question)
+
+
+def test_the_r2_client_is_built_once_per_configuration(monkeypatch):
+    from prepora_pipeline.stages import publish
+
+    built = []
+    monkeypatch.setattr(publish, "_remote_store", None)
+    monkeypatch.setattr(publish, "media_store_from_env", lambda: built.append(1) or object())
+    monkeypatch.setenv("MEDIA_STORE", "r2")
+    first = publish._remote_media_store()
+    assert publish._remote_media_store() is first
+    monkeypatch.setenv("STORAGE_BUCKET", "another-bucket")
+    publish._remote_media_store()
+    assert len(built) == 2

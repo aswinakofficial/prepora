@@ -11,9 +11,8 @@ publishing of a single NormalizedQuestion), `dedupe-check` (report whether a Nor
 a duplicate, near-duplicate, or unique, without publishing it), `dedupe-audit` (the same check
 over the whole published corpus), `media-sync` (copy published images to R2), and
 `import-markdown` (the first full discover -> fetch -> parse -> normalize -> publish connector
-run). A generic `run --connector
-<name>` covering every connector the same way is later roadmap work, once more than one connector
-needs it.
+run). A generic `run --connector <name>` covering every connector the same way is later roadmap
+work, once more than one connector needs it.
 """
 import argparse
 import dataclasses
@@ -137,14 +136,15 @@ def cmd_media_sync(_args: argparse.Namespace) -> int:
             items = cur.fetchall()
     finally:
         conn.close()
-    try:
-        uploaded = upload_missing_media(remote, items)
-    except PublishError as exc:
-        print(f"media-sync failed: {exc}", file=sys.stderr)
-        return 1
-    already = len(items) - uploaded
-    print(f"{len(items)} images referenced; {uploaded} uploaded, {already} already in R2.")
-    return 0
+    uploaded, missing = upload_missing_media(remote, items, skip_missing=True)
+    already = len(items) - uploaded - len(missing)
+    print(
+        f"{len(items)} images referenced; {uploaded} uploaded, {already} already in R2, "
+        f"{len(missing)} missing locally."
+    )
+    for key in missing:
+        print(f"  missing locally: {key}", file=sys.stderr)
+    return 1 if missing else 0
 
 
 def main(argv: list[str] | None = None) -> int:
