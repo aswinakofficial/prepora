@@ -67,8 +67,19 @@ These apply to every change, whichever model or person makes it.
 3. **PR:** the description says `Closes #N` for every issue it finishes (this moves cards to
    *In review*), summarises what and why, and lists how it was tested. End PR bodies with the
    attribution line from the session's instructions.
-4. **Merge** only when CI is green and the branch is up to date with `main` (branch protection
-   requires both). Use merge commits (`gh pr merge N --merge`).
+4. **Review, then merge — the implementing session does both, without waiting for the owner:**
+   - Run a code review of the PR's diff before merging (the `/code-review` skill at `high`, or an
+     equivalent independent review pass). Fix every real finding, re-run the checks, and add a
+     short "Review" section to the PR description (what was checked, what was fixed, anything
+     deliberately left).
+   - Merge only when CI is green and the branch is up to date with `main` (branch protection
+     requires both; use `gh api -X PUT repos/aswinakofficial/prepora/pulls/N/update-branch` and
+     wait for CI). Use merge commits (`gh pr merge N --merge`).
+   - **Exception — PRs with a database migration:** merging deploys immediately, and code that
+     reads new columns breaks the live site until production is migrated. So stop and ask the
+     owner; with their go-ahead, apply the migration to production (`pnpm db:migrate`) **before**
+     merging, then merge. Migrations that only add an index or a nullable column the new code
+     doesn't require may be merged first, but still ask before migrating production.
 5. **After merge:** comment on each closed issue with a short completion note — what changed, the
    PR, how it was verified, and any follow-ups (opened as new issues). If the issue belongs to an
    epic, tick its checkbox in the epic's body. Update the spec's status in docs/specs/README.md.
