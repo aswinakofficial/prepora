@@ -183,21 +183,16 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
                 {questions.map((q) => {
                   // Questions are linked by slug alone (/questions/{slug}), whatever their exam's
                   // hierarchy — see docs/specs/01-question-urls.md.
-                  const canLink = !!q.slug;
                   return (
                     <button
                       type="button"
                       key={q.id}
                       onClick={() => {
                         handleResultClick(q.id, "question");
-                        if (canLink) {
-                          navigate({
-                            to: "/questions/$questionSlug",
-                            params: { questionSlug: q.slug },
-                          });
-                        } else {
-                          navigate({ to: "/search", search: { q: q.questionText } as any });
-                        }
+                        navigate({
+                          to: "/questions/$questionSlug",
+                          params: { questionSlug: q.slug },
+                        });
                         onClose();
                       }}
                       className="group text-left"
