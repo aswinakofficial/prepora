@@ -181,6 +181,16 @@ Then run `cd apps/pipeline && venv/bin/ruff check . && venv/bin/pytest -q`.
 - **Option markers:** `split_options` matches the marker against each *word*
   (`^\(([A-D])\)(.*)$`), not against the line, and keeps any text glued to it (`(A)127`).
 
+- **Found in review, fixed:**
+  - Lead lines move to a label only when they *vertically overlap* it (`lead_tolerance` 0), not
+    when they're merely close, which would steal the previous question's last line in dense
+    papers.
+  - An option marker counts only at a line's start or after a column-sized gap (`column_gap`, 12pt),
+    so "(A)" mentioned inside a stem stays stem text.
+  - The join reports duplicate numbers in the key or the paper (`duplicate_in_key`,
+    `duplicate_in_paper`) instead of silently keeping one.
+  - A label pattern without digits raises a clear error.
+
 ## Risks
 - **pdfminer word grouping varies with PDF producers**, so tolerances are parameters, not constants.
   Real GATE papers are exercised in [Spec 5](05-gate-pilot.md), on local files only.

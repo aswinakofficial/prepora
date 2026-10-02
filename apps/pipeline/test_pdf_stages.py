@@ -81,12 +81,38 @@ class TestRunningTextAndSegmentation:
                 ]
             ]
         )
-        blocks = segment(extract_pages(pdf), label=LABEL, label_max_x=60, lead_tolerance=12)
+        blocks = segment(extract_pages(pdf), label=LABEL, label_max_x=60)
         assert [line.text for line in blocks[0].lines] == ["First invented question?"]
         assert [line.text for line in blocks[1].lines] == [
             "A long second question whose text starts",
             "a little above its own label.",
         ]
+
+    def test_a_dense_paper_keeps_the_previous_questions_last_line(self):
+        # 10pt text on 12pt line spacing: Q.1's last option sits right above Q.2's label but doesn't
+        # overlap it, so it stays with Q.1.
+        pdf = make_pdf(
+            [
+                [
+                    (40, 100, "Q.1"),
+                    (80, 100, "Which invented gas is lightest?"),
+                    (80, 112, "(A) Zephyrite"),
+                    (40, 124, "Q.2"),
+                    (80, 124, "Which invented metal rusts?"),
+                ]
+            ]
+        )
+        blocks = segment(extract_pages(pdf), label=LABEL, label_max_x=60)
+        assert [line.text for line in blocks[0].lines] == [
+            "Which invented gas is lightest?",
+            "(A) Zephyrite",
+        ]
+        assert [line.text for line in blocks[1].lines] == ["Which invented metal rusts?"]
+
+    def test_a_label_without_a_number_is_a_clear_error(self):
+        pdf = make_pdf([[(40, 100, "Q.A"), (80, 100, "Invented")]])
+        with pytest.raises(ValueError, match="no number"):
+            segment(extract_pages(pdf), label=re.compile(r"^Q\.\w+$"))
 
     def test_text_beyond_the_label_column_is_not_a_label(self):
         pdf = make_pdf([[(40, 100, "Q.1"), (80, 100, "See Q.7 for context"), (300, 120, "Q.9")]])
@@ -100,9 +126,12 @@ class TestRunningTextAndSegmentation:
 
 
 class TestOptions:
-    def _block(self, lines: list[tuple[float, str]]):
+    def _block(self, lines: list):
+        """Each line is (x, text), or a list of (x, text) placed side by side on one line."""
         items = [(40, 100, "Q.1"), (80, 100, "Pick the invented answer.")]
-        items += [(x, 120 + 14 * i, text) for i, (x, text) in enumerate(lines)]
+        for i, line in enumerate(lines):
+            for x, text in line if isinstance(line, list) else [line]:
+                items.append((x, 120 + 14 * i, text))
         return segment(extract_pages(make_pdf([items])), label=LABEL)[0]
 
     def test_one_option_per_line(self):
@@ -112,10 +141,20 @@ class TestOptions:
         assert options == {"A": "127", "B": "64", "C": "63", "D": "32"}
 
     def test_two_and_four_columns(self):
-        two = self._block([(80, "(A) Alpha       (B) Beta"), (80, "(C) Gamma       (D) Delta")])
+        two = self._block(
+            [[(80, "(A) Alpha"), (280, "(B) Beta")], [(80, "(C) Gamma"), (280, "(D) Delta")]]
+        )
         assert split_options(two)[1] == {"A": "Alpha", "B": "Beta", "C": "Gamma", "D": "Delta"}
-        four = self._block([(80, "(A) w    (B) x    (C) y    (D) z")])
+        four = self._block([[(80, "(A) w"), (180, "(B) x"), (280, "(C) y"), (380, "(D) z")]])
         assert split_options(four)[1] == {"A": "w", "B": "x", "C": "y", "D": "z"}
+
+    def test_a_marker_in_the_middle_of_the_stem_is_not_an_option(self):
+        block = self._block(
+            [(80, "Which of (A) and (B) is invented?"), (80, "(A) Both"), (80, "(B) Neither")]
+        )
+        stem, options = split_options(block)
+        assert stem == ["Pick the invented answer.", "Which of (A) and (B) is invented?"]
+        assert options == {"A": "Both", "B": "Neither"}
 
     def test_wrapped_option_text_and_a_glued_marker(self):
         block = self._block(
@@ -210,6 +249,18 @@ class TestAnswerKeys:
         assert [b.number for b, _ in report.matched] == [1, 2]
         assert report.missing_in_key == [3]
         assert report.missing_in_paper == [4]
+        assert not report.ok
+
+    def test_join_reports_duplicate_numbers_instead_of_dropping_them(self):
+        paper = make_pdf([[(40, 100, "Q.1"), (40, 140, "Q.2"), (40, 180, "Q.2")]])
+        blocks = segment(extract_pages(paper), label=LABEL)
+        key = key_pdf(
+            [[(40, "Q. No."), (120, "Type"), (220, "Key/Range"), (420, "Marks")]],
+            [("1", "MCQ", "A", "1"), ("1", "MCQ", "B", "1"), ("2", "MCQ", "C", "1")],
+        )
+        report = join_by_number(blocks, parse_key_table(extract_pages(key), GATE_LIKE))
+        assert report.duplicate_in_key == [1]
+        assert report.duplicate_in_paper == [2]
         assert not report.ok
 
 

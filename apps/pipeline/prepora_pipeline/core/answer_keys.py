@@ -37,10 +37,17 @@ class JoinReport:
     matched: list[tuple[Block, KeyRow]] = field(default_factory=list)
     missing_in_key: list[int] = field(default_factory=list)  # questions with no key row
     missing_in_paper: list[int] = field(default_factory=list)  # key rows with no question
+    duplicate_in_key: list[int] = field(default_factory=list)  # numbers with several key rows
+    duplicate_in_paper: list[int] = field(default_factory=list)  # numbers with several questions
 
     @property
     def ok(self) -> bool:
-        return not self.missing_in_key and not self.missing_in_paper
+        return not (
+            self.missing_in_key
+            or self.missing_in_paper
+            or self.duplicate_in_key
+            or self.duplicate_in_paper
+        )
 
 
 def _norm(text: str) -> str:
@@ -170,10 +177,18 @@ def parse_key_table(
 def join_by_number(blocks: list[Block], rows: list[KeyRow]) -> JoinReport:
     """Pairs questions with key rows by question number; anything unmatched is reported, never
     guessed."""
-    by_number = {row.number: row for row in rows}
+    by_number: dict[int, KeyRow] = {}
     report = JoinReport()
-    question_numbers = set()
+    for row in rows:
+        if row.number in by_number:
+            report.duplicate_in_key.append(row.number)
+        else:
+            by_number[row.number] = row
+    question_numbers: set[int] = set()
     for block in blocks:
+        if block.number in question_numbers:
+            report.duplicate_in_paper.append(block.number)
+            continue
         question_numbers.add(block.number)
         row = by_number.get(block.number)
         if row is None:

@@ -4,8 +4,10 @@ shared PDF stage (docs/specs/02-pdf-stages.md), built on core/pdf_text.py's posi
 
 Questions are found by their label ("Q.31", "12.") in a label column, not by line text alone: a
 long option can wrap so that a question's label sits a few points *below* the start of its own text
-(GATE CS-1 2026, Q.31). Body lines just above a label — within `lead_tolerance` — therefore belong
-to that label's question, not the previous one.
+(GATE CS-1 2026, Q.31). Body lines just above a label that *vertically overlap* it (within
+`lead_tolerance`, 0 by default: strict overlap) therefore belong to that label's question. Lines
+that merely sit close above it — the previous question's last option in a dense paper — stay with
+the previous question.
 """
 import re
 from dataclasses import dataclass, field
@@ -28,7 +30,7 @@ def segment(
     *,
     label: re.Pattern,
     label_max_x: float | None = None,
-    lead_tolerance: float = 12.0,
+    lead_tolerance: float = 0.0,
 ) -> list[Block]:
     """
     Every question in reading order. A line starts a question when its first word matches `label`
@@ -55,7 +57,7 @@ def segment(
         while (
             j > previous_label
             and lines[j].page == lines[li].page
-            and lines[j].top >= lines[li].top - lead_tolerance
+            and lines[j].bottom > lines[li].top - lead_tolerance
         ):
             owner[j] = li
             j -= 1
@@ -64,8 +66,10 @@ def segment(
     for li in label_indexes:
         label_line = lines[li]
         first = label_line.words[0]
-        match = label.match(first.text)
-        number = int(re.search(r"\d+", match.group(0)).group(0))
+        digits = re.search(r"\d+", label.match(first.text).group(0))
+        if digits is None:
+            raise ValueError(f"Label {first.text!r} matched {label.pattern!r} but has no number.")
+        number = int(digits.group(0))
         rest = label_line.words[1:]
         body: list[Line] = []
         for i, line in enumerate(lines):
@@ -119,21 +123,26 @@ OPTION_MARKER = re.compile(r"^\(([A-D])\)(.*)$")
 
 
 def split_options(
-    block: Block, *, option: re.Pattern = OPTION_MARKER
+    block: Block, *, option: re.Pattern = OPTION_MARKER, column_gap: float = 12.0
 ) -> tuple[list[str], dict[str, str]]:
     """
     (stem lines, {"A": text, …}). Option markers are words like "(A)"; text glued to a marker
-    ("(A)127") is kept. Options laid out side by side in 2 or 4 columns share a line and are split
-    at each marker. Lines after an option's marker continue that option until the next marker.
+    ("(A)127") is kept. A marker counts only at the start of a line, or after a gap of at least
+    `column_gap` points (options laid out side by side in 2 or 4 columns) — so "Which of (A) and
+    (B) is correct?" in a stem stays stem text. Lines after an option's marker continue that option
+    until the next marker.
     """
     stem: list[str] = []
     options: dict[str, list[str]] = {}
     current: str | None = None
     for line in block.lines:
         pieces: list[tuple[str | None, list[str]]] = [(current, [])]
+        previous: Word | None = None
         for word in line.words:
             marker = option.match(word.text)
-            if marker:
+            starts_column = previous is None or word.x0 - previous.x1 >= column_gap
+            previous = word
+            if marker and starts_column:
                 current = marker.group(1)
                 has_glued_text = marker.lastindex is not None and marker.lastindex >= 2
                 glued = marker.group(2).strip() if has_glued_text else ""
