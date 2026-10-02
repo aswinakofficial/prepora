@@ -32,6 +32,7 @@ from prepora_pipeline.contracts import (
 )
 
 from ..core.db import get_db_connection
+from ..core.media_store import FilesystemMediaStore, MediaStore, media_store_from_env
 from ..dedupe import (
     NEEDS_DECISION,
     DedupeDecision,
@@ -630,14 +631,41 @@ def _insert_answers(
         raise PublishError(f"Unknown answer type: {type(answer)!r}")
 
 
+def upload_missing_media(
+    remote: MediaStore, items: list[tuple[str, str]], local: MediaStore | None = None
+) -> int:
+    """Copies each (storage key, mime type) the remote store doesn't have yet from the local store;
+    how many were uploaded. An image missing locally can't be published, so it raises."""
+    local = local or FilesystemMediaStore()
+    uploaded = 0
+    for storage_key, mime_type in dict.fromkeys(items):
+        if remote.exists(storage_key):
+            continue
+        if not local.exists(storage_key):
+            raise PublishError(
+                f"Image {storage_key} isn't in the local media store, so it can't be uploaded. "
+                "Re-collect the source that referenced it."
+            )
+        remote.put(storage_key, local.get(storage_key), mime_type)
+        uploaded += 1
+    return uploaded
+
+
 def _record_media(cur, question_id: str, media) -> None:
     """
     Records the question's images (already stored by the scraper — see core/media_store.py).
     Idempotent like the rest of publishing: re-publishing the same question adds only images it
     doesn't already have, matched on (storage key, placement, option), in one round trip.
+
+    With MEDIA_STORE=r2, each image is first copied from the local store to R2, where the deployed
+    site serves it (docs/specs/04-media-storage.md): a published question never points at an image
+    production can't show.
     """
     if not media:
         return
+    remote = media_store_from_env()
+    if not isinstance(remote, FilesystemMediaStore):
+        upload_missing_media(remote, [(item.storage_key, item.mime_type) for item in media])
     rows = []
     positions: dict[tuple[str, str | None], int] = {}
     for item in media:

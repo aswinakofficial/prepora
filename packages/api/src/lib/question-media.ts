@@ -2,9 +2,11 @@ import type { getDb } from "@prepora/db";
 import { media } from "@prepora/db/schema";
 import { and, asc, inArray } from "drizzle-orm";
 
-// A question's images, as the web app renders them. Files live in the media store the scraper
-// writes to (apps/pipeline/prepora_pipeline/core/media_store.py) and are served by the
-// /api/media/<storageKey> handler in apps/web/app/ssr.tsx.
+// A question's images, as the web app renders them. Locally, files live in the media store the
+// scraper writes to (apps/pipeline/prepora_pipeline/core/media_store.py) and are served by the
+// /api/media/<storageKey> handler in apps/web/app/ssr.tsx. On Cloudflare there's no filesystem:
+// publishing copies each image to a public R2 bucket, and MEDIA_PUBLIC_BASE_URL
+// (https://media.prepora.xpar.in) points image URLs there (docs/specs/04-media-storage.md).
 
 export type ImagePlacement = "question" | "option" | "explanation";
 
@@ -16,7 +18,9 @@ export interface QuestionImage {
 }
 
 export function mediaUrl(storageKey: string): string {
-  return `/api/media/${storageKey}`;
+  // Read per call: on Cloudflare, bindings reach process.env per request (lib/runtime-env.ts).
+  const base = process.env.MEDIA_PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+  return base ? `${base}/${storageKey}` : `/api/media/${storageKey}`;
 }
 
 /** Images for many questions at once, in display order, keyed by question id. */

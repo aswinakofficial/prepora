@@ -3,6 +3,7 @@
 **Issue:** #46
 **Milestone:** P · PDF stages (it's GATE's last prerequisite)
 **Depends on:** nothing
+**Status:** code merged; waiting on the owner's Cloudflare setup and the live acceptance check
 **Owner actions:** yes, Cloudflare account setup (marked **[Owner]**). Claude never enters
 credentials or changes Cloudflare settings without the owner's explicit go-ahead.
 
@@ -105,3 +106,21 @@ images in production.
   an account-wide one.
 - **A missing custom domain or token isn't caught at build time.** The `media-sync` count and a
   manual check of one URL are the release gate before GATE goes live.
+
+## Decided during implementation
+
+- **Uploads copy from the local store.** `upload_missing_media` (in `stages/publish.py`) copies each
+  referenced key the remote store doesn't have from `FilesystemMediaStore`, then the rows are
+  written. `media-sync` uses the same function over every `media` row, so publishing and the
+  back-fill can't drift apart. An image used twice uploads once.
+- **`MediaStore.put(key, bytes, mime)`** joins the interface (copying between stores by key). Only
+  `R2MediaStore` implements it; `store()` on R2 works too, for a scraper that writes there directly
+  one day.
+- **boto3 is imported lazily** inside `R2MediaStore`, because the scraper imports `media_store.py`
+  and never needs R2.
+- **Not-found detection** reads the error's HTTP status (404) instead of importing botocore's
+  `ClientError`; any other error (403, network) is raised, so a bad token fails loudly rather than
+  re-uploading.
+- **No page CSP to change.** The site sets no Content-Security-Policy on pages (only the sandbox
+  policy on `/api/media` responses), so images from `media.prepora.xpar.in` need no allow-listing.
+- **#46 stays open** after this PR, for the owner's setup and the acceptance check above.
