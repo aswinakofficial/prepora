@@ -247,3 +247,14 @@ Test cases:
   dedupe will then publish one question with two occurrences, which is correct.
 - **Math fidelity:** the crop is the safety net. A reviewer may still want to fix text by hand, so
   note that the review UI doesn't support editing yet. That's a follow-up issue if it's needed.
+
+## Decided during implementation
+
+- **One key profile for both years** (#27). Measured on all four pilot keys (2026-10-02): the
+  tables differ only in "Question Type" (2026) vs "Q. Type" (2025), so `GATE_KEY_PROFILE` lists
+  both spellings. All 260 rows parse: 65 per paper, 10 GA, 35 two-mark questions each. None of the
+  four uses `MTA`, `OR` ranges or negative values, but the parser handles them (tested).
+- **`robots_review_status: reviewed_allowed`.** The spec's `reviewed` isn't a value of the enum;
+  robots.txt returning 404 means no rules, which is "allowed".
+- **`GateKeyRow.raw_key`** keeps the cell as printed, for a NAT answer's display text.
+- **An MCQ key with more than one letter raises**, as does a marks value other than 1 or 2.

@@ -1,0 +1,18 @@
+# Static definition for this source — see docs/roadmap/engineering-roadmap.md item 14 and the
+# dossier, docs/sources/gate.md. The pilot is docs/specs/05-gate-pilot.md.
+name: gate
+base_url: https://gate2026.iitg.ac.in
+source_type: competitive
+connector_name: gate
+requires_auth: false
+crawl_policy:
+  max_depth: 1
+  max_pages: 20
+rate_limit:
+  requests_per_minute: 10
+# robots.txt returns 404 (checked 2026-10-02), which means no rules: allowed.
+robots_review_status: reviewed_allowed
+# An exam paper: question N of a given paper is a fixed question, so identity is by position.
+dedupe:
+  identity: position
+  near_duplicate_threshold: 0.9
