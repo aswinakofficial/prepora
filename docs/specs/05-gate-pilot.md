@@ -1,7 +1,7 @@
 # Spec 5 · GATE CS pilot (2025–2026, CS-1 and CS-2)
 
-**Issues:** #27 (answer-key parser), plus new: "GATE question-paper parser", "GATE import and review
-batches", "GATE pilot run"
+**Issues:** #27 (answer-key parser), #47 (question-paper parser), #48 (import and normalized review
+batches), #49 (pilot run)
 **Epic:** #41
 **Depends on:** Specs 2, 3 and 4
 **Production:** publishing GATE content to production needs the **owner's permission decision**

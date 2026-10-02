@@ -1,6 +1,6 @@
 # Spec 3 · S4-min: Marks, sections, answer status and numeric answers
 
-**Issue:** new, "S4-min: marks, sections, answer status, numeric answers"
+**Issue:** #45
 **Milestone:** S4 · Paper structure
 **Depends on:** Spec 1 (it builds on `getBySlug` and the new question page)
 **Production database:** yes, one migration with back-fills. Needs the owner's go-ahead.

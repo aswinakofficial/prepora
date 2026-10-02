@@ -1,6 +1,6 @@
 # Spec 4 · M: Question images on Cloudflare R2
 
-**Issue:** new, "Serve question images from R2 on the deployed site"
+**Issue:** #46
 **Milestone:** P · PDF stages (it's GATE's last prerequisite)
 **Depends on:** nothing
 **Owner actions:** yes, Cloudflare account setup (marked **[Owner]**). Claude never enters
