@@ -141,8 +141,9 @@ class NormalizedQuestion(BaseModel):
     # ("General Aptitude"), its number as printed ("Q.31"), and its marks.
     section: str | None = None
     number_label: str | None = None
-    marks: float | None = None
-    negative_marks: float | None = None
+    marks: float | None = Field(default=None, ge=0)
+    # What a wrong answer costs, as a positive number: GATE's "−1/3" is 1/3.
+    negative_marks: float | None = Field(default=None, ge=0)
     question_text: str = Field(min_length=1)
     question_type: QuestionType = "mcq"
     options: list[NormalizedOption] = Field(default_factory=list)

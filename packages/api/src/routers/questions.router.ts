@@ -115,7 +115,12 @@ export const questionsRouter = {
         selectedOptionIds: z.array(z.string()).min(1).optional(),
         selectedOptionId: z.string().optional(),
         // The typed answer to a numerical question.
-        numericAnswer: z.string().trim().min(1).max(64).optional(),
+        // Kept as typed (attempts.text_answer stores it raw); grading trims it.
+        numericAnswer: z
+          .string()
+          .max(64)
+          .refine((s) => s.trim() !== "", "Enter an answer.")
+          .optional(),
         sessionId: z.string().optional(),
         practiceSessionId: z.string().optional(),
       }),

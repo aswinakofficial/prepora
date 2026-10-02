@@ -338,19 +338,25 @@ def _resolve_or_create_course(cur, variant_id: str, subject_id: str, course_slug
     )
 
 
+_KEY_ORDER = ("none", "provisional", "final", "revised")  # the key_status enum's own order
+
+
 def _resolve_or_create_question_set(
     cur, variant_id: str, session_id: str, subject_id: str, normalized: NormalizedQuestion
 ) -> str:
     slug = derive_question_set_slug(normalized)
-    existing = _select_id(cur, "SELECT id FROM question_sets WHERE slug = %s", (slug,))
-    if existing:
-        # A key only moves forward — none < provisional < final < revised, the enum's own order —
-        # so publishing from an older key never relabels the set.
-        cur.execute(
-            "UPDATE question_sets SET key_status = %s, updated_at = now() "
-            "WHERE id = %s AND key_status < %s::key_status",
-            (normalized.key_status, existing, normalized.key_status),
-        )
+    cur.execute("SELECT id, key_status FROM question_sets WHERE slug = %s", (slug,))
+    found = cur.fetchone()
+    if found:
+        existing, key_status = found
+        # A key only moves forward — none < provisional < final < revised — so publishing from an
+        # older key never relabels the set. The re-check in SQL keeps a concurrent move safe.
+        if _KEY_ORDER.index(normalized.key_status) > _KEY_ORDER.index(key_status):
+            cur.execute(
+                "UPDATE question_sets SET key_status = %s, updated_at = now() "
+                "WHERE id = %s AND key_status < %s::key_status",
+                (normalized.key_status, existing, normalized.key_status),
+            )
         return existing
 
     # A connector that knows what the set is actually called (e.g. "Official Microsoft Practice
@@ -672,13 +678,23 @@ _OCCURRENCE_FACTS = ("section_label", "number_label", "marks", "negative_marks",
 
 
 def _occurrence_facts(normalized: NormalizedQuestion) -> tuple:
+    # Marks are stored as numeric(5,2): rounded the same way here, so GATE's 1/3 compares equal to
+    # the stored 0.33 and an unchanged republish writes nothing.
+    def two_places(value):
+        return None if value is None else round(value, 2)
+
     return (
         normalized.section,
         normalized.number_label,
-        normalized.marks,
-        normalized.negative_marks,
+        two_places(normalized.marks),
+        two_places(normalized.negative_marks),
         normalized.answer_status,
     )
+
+
+def _fact_text(value) -> str:
+    # How Postgres prints a fact as text: numeric(5,2) always with two decimals.
+    return f"{value:.2f}" if isinstance(value, float) else str(value)
 
 
 def _resolve_or_create_occurrence(
@@ -698,19 +714,23 @@ def _resolve_or_create_occurrence(
     # and tie, so appends to one set are serialized by a transaction-scoped advisory lock (held
     # only for the short remainder of this publish).
     if original_question_number is None:
-        # A re-scraped question usually already has its occurrence — that's an update at most, and
-        # must not queue behind the lock (which is held to commit) and serialize the whole batch.
+        # A re-scraped question usually already has its occurrence — one read, an update only if
+        # its facts changed, and it must not queue behind the lock (which is held to commit) and
+        # serialize the whole batch.
         cur.execute(
-            f"UPDATE question_occurrences SET ({columns}) = ROW(%s, %s, %s, %s, %s), "
-            "updated_at = now() WHERE question_id = %s AND question_set_id = %s "
-            f"AND ({columns}) IS DISTINCT FROM (%s, %s, %s, %s, %s::answer_status)",
-            (*facts, question_id, question_set_id, *facts),
-        )
-        cur.execute(
-            "SELECT 1 FROM question_occurrences WHERE question_id = %s AND question_set_id = %s",
+            f"SELECT id, {', '.join(f'{c}::text' for c in _OCCURRENCE_FACTS)} "
+            "FROM question_occurrences WHERE question_id = %s AND question_set_id = %s",
             (question_id, question_set_id),
         )
-        if cur.fetchone():
+        row = cur.fetchone()
+        if row:
+            stored = tuple(row[1:])
+            if stored != tuple(None if f is None else _fact_text(f) for f in facts):
+                cur.execute(
+                    f"UPDATE question_occurrences SET ({columns}) = ROW(%s, %s, %s, %s, %s), "
+                    "updated_at = now() WHERE id = %s",
+                    (*facts, row[0]),
+                )
             return False
         cur.execute(
             "SELECT pg_advisory_xact_lock(hashtext(%s))", (f"occurrence-append:{question_set_id}",)

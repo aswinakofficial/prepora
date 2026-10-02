@@ -183,6 +183,11 @@ class TestNormalizedQuestion:
         restored = NormalizedQuestion.model_validate_json(original.model_dump_json())
         assert restored.answer.ranges == [(-0.61, -0.57), (0.57, 0.61)]
 
+    def test_marks_are_never_negative(self):
+        # Negative marks are what a wrong answer costs, as a positive number.
+        with pytest.raises(ValidationError):
+            NormalizedQuestion(**valid_normalized_kwargs(), negative_marks=-0.33)
+
     def test_rejects_a_numeric_range_whose_lower_bound_is_above_its_upper(self):
         with pytest.raises(ValidationError, match="lower bound above"):
             NumericalAnswer(answer="4.26 to 4.24", ranges=[(4.26, 4.24)])

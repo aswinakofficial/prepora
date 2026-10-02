@@ -101,9 +101,8 @@ function QuestionPage() {
   const isNumerical = question?.questionType === "numerical";
   // An official key that gave marks to everyone, or dropped or cancelled the question, leaves no
   // answer to reveal — the page says which instead.
-  const noScoreStatus = question?.hasAnswer
-    ? undefined
-    : question?.appearances.find((a) => a.answerStatus !== "scored")?.answerStatus;
+  const unscoredIn = question?.appearances.find((a) => a.answerStatus !== "scored");
+  const noScoreStatus = question?.hasAnswer ? undefined : unscoredIn?.answerStatus;
   const required = question?.answerCount ?? 1;
   const isComplete = isNumerical
     ? numericInput.trim() !== ""
@@ -274,6 +273,13 @@ function QuestionPage() {
           {primary?.marks != null && (
             <p className="-mt-8 mb-10 font-mono text-xs uppercase tracking-widest text-slate-500">
               {marksLine(primary.marks, primary.negativeMarks)}
+            </p>
+          )}
+
+          {/* Scored somewhere, but not in every paper: say which one. */}
+          {question.hasAnswer && unscoredIn && (
+            <p className="-mt-6 mb-10 font-mono text-xs tracking-widest text-slate-500">
+              {unscoredIn.questionSetTitle}: {NO_SCORE_NOTE[unscoredIn.answerStatus].toLowerCase()}
             </p>
           )}
 

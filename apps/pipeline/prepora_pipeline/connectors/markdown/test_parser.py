@@ -86,6 +86,19 @@ class TestContractExampleFiles:
         assert normalized.raw_artifact_sha256 == "a" * 64
         assert normalized.parser_version == "markdown-v1"
 
+    def test_only_an_official_paper_is_labelled_with_an_official_key(self):
+        parsed = parse_markdown(_read_example("kpsc-ae-2025-civil.md"))
+        q1 = parsed.questions[0]
+
+        def labels(source_type):
+            frontmatter = parsed.frontmatter.model_copy(update={"source_type": source_type})
+            n = normalize(frontmatter, q1, source_document="x.md")
+            return n.answer_provenance, n.paper_kind
+
+        assert labels("official") == ("official_final", "past_paper")
+        assert labels("editorial") == ("reviewer", "model_paper")
+        assert labels("user_submitted") == ("community", "model_paper")
+
 
 class TestNoPhantomQuestionsBetweenHeadingsAndHr:
     # Regression test mirroring packages/content/src/parser.test.ts's — a real bug found while

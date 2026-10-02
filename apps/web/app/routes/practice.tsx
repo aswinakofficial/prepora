@@ -70,6 +70,8 @@ interface Question {
   numericAnswer?: string | null;
   /** False when the key leaves nothing to score (marks to all, dropped, cancelled). */
   hasAnswer?: boolean;
+  /** Whether this paper's key scored the question. */
+  answerStatus?: string;
   explanation: string;
   images?: QuestionImage[];
   topic: string;
@@ -199,9 +201,13 @@ function PracticePage() {
 
   const examQuestions: Question[] = (realExamData?.questions as any) ?? [];
   // A question whose key gave marks to everyone, or dropped or cancelled it, has nothing to
-  // practise against: it's skipped, and counted as "not scored" in the results.
+  // practise against: it's skipped, and counted as "not scored" in the results. That's decided per
+  // paper (an occurrence), since the same question can be scored in another paper.
   const activeQuestions = useMemo(
-    () => examQuestions.filter((q) => q.hasAnswer !== false),
+    () =>
+      examQuestions.filter(
+        (q) => q.hasAnswer !== false && (q.answerStatus ?? "scored") === "scored",
+      ),
     [examQuestions],
   );
   const notScored = examQuestions.length - activeQuestions.length;

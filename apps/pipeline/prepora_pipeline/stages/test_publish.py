@@ -602,6 +602,25 @@ def test_occurrence_facts_are_written_and_a_revised_key_updates_them(test_exam, 
     assert _occurrence_facts(first.question_id)[4] == "marks_to_all"
 
 
+def test_an_unchanged_pool_republish_does_not_rewrite_its_occurrence(test_exam, test_subject):
+    question = _pooled(
+        test_exam, test_subject, question_text="Which invented tide is highest?", number=1
+    ).model_copy(update={"marks": 1.0, "negative_marks": 1 / 3})
+    first = publish_question(question)
+
+    def updated_at():
+        return _row(
+            "SELECT updated_at FROM question_occurrences WHERE question_id = %s",
+            (first.question_id,),
+        )[0]
+
+    before = updated_at()
+    publish_question(question)
+    assert updated_at() == before  # 1/3 compares equal to the stored 0.33
+    publish_question(question.model_copy(update={"answer_status": "dropped"}))
+    assert _occurrence_facts(first.question_id)[4] == "dropped"
+
+
 def test_a_question_with_marks_to_all_publishes_without_answer_rows(test_exam, test_subject):
     result = publish_question(
         _normalized(test_exam, test_subject, question_text="An invented question with no key.")
