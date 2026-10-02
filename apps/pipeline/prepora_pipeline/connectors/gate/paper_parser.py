@@ -43,6 +43,18 @@ WIDE_GAP = 40.0  # a gap this wide inside one stem line means a table or side-by
 # (two values spaced on one line, "X : 35C00000   Y : 34A00000", reach 36pt and read fine)
 TALL_EMPTY_BLOCK = 120.0  # a block this tall with under 5 words is mostly figure
 CROP_PADDING = 6.0
+RUNNING_BAND = 60.0  # the running header's band; a continuation page's content starts below it
+TITLE_MAX_WORDS = 8  # a margin line longer than this isn't a section title
+
+
+class GatePaperError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class CropRegion:
+    page: int  # 0-based
+    bbox: tuple[float, float, float, float]  # (x0, top, x1, bottom)
 
 
 @dataclass
@@ -53,9 +65,12 @@ class GateQuestion:
     options: dict[str, str]  # {"A": …, …}; {} for a NAT question. "" = an image-only option
     marks_heading: int | None  # from the paper's "Carry ONE mark Each" headings: a cross-check
     page: int  # where the label is (0-based)
-    region: tuple[float, float, float, float]  # (x0, top, x1, bottom) to crop, on `page`
-    spans_pages: bool = False  # the question continues on the next page
+    regions: list[CropRegion]  # what to crop: one per page the question is on, label page first
     flags: list[str] = field(default_factory=list)  # "figure", "math", "layout"
+
+    @property
+    def spans_pages(self) -> bool:
+        return len(self.regions) > 1
 
 
 def parse_paper(pages: list[Page]) -> list[GateQuestion]:
@@ -70,11 +85,10 @@ def parse_paper(pages: list[Page]) -> list[GateQuestion]:
 
     questions = []
     for block in blocks:
-        page = page_by_number[block.page]
         _, options = split_options(block)
         stem_lines = _stem_lines(block) if options else block.lines
         stem_lines = [line for line in stem_lines if not _is_answer_blank(line, bool(options))]
-        region = _region(block, page, tops_by_page[block.page])
+        regions = _regions(block, page_by_number, tops_by_page)
         questions.append(
             GateQuestion(
                 number=block.number,
@@ -83,9 +97,8 @@ def parse_paper(pages: list[Page]) -> list[GateQuestion]:
                 options=options,
                 marks_heading=marks_by_number.get(block.number),
                 page=block.page,
-                region=region,
-                spans_pages=any(line.page != block.page for line in block.lines),
-                flags=_flags(block, stem_lines, options, region, page),
+                regions=regions,
+                flags=_flags(block, stem_lines, options, regions, page_by_number),
             )
         )
     return questions
@@ -117,8 +130,14 @@ def _take_margin(pages: list[Page]) -> tuple[dict[int, int], list[Page]]:
         for line in group_lines(page):
             if line.x0 >= MARGIN_X:
                 continue
-            drop.update(id(w) for w in line.words)
             heading = MARKS_HEADING.match(line.text)
+            # Only headings live in the margin. Anything else there would be content this parser
+            # doesn't expect; it's never dropped silently.
+            if not heading and len(line.words) > TITLE_MAX_WORDS:
+                raise GatePaperError(
+                    f"Unexpected text in the margin on page {page.number + 1}: {line.text!r}"
+                )
+            drop.update(id(w) for w in line.words)
             if heading:
                 first, last = int(heading.group(1)), int(heading.group(2))
                 value = 1 if heading.group(3).upper() == "ONE" else 2
@@ -138,7 +157,11 @@ def _stem_lines(block: Block) -> list[Line]:
 def _is_answer_blank(line: Line, has_options: bool) -> bool:
     # A NAT question ends with a "________" line to write the answer on; it isn't content. (A
     # blank inside a sentence, "is ________.", is kept: it's part of the question.)
-    return not has_options and all(set(w.text) <= set("_.") for w in line.words)
+    return (
+        not has_options
+        and "_" in line.text
+        and all(set(w.text) <= set("_.") for w in line.words)
+    )
 
 
 def _is_code(line: Line) -> bool:
@@ -200,23 +223,38 @@ def _spaced(line: Line, width: float) -> str:
     return out
 
 
-def _region(block: Block, page: Page, label_tops: list[float]) -> tuple[float, float, float, float]:
-    """What to crop: the full text width, from the label down to the next question on the page —
-    or, for the page's last question, to whatever it has on the page, figures included."""
-    top = block.label_line.top
-    later = [t for t in label_tops if t > top]
-    if later:
-        bottom = min(later)
-    else:
-        on_page = [line.bottom for line in block.lines if line.page == block.page]
-        drawn = [g.bottom for g in page.graphics if g.top >= top - 1]
-        bottom = max([block.label_line.bottom, *on_page, *drawn]) + CROP_PADDING
-    return (
-        MARGIN_X - CROP_PADDING,
-        max(0.0, top - CROP_PADDING),
-        page.width - MARGIN_X + CROP_PADDING,
-        min(page.height, bottom),
-    )
+def _regions(
+    block: Block, pages: dict[int, Page], tops_by_page: dict[int, list[float]]
+) -> list[CropRegion]:
+    """What to crop, on each page the question is on: the full text width, from the label (or the
+    top of a continuation page) down to the next question on the page, or else to whatever the
+    question has there, figures included."""
+    on_pages = sorted({block.page} | {line.page for line in block.lines})
+    regions = []
+    for number in on_pages:
+        page = pages[number]
+        top = block.label_line.top if number == block.page else RUNNING_BAND
+        later = [t for t in tops_by_page.get(number, []) if t > top]
+        if later:
+            bottom = min(later)
+        else:
+            lines = [line.bottom for line in block.lines if line.page == number]
+            if number == block.page:
+                lines.append(block.label_line.bottom)
+            drawn = [g.bottom for g in page.graphics if g.top >= top - 1]
+            bottom = max(lines + drawn) + CROP_PADDING
+        regions.append(
+            CropRegion(
+                number,
+                (
+                    MARGIN_X - CROP_PADDING,
+                    max(0.0, top - CROP_PADDING),
+                    page.width - MARGIN_X + CROP_PADDING,
+                    min(page.height, bottom),
+                ),
+            )
+        )
+    return regions
 
 
 def _is_figure(g: Graphic) -> bool:
@@ -229,23 +267,25 @@ def _flags(
     block: Block,
     stem: list[Line],
     options: dict[str, str],
-    region: tuple[float, float, float, float],
-    page: Page,
+    regions: list[CropRegion],
+    pages: dict[int, Page],
 ) -> list[str]:
     flags: set[str] = set()
-    x0, top, x1, bottom = region
     text = " ".join(line.text for line in block.lines)
 
-    # A figure: something drawn in the question's region, an option with no text (it's an image),
-    # or a tall block with almost no words.
-    if any(
-        _is_figure(g) and g.x1 > x0 and g.x0 < x1 and g.bottom > top and g.top < bottom
-        for g in page.graphics
-    ):
-        flags.add("figure")
+    # A figure: something drawn in the question's regions, an option with no text (it's an
+    # image), or a tall block with almost no words.
+    for region in regions:
+        x0, top, x1, bottom = region.bbox
+        if any(
+            _is_figure(g) and g.x1 > x0 and g.x0 < x1 and g.bottom > top and g.top < bottom
+            for g in pages[region.page].graphics
+        ):
+            flags.add("figure")
     if any(value == "" for value in options.values()):
         flags.add("figure")
-    if len(text.split()) < 5 and bottom - top > TALL_EMPTY_BLOCK:
+    first = regions[0].bbox
+    if len(text.split()) < 5 and first[3] - first[1] > TALL_EMPTY_BLOCK:
         flags.add("figure")
 
     # Math that didn't survive: math alphanumerics left after NFKC, private-use glyphs, a row of
@@ -254,13 +294,9 @@ def _flags(
         flags.add("math")
     # An option's "(A)" sits a few points off its own text's line, so pairs with a marker don't
     # count as a script row.
-    lines = [
-        line
-        for line in block.lines
-        if line.page == block.page and not OPTION_MARKER.match(line.words[0].text)
-    ]
+    lines = [line for line in block.lines if not OPTION_MARKER.match(line.words[0].text)]
     for above, below in zip(lines, lines[1:], strict=False):
-        if 0 < below.top - above.top < SCRIPT_LINE_GAP:
+        if below.page == above.page and 0 < below.top - above.top < SCRIPT_LINE_GAP:
             flags.add("math")
     # An inline sub- or superscript merged into its line ("Θ(n 2 )" for Θ(n²)): a smaller font. Not
     # an option marker, which sits beside larger math type.

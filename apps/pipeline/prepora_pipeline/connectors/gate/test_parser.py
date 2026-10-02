@@ -13,7 +13,7 @@ from prepora_pipeline.core.pdf_text import extract_pages
 
 from .catalog import PAPERS, find_papers
 from .key_parser import GateKeyError, parse_answer_key, parse_answer_value
-from .paper_parser import parse_paper
+from .paper_parser import GatePaperError, parse_paper
 
 WIDTH, HEIGHT = A4
 
@@ -222,9 +222,36 @@ class TestPaper:
         q4 = questions[3]
         assert q4.options == {"A": "", "B": "", "C": "", "D": ""}
         assert q4.flags == ["figure"]
-        x0, top, x1, bottom = q4.region
+        [region] = q4.regions
+        x0, top, x1, bottom = region.bbox
+        assert region.page == 2
         assert top < 120 and bottom >= 420 and x0 < 78 and x1 > 500  # label, figure and options
         assert not questions[0].flags and not questions[1].flags
+
+    def test_a_question_over_two_pages_is_cropped_and_checked_on_both(self):
+        pages = [
+            [(78, 600, "Q.1"), (120, 600, "An invented question that continues overleaf:")],
+            [(120, 120, "and ends here, below a figure."), (78, 200, "Q.2"), (120, 200, "Next?")],
+        ]
+        questions = parse_paper(extract_pages(make_pdf(pages, boxes={1: [(150, 70, 80, 40)]})))
+        q1 = questions[0]
+        assert q1.spans_pages
+        assert [r.page for r in q1.regions] == [0, 1]
+        assert q1.regions[1].bbox[3] < 205  # stops at Q.2's label (its glyphs start at ~202pt)
+        assert q1.flags == ["figure"]  # the figure is on the continuation page
+        assert questions[1].flags == []
+
+    def test_unexpected_margin_text_raises_instead_of_vanishing(self):
+        long_line = "This invented sentence starts in the margin and is far too long for a title."
+        pdf = make_pdf([[(72, 90, long_line), (78, 120, "Q.1"), (120, 120, "Invented?")]])
+        with pytest.raises(GatePaperError, match="margin"):
+            parse_paper(extract_pages(pdf))
+
+    def test_a_nat_line_of_dots_is_content_not_the_answer_blank(self):
+        pdf = make_pdf([[(78, 120, "Q.1"), (120, 120, "Continue 1, 2,"), (120, 135, ". . ."),
+                         (120, 150, "up to 9. The sum is ______."), (120, 180, "________")]])
+        [q] = parse_paper(extract_pages(pdf))
+        assert ". . ." in q.text and not q.text.endswith("________")
 
     def test_a_split_label_is_joined(self):
         pdf = make_pdf([[(78, 120, "Q."), (92, 120, "7"), (120, 120, "An invented question?")]])
