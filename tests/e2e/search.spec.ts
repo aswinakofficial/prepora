@@ -96,7 +96,7 @@ test.describe("search palette to question page", () => {
 
       await queryInput.fill(distinctivePhrase);
 
-      const expectedUrl = `/questions/${exam.slug}/${variant.slug}/2025/${subject.slug}/${question.slug}`;
+      const expectedUrl = `/questions/${question.slug}`;
       await page.getByText(distinctivePhrase, { exact: false }).click();
       await page.waitForURL(`**${expectedUrl}`);
       expect(page.url()).toContain(expectedUrl);

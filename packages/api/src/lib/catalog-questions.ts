@@ -237,41 +237,56 @@ export async function loadQuestionsWithAnswers(
   return byId;
 }
 
+/** One paper a published question appeared in, for the question page's "Appeared in" list. */
+export interface QuestionAppearance {
+  examSlug: string;
+  examName: string;
+  questionSetSlug: string;
+  questionSetTitle: string;
+  year: number | null;
+  sessionLabel: string | null;
+  originalQuestionNumber: number | null;
+}
+
 /**
- * Resolves the question-detail page's URL (exam/variant/year/subject/question slugs) to the one
- * published question that occurrence identifies. `questions.slug` has no unique constraint (a
- * republished question can in principle share a slug with another), so this matches on the full
- * occurrence path rather than trusting questionSlug alone — the same reasoning
- * listPublishedOccurrencesFor* already applies to exam/topic/set scoping.
+ * Resolves a question page's URL, `/questions/{slug}`, to its published question. The slug is the
+ * public key: unique (questions_slug_unique) and never changed after publishing, so the URL doesn't
+ * depend on the exam hierarchy — it used to be /questions/{exam}/{variant}/{year}/{subject}/{slug},
+ * which no question in a session without a year could resolve. See docs/specs/01-question-urls.md.
  */
-export async function findPublishedQuestionByPath(
+export async function findPublishedQuestionBySlug(
   db: ReturnType<typeof getDb>,
-  path: {
-    examSlug: string;
-    examVariantSlug: string;
-    year: number;
-    subjectSlug: string;
-    questionSlug: string;
-  },
-): Promise<{ id: string; topicName: string | null } | null> {
-  const result = await db.execute(sql`
+  slug: string,
+): Promise<{ id: string; topicName: string | null; appearances: QuestionAppearance[] } | null> {
+  const found = await db.execute(sql`
     SELECT q.id AS "id", t.name AS "topicName"
     FROM questions q
-    JOIN question_occurrences o ON o.question_id = q.id
+    LEFT JOIN topics t ON t.id = q.topic_id
+    WHERE q.slug = ${slug} AND q.status = 'published'
+    LIMIT 1
+  `);
+  const question = found.rows[0] as unknown as { id: string; topicName: string | null } | undefined;
+  if (!question) return null;
+
+  const appearances = await db.execute(sql`
+    SELECT
+      e.slug AS "examSlug",
+      e.name AS "examName",
+      qs.slug AS "questionSetSlug",
+      qs.title AS "questionSetTitle",
+      es.year AS "year",
+      es.label AS "sessionLabel",
+      o.original_question_number AS "originalQuestionNumber"
+    FROM question_occurrences o
     JOIN question_sets qs ON qs.id = o.question_set_id
     JOIN exam_variants ev ON ev.id = qs.exam_variant_id
     JOIN exams e ON e.id = ev.exam_id
     LEFT JOIN exam_sessions es ON es.id = qs.exam_session_id
-    LEFT JOIN subjects s ON s.id = qs.subject_id
-    LEFT JOIN topics t ON t.id = q.topic_id
-    WHERE e.slug = ${path.examSlug}
-      AND ev.slug = ${path.examVariantSlug}
-      AND es.year = ${path.year}
-      AND s.slug = ${path.subjectSlug}
-      AND q.slug = ${path.questionSlug}
-      AND q.status = 'published'
-    LIMIT 1
+    WHERE o.question_id = ${question.id} AND qs.publication_status = 'published'
+    ORDER BY es.year DESC NULLS LAST, o.created_at ASC
   `);
-  const row = result.rows[0] as unknown as { id: string; topicName: string | null } | undefined;
-  return row ?? null;
+  return {
+    ...question,
+    appearances: appearances.rows as unknown as QuestionAppearance[],
+  };
 }

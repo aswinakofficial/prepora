@@ -21,6 +21,7 @@ import { Route as ExamsIndexImport } from './routes/exams/index'
 import { Route as AdminIndexImport } from './routes/admin/index'
 import { Route as TopicsTopicSlugImport } from './routes/topics/$topicSlug'
 import { Route as SubjectsSubjectSlugImport } from './routes/subjects/$subjectSlug'
+import { Route as QuestionsQuestionSlugImport } from './routes/questions/$questionSlug'
 import { Route as QuestionSetsSlugImport } from './routes/question-sets/$slug'
 import { Route as AuthSigninImport } from './routes/auth/signin'
 import { Route as AdminSettingsImport } from './routes/admin/settings'
@@ -92,6 +93,12 @@ const TopicsTopicSlugRoute = TopicsTopicSlugImport.update({
 const SubjectsSubjectSlugRoute = SubjectsSubjectSlugImport.update({
   id: '/subjects/$subjectSlug',
   path: '/subjects/$subjectSlug',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const QuestionsQuestionSlugRoute = QuestionsQuestionSlugImport.update({
+  id: '/questions/$questionSlug',
+  path: '/questions/$questionSlug',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -258,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof QuestionSetsSlugImport
       parentRoute: typeof rootRoute
     }
+    '/questions/$questionSlug': {
+      id: '/questions/$questionSlug'
+      path: '/questions/$questionSlug'
+      fullPath: '/questions/$questionSlug'
+      preLoaderRoute: typeof QuestionsQuestionSlugImport
+      parentRoute: typeof rootRoute
+    }
     '/subjects/$subjectSlug': {
       id: '/subjects/$subjectSlug'
       path: '/subjects/$subjectSlug'
@@ -355,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AdminSettingsRoute
   '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
+  '/questions/$questionSlug': typeof QuestionsQuestionSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
   '/topics/$topicSlug': typeof TopicsTopicSlugRoute
   '/admin/': typeof AdminIndexRoute
@@ -378,6 +393,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminSettingsRoute
   '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
+  '/questions/$questionSlug': typeof QuestionsQuestionSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
   '/topics/$topicSlug': typeof TopicsTopicSlugRoute
   '/admin': typeof AdminIndexRoute
@@ -403,6 +419,7 @@ export interface FileRoutesById {
   '/admin/settings': typeof AdminSettingsRoute
   '/auth/signin': typeof AuthSigninRoute
   '/question-sets/$slug': typeof QuestionSetsSlugRoute
+  '/questions/$questionSlug': typeof QuestionsQuestionSlugRoute
   '/subjects/$subjectSlug': typeof SubjectsSubjectSlugRoute
   '/topics/$topicSlug': typeof TopicsTopicSlugRoute
   '/admin/': typeof AdminIndexRoute
@@ -429,6 +446,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/auth/signin'
     | '/question-sets/$slug'
+    | '/questions/$questionSlug'
     | '/subjects/$subjectSlug'
     | '/topics/$topicSlug'
     | '/admin/'
@@ -451,6 +469,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/auth/signin'
     | '/question-sets/$slug'
+    | '/questions/$questionSlug'
     | '/subjects/$subjectSlug'
     | '/topics/$topicSlug'
     | '/admin'
@@ -474,6 +493,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/auth/signin'
     | '/question-sets/$slug'
+    | '/questions/$questionSlug'
     | '/subjects/$subjectSlug'
     | '/topics/$topicSlug'
     | '/admin/'
@@ -493,6 +513,7 @@ export interface RootRouteChildren {
   SearchRoute: typeof SearchRoute
   AuthSigninRoute: typeof AuthSigninRoute
   QuestionSetsSlugRoute: typeof QuestionSetsSlugRoute
+  QuestionsQuestionSlugRoute: typeof QuestionsQuestionSlugRoute
   SubjectsSubjectSlugRoute: typeof SubjectsSubjectSlugRoute
   TopicsTopicSlugRoute: typeof TopicsTopicSlugRoute
   ExamsIndexRoute: typeof ExamsIndexRoute
@@ -510,6 +531,7 @@ const rootRouteChildren: RootRouteChildren = {
   SearchRoute: SearchRoute,
   AuthSigninRoute: AuthSigninRoute,
   QuestionSetsSlugRoute: QuestionSetsSlugRoute,
+  QuestionsQuestionSlugRoute: QuestionsQuestionSlugRoute,
   SubjectsSubjectSlugRoute: SubjectsSubjectSlugRoute,
   TopicsTopicSlugRoute: TopicsTopicSlugRoute,
   ExamsIndexRoute: ExamsIndexRoute,
@@ -537,6 +559,7 @@ export const routeTree = rootRoute
         "/search",
         "/auth/signin",
         "/question-sets/$slug",
+        "/questions/$questionSlug",
         "/subjects/$subjectSlug",
         "/topics/$topicSlug",
         "/exams/",
@@ -599,6 +622,9 @@ export const routeTree = rootRoute
     },
     "/question-sets/$slug": {
       "filePath": "question-sets/$slug.tsx"
+    },
+    "/questions/$questionSlug": {
+      "filePath": "questions/$questionSlug.tsx"
     },
     "/subjects/$subjectSlug": {
       "filePath": "subjects/$subjectSlug.tsx"

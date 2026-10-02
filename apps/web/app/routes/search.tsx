@@ -169,11 +169,9 @@ function SearchPage() {
                 </h2>
                 <div className="flex flex-col">
                   {questions.map((question, i) => {
-                    const canLink =
-                      question.examSlug &&
-                      question.examVariantSlug &&
-                      question.year != null &&
-                      question.subjectSlug;
+                    // Linked by slug alone (/questions/{slug}), so a question links whether or not
+                    // its exam has years or subjects.
+                    const canLink = !!question.slug;
                     const content = (
                       <>
                         <span className="block font-mono text-xs text-slate-600 mb-6">
@@ -193,14 +191,8 @@ function SearchPage() {
                     return canLink ? (
                       <Link
                         key={question.id}
-                        to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
-                        params={{
-                          examSlug: question.examSlug as string,
-                          variantSlug: question.examVariantSlug as string,
-                          year: String(question.year),
-                          subjectSlug: question.subjectSlug as string,
-                          questionSlug: question.slug,
-                        }}
+                        to="/questions/$questionSlug"
+                        params={{ questionSlug: question.slug }}
                         onClick={() => handleResultClick(question.id, "question")}
                         className="group pb-12 mb-12 border-b border-slate-900/50 block"
                       >

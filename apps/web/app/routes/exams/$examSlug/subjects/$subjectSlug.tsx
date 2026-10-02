@@ -114,14 +114,8 @@ function ExamSubjectPage() {
             questions.map((q: any, idx: number) => (
               <Link
                 key={q.id}
-                to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
-                params={{
-                  examSlug: q.examSlug,
-                  variantSlug: q.variantSlug,
-                  year: String(q.year),
-                  subjectSlug: q.subjectSlug || subjectSlug,
-                  questionSlug: q.questionSlug,
-                }}
+                to="/questions/$questionSlug"
+                params={{ questionSlug: q.questionSlug }}
                 className="flex flex-col md:flex-row md:items-center justify-between p-6 border-b border-slate-900/50 hover:bg-slate-900/40 transition-colors group"
               >
                 <div className="flex items-center gap-6 min-w-0">

@@ -44,22 +44,10 @@ function ExamPage() {
   const titleText = examName.toUpperCase();
   const titleRef = useRef<HTMLHeadingElement>(null);
   useThreeLineTitle(titleRef, isLoading ? "" : titleText);
-  const _organization = realExam?.organization || "Microsoft Learn";
-
-  const sets =
-    realExam?.sets && realExam.sets.length > 0
-      ? realExam.sets
-      : [
-          {
-            id: `${examSlug}-set-1`,
-            title: `${examName} — Official Assessment Set 01`,
-            description: "",
-            questionCount: realExam?.questionCount || 5,
-            tag: "MICROSOFT LEARN OFFICIAL",
-            code: "2026/MS-LEARN-01",
-            year: 2026,
-          },
-        ];
+  // Only real, published question sets — an exam with none shows an empty state below. (This
+  // used to invent an "Official Assessment Set 01" tagged MICROSOFT LEARN OFFICIAL for every such
+  // exam; nothing invented is ever shown — docs/vision.md.)
+  const sets = realExam?.sets ?? [];
 
   return (
     <div className="min-h-screen bg-[#06080a] text-slate-300 font-sans selection:bg-slate-700 selection:text-white pb-20 md:pb-32">
@@ -208,6 +196,12 @@ function ExamPage() {
                   </div>
                 ))}
               </SkeletonRegion>
+            ) : sets.length === 0 ? (
+              <div className="border-t-2 border-b-2 border-slate-900 py-16 text-center">
+                <p className="font-mono text-sm text-slate-500">
+                  No question sets published for this exam yet.
+                </p>
+              </div>
             ) : (
               <div className="border-t-2 border-slate-900 border-b-2 flex flex-col divide-y divide-slate-900">
                 {sets.map((set: any, idx: number) => (

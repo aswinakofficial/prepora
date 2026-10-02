@@ -219,9 +219,12 @@ test.describe("question detail page — real data, anonymous reveal", () => {
     await db.insert(questionOccurrences).values({ questionId: question.id, questionSetId: set.id });
 
     try {
+      // The old five-segment URL still works: it permanently redirects to /questions/{slug}
+      // (docs/specs/01-question-urls.md).
       await page.goto(
         `/questions/${exam.slug}/${variant.slug}/2025/${subject.slug}/${question.slug}`,
       );
+      await expect(page).toHaveURL(new RegExp(`/questions/${question.slug}$`));
       await expect(page.getByText(questionText)).toBeVisible();
       await expect(page.getByText("Correct answer")).toBeVisible();
 
