@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { boolean, index, integer, pgTable, text, unique } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { questionSets, topics } from "./catalog.ts";
 import {
   aiSourceEnum,
@@ -47,7 +47,9 @@ export const questions = pgTable(
     ...timestamps,
   },
   (t) => [
-    index("questions_slug_idx").on(t.slug),
+    // The public key of a question page, /questions/{slug} (docs/specs/01-question-urls.md).
+    // Publishing sets it once, to the lowercased stable_content_id, and never changes it.
+    uniqueIndex("questions_slug_unique").on(t.slug),
     index("questions_stable_id_idx").on(t.stableContentId),
     index("questions_content_hash_idx").on(t.contentHash),
     index("questions_topic_id_idx").on(t.topicId),

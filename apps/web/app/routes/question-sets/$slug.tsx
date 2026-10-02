@@ -101,14 +101,8 @@ function QuestionSetPage() {
             questions.map((q) => (
               <Link
                 key={q.slug}
-                to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
-                params={{
-                  examSlug: q.examSlug,
-                  variantSlug: q.variantSlug,
-                  year: String(q.year),
-                  subjectSlug: q.subjectSlug || "",
-                  questionSlug: q.slug,
-                }}
+                to="/questions/$questionSlug"
+                params={{ questionSlug: q.slug }}
                 className="group flex flex-col md:flex-row md:items-center justify-between gap-4 py-8 border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors px-4 -mx-4"
               >
                 <div className="flex gap-6 items-baseline min-w-0">

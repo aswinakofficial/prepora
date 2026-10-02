@@ -247,14 +247,8 @@ function TopicPage() {
                 filteredQuestions.map((q) => (
                   <Link
                     key={q.id}
-                    to="/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug"
-                    params={{
-                      examSlug: q.examSlug,
-                      variantSlug: q.variantSlug,
-                      year: String(q.year),
-                      subjectSlug: q.subjectSlug || "",
-                      questionSlug: q.questionSlug,
-                    }}
+                    to="/questions/$questionSlug"
+                    params={{ questionSlug: q.questionSlug }}
                     className="group block p-6 hover:bg-slate-900/40 transition-colors"
                   >
                     {/* Top Row: Exam Tag, Year, Difficulty */}

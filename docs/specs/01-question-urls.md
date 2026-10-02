@@ -4,6 +4,7 @@
 **Milestone:** S0 · Stable URLs
 **Depends on:** nothing
 **Production database:** yes, one migration (a unique index). Needs the owner's go-ahead before it's applied.
+**Status:** implemented (PR for #34).
 
 ## Context
 
@@ -142,6 +143,20 @@ published).
 - **After merging:** the owner (or Claude, with the owner's explicit go-ahead) runs
   `pnpm db:migrate` against production. The deploy works either way, since the index only adds a
   constraint.
+
+## Decided during implementation
+
+- **Page title.** This app has no route loaders or router context (pages fetch on the client), so
+  `head()` can't see the question. `head()` sets a generic title and the canonical link; the
+  component sets `document.title` from the question text once it loads and renders the
+  BreadcrumbList JSON-LD inline — the same pattern the exam page already uses for data-dependent
+  JSON-LD. Adding loaders app-wide is a separate change.
+- **A fifth link site.** The header search modal
+  (`app/components/search/SearchCommandModal.tsx`) also built five-segment URLs and hid links for
+  year-less questions; it now links by slug too.
+- **E2E runs.** `playwright.config.ts` starts the app on port 3000 with the root `.env`, which points
+  at production — don't run the e2e suite that way. Point a throwaway config's `baseURL` at a local
+  dev server started with the local `DATABASE_URL` instead.
 
 ## Risks
 - **Two routes sharing a dynamic first segment** may conflict in TanStack Router. Covered by the

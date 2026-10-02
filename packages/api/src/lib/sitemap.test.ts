@@ -147,12 +147,8 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
 
     const urls = await getQuestionSitemapUrls(db, BASE_URL);
     const locs = urls.map((u) => u.loc);
-    expect(locs).toContain(
-      `${BASE_URL}/questions/${chain.examSlug}/${chain.variantSlug}/2025/${chain.subjectSlug}/q1-${unique}`,
-    );
-    expect(locs).toContain(
-      `${BASE_URL}/questions/${chain.examSlug}/${chain.variantSlug}/2025/${chain.subjectSlug}/q2-${unique}`,
-    );
+    expect(locs).toContain(`${BASE_URL}/questions/q1-${unique}`);
+    expect(locs).toContain(`${BASE_URL}/questions/q2-${unique}`);
   });
 
   it("excludes draft questions", async () => {
@@ -184,7 +180,7 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
     expect(urls.some((u) => u.loc.includes(`draft-q-${unique}`))).toBe(false);
   });
 
-  it("dedupes a question occurring in multiple exam years to its earliest occurrence", async () => {
+  it("lists a question appearing in several papers once, at /questions/{slug}", async () => {
     const db = getDb();
     const chain = await seedChain();
     const unique = randomUUID().slice(0, 8);
@@ -228,7 +224,39 @@ describe.skipIf(!DATABASE_URL)("sitemap", () => {
     const urls = await getQuestionSitemapUrls(db, BASE_URL);
     const matches = urls.filter((u) => u.loc.includes(`dup-q-${unique}`));
     expect(matches).toHaveLength(1);
-    expect(matches[0].loc).toContain("/2024/");
+    expect(matches[0].loc).toBe(`${BASE_URL}/questions/dup-q-${unique}`);
+  });
+
+  it("includes a question whose session has no year and whose set has no subject", async () => {
+    // Every MS Learn question is like this ("Version 1", no year) — the old year-based URL left
+    // all of them out of the sitemap.
+    const db = getDb();
+    const chain = await seedChain();
+    const unique = randomUUID().slice(0, 8);
+    const [noYear] = await db
+      .insert(examSessions)
+      .values({ examVariantId: chain.variantId, label: "Version 1" })
+      .returning({ id: examSessions.id });
+    const [set] = await db
+      .insert(questionSets)
+      .values({
+        examVariantId: chain.variantId,
+        examSessionId: noYear.id,
+        title: `Set ${unique}`,
+        slug: `set-${unique}`,
+        publicationStatus: "published",
+      })
+      .returning({ id: questionSets.id });
+    chain.questionSetIds.push(set.id);
+    const [q] = await db
+      .insert(questions)
+      .values({ slug: `noyear-q-${unique}`, questionText: "No year", status: "published" })
+      .returning({ id: questions.id });
+    chain.questionIds.push(q.id);
+    await db.insert(questionOccurrences).values({ questionId: q.id, questionSetId: set.id });
+
+    const urls = await getQuestionSitemapUrls(db, BASE_URL);
+    expect(urls.map((u) => u.loc)).toContain(`${BASE_URL}/questions/noyear-q-${unique}`);
   });
 
   async function publishOneQuestion(chain: Awaited<ReturnType<typeof seedChain>>) {

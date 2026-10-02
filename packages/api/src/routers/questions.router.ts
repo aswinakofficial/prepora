@@ -5,38 +5,24 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { publicProcedure } from "../context.js";
 import { createPracticeSession, finalizePracticeSession, recordAttempt } from "../lib/attempts.js";
-import { findPublishedQuestionByPath } from "../lib/catalog-questions.js";
+import { findPublishedQuestionBySlug } from "../lib/catalog-questions.js";
 import { loadQuestionImages } from "../lib/question-media.js";
 
 export const questionsRouter = {
   // docs/roadmap/engineering-roadmap.md item 24: the question-detail page used to render a fixed
   // Strength-of-Materials fixture (DEMO_QUESTION) for every URL. This resolves the real question
-  // for the exact exam/variant/year/subject/question path, returning options WITHOUT correctness —
-  // the reveal step calls the existing submitAnswer mutation below, which verifies server-side.
-  getByPath: publicProcedure
+  // by its slug (/questions/{slug}), returning options WITHOUT correctness — the reveal step calls
+  // the existing submitAnswer mutation below, which verifies server-side.
+  getBySlug: publicProcedure
     .route({
       method: "GET",
-      path: "/questions/by-path/{examSlug}/{variantSlug}/{year}/{subjectSlug}/{questionSlug}",
-      summary: "Resolve a question by its detail-page URL path",
+      path: "/questions/by-slug/{questionSlug}",
+      summary: "Resolve a question by its page URL, /questions/{slug}",
     })
-    .input(
-      z.object({
-        examSlug: z.string(),
-        variantSlug: z.string(),
-        year: z.coerce.number(),
-        subjectSlug: z.string(),
-        questionSlug: z.string(),
-      }),
-    )
+    .input(z.object({ questionSlug: z.string().min(1) }))
     .handler(async ({ input }) => {
       const db = getDb();
-      const match = await findPublishedQuestionByPath(db, {
-        examSlug: input.examSlug,
-        examVariantSlug: input.variantSlug,
-        year: input.year,
-        subjectSlug: input.subjectSlug,
-        questionSlug: input.questionSlug,
-      });
+      const match = await findPublishedQuestionBySlug(db, input.questionSlug);
 
       if (!match) return null;
 
@@ -64,6 +50,8 @@ export const questionsRouter = {
           .sort((a, b) => a.sequence - b.sequence)
           .map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
         topic: match.topicName,
+        // Every paper it appeared in, newest first — the page's "Appeared in" list and breadcrumbs.
+        appearances: match.appearances,
       };
     }),
 

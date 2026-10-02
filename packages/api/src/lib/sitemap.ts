@@ -105,47 +105,20 @@ export async function getQuestionSetSitemapUrls(
 }
 
 /**
- * Real published questions — the other file this used to reference but never create. A question
- * can have multiple occurrences (the same content republished across exams/years); each maps to a
- * different detail URL, so this picks exactly one canonical occurrence per question (earliest
- * exam year, then earliest recorded occurrence) rather than listing near-duplicate URLs for
- * identical content. Only occurrences with both a year and a subject are eligible, since the
- * question-detail route requires both path segments — a question published without either has no
- * valid URL under the current route shape and is correctly excluded here.
+ * Real published questions, one URL each: /questions/{slug}. The slug is unique and independent of
+ * the exam hierarchy, so every published question is listed — including those in sessions without
+ * a year or sets without a subject, which the old /questions/{exam}/{variant}/{year}/{subject}/...
+ * URL couldn't express (docs/specs/01-question-urls.md).
  */
 export async function getQuestionSitemapUrls(
   db: ReturnType<typeof getDb>,
   baseUrl: string,
 ): Promise<SitemapUrl[]> {
   const result = await db.execute(sql`
-    SELECT DISTINCT ON (q.id)
-      q.updated_at AS "updatedAt",
-      e.slug AS "examSlug",
-      ev.slug AS "examVariantSlug",
-      es.year,
-      s.slug AS "subjectSlug",
-      q.slug AS "questionSlug"
-    FROM questions q
-    JOIN question_occurrences o ON o.question_id = q.id
-    JOIN question_sets qs ON qs.id = o.question_set_id
-    JOIN exam_variants ev ON ev.id = qs.exam_variant_id
-    JOIN exams e ON e.id = ev.exam_id
-    JOIN exam_sessions es ON es.id = qs.exam_session_id
-    JOIN subjects s ON s.id = qs.subject_id
-    WHERE q.status = 'published'
-    ORDER BY q.id, es.year ASC NULLS LAST, o.created_at ASC
+    SELECT slug, updated_at AS "updatedAt" FROM questions WHERE status = 'published' ORDER BY slug
   `);
-  return (
-    result.rows as unknown as {
-      updatedAt: string;
-      examSlug: string;
-      examVariantSlug: string;
-      year: number;
-      subjectSlug: string;
-      questionSlug: string;
-    }[]
-  ).map((row) => ({
-    loc: `${baseUrl}/questions/${row.examSlug}/${row.examVariantSlug}/${row.year}/${row.subjectSlug}/${row.questionSlug}`,
+  return (result.rows as unknown as { slug: string; updatedAt: string }[]).map((row) => ({
+    loc: `${baseUrl}/questions/${row.slug}`,
     priority: "0.6",
     changefreq: "monthly",
     lastmod: new Date(row.updatedAt).toISOString(),

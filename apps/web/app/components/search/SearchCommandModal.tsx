@@ -181,28 +181,18 @@ export function SearchCommandModal({ isOpen, onClose }: SearchCommandModalProps)
               </h3>
               <div className="flex flex-col gap-6">
                 {questions.map((q) => {
-                  const canLink =
-                    q.examSlug && q.examVariantSlug && q.year != null && q.subjectSlug;
+                  // Questions are linked by slug alone (/questions/{slug}), whatever their exam's
+                  // hierarchy — see docs/specs/01-question-urls.md.
                   return (
                     <button
                       type="button"
                       key={q.id}
                       onClick={() => {
                         handleResultClick(q.id, "question");
-                        if (canLink) {
-                          navigate({
-                            to: "/questions/$examSlug/$variantSlug/$year/$subjectSlug/$questionSlug",
-                            params: {
-                              examSlug: q.examSlug as string,
-                              variantSlug: q.examVariantSlug as string,
-                              year: String(q.year),
-                              subjectSlug: q.subjectSlug as string,
-                              questionSlug: q.slug,
-                            },
-                          });
-                        } else {
-                          navigate({ to: "/search", search: { q: q.questionText } as any });
-                        }
+                        navigate({
+                          to: "/questions/$questionSlug",
+                          params: { questionSlug: q.slug },
+                        });
                         onClose();
                       }}
                       className="group text-left"
