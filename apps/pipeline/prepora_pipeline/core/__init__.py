@@ -17,7 +17,14 @@ from .jobs import (
     stage_run,
     start_job,
 )
-from .media_store import FilesystemMediaStore, MediaError, MediaStore, StoredMedia
+from .media_store import (
+    FilesystemMediaStore,
+    MediaError,
+    MediaStore,
+    R2MediaStore,
+    StoredMedia,
+    media_store_from_env,
+)
 from .registry import (
     Source,
     get_allowed_base_urls,
@@ -40,6 +47,8 @@ __all__ = [
     "FilesystemMediaStore",
     "MediaError",
     "MediaStore",
+    "R2MediaStore",
+    "media_store_from_env",
     "StoredMedia",
     "reprocess_source",
     "JobRecord",

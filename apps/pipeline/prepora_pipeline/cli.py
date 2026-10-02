@@ -9,10 +9,10 @@ through a parser, no network access), `prune` (the retention policy), `sync-sour
 connectors/*/source.yaml into the sources table), `publish` (idempotent, occurrence-aware
 publishing of a single NormalizedQuestion), `dedupe-check` (report whether a NormalizedQuestion is
 a duplicate, near-duplicate, or unique, without publishing it), `dedupe-audit` (the same check
-over the whole published corpus), and `import-markdown` (the first
-full discover -> fetch -> parse -> normalize -> publish connector run). A generic `run --connector
-<name>` covering every connector the same way is later roadmap work, once more than one connector
-needs it.
+over the whole published corpus), `media-sync` (copy published images to R2), and
+`import-markdown` (the first full discover -> fetch -> parse -> normalize -> publish connector
+run). A generic `run --connector <name>` covering every connector the same way is later roadmap
+work, once more than one connector needs it.
 """
 import argparse
 import dataclasses
@@ -30,9 +30,11 @@ from prepora_pipeline.core import (
     reprocess_source,
     sync_sources_from_yaml,
 )
+from prepora_pipeline.core.db import get_db_connection
+from prepora_pipeline.core.media_store import FilesystemMediaStore, media_store_from_env
 from prepora_pipeline.dedupe import check_duplicate
 from prepora_pipeline.dedupe.audit import format_report, run_audit
-from prepora_pipeline.stages.publish import PublishError, publish_question
+from prepora_pipeline.stages.publish import PublishError, publish_question, upload_missing_media
 
 
 def _parse_date(value: str) -> datetime:
@@ -120,6 +122,31 @@ def cmd_import_markdown(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
+def cmd_media_sync(_args: argparse.Namespace) -> int:
+    """Uploads every image a published question uses that R2 doesn't have yet — the back-fill for
+    images published before MEDIA_STORE=r2 was set, and the release check before images go live."""
+    remote = media_store_from_env()
+    if isinstance(remote, FilesystemMediaStore):
+        print("media-sync needs MEDIA_STORE=r2 (and the STORAGE_* variables).", file=sys.stderr)
+        return 1
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT storage_key, mime_type FROM media ORDER BY storage_key")
+            items = cur.fetchall()
+    finally:
+        conn.close()
+    uploaded, missing = upload_missing_media(remote, items, skip_missing=True)
+    already = len(items) - uploaded - len(missing)
+    print(
+        f"{len(items)} images referenced; {uploaded} uploaded, {already} already in R2, "
+        f"{len(missing)} missing locally."
+    )
+    for key in missing:
+        print(f"  missing locally: {key}", file=sys.stderr)
+    return 1 if missing else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
 
@@ -174,6 +201,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Report question pairs whose wording is at least this similar (default: 0.85).",
     )
     dedupe_audit_parser.set_defaults(func=cmd_dedupe_audit)
+
+    media_sync_parser = subparsers.add_parser(
+        "media-sync", help="Upload every published image R2 doesn't have yet (MEDIA_STORE=r2)."
+    )
+    media_sync_parser.set_defaults(func=cmd_media_sync)
 
     import_markdown_parser = subparsers.add_parser(
         "import-markdown",

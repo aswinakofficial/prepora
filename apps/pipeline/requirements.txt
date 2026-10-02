@@ -12,3 +12,4 @@ ruff
 pdfplumber
 pypdfium2
 reportlab
+boto3
