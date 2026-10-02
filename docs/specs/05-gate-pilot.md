@@ -58,7 +58,9 @@ Every URL is relative to `https://gate2026.iitg.ac.in/`, and all were checked li
      `explanation`, `images`) **plus a `normalized` field**: the complete NormalizedQuestion JSON.
    - The approve flow publishes `normalized` as it is. It must not re-derive anything from the
      display fields.
-6. **Figures and garbled math:**
+6. **Figures and garbled math.** *Superseded for the pilot by the owner's decision of 2026-10-02:
+   only clean questions are published. See "Owner decision: publish only clean questions" below.
+   The original plan follows, for when a crop or transcription path is added.*
    - **Text first.** Each question is published as text where its text is clean.
    - **A crop when it isn't:** when the garble detector fires (below), the question's region is
      cropped at 200 dpi and attached as a `question`-placement image. The text is kept as is, and
@@ -247,6 +249,21 @@ Test cases:
   dedupe will then publish one question with two occurrences, which is correct.
 - **Math fidelity:** the crop is the safety net. A reviewer may still want to fix text by hand, so
   note that the review UI doesn't support editing yet. That's a follow-up issue if it's needed.
+
+## Owner decision: publish only clean questions (2026-10-02)
+
+Measured on the pilot papers, only 55% of questions extract cleanly (#47). The rest are genuine
+subscripts, superscripts, figures and tables. The owner chose to **publish only clean questions**:
+- The importer (#48) leaves every flagged question (`figure`, `math`, `layout`) **out of the review
+  batch**. The import report lists each one with its flags, as "held back".
+- No crops are attached in the pilot, so the pilot doesn't depend on R2 (Spec 4).
+- **Acceptance changes:** "at least 85% published without a crop" is replaced by:
+  - every question is either published clean or listed as held back with its reason;
+  - no published question carries a flag.
+
+  The clean rate is reported per paper.
+- Held-back questions wait for a later path: crops (Spec 4) and/or optional, reviewer-confirmed AI
+  transcription (ADR-015). That path gets its own spec.
 
 ## Decided during implementation
 
