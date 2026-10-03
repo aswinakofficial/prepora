@@ -114,7 +114,11 @@ class FakeIntake:
                 result.unchanged += 1
             else:
                 result.changed += 1
-            keep = row.get("hash") == digest and row.get("status") in ("in_review", "published")
+            if row.get("status") == "in_review":  # its batch holds this copy
+                result.waiting += row["hash"] != digest
+                result.statuses["in_review"] = result.statuses.get("in_review", 0) + 1
+                continue
+            keep = row.get("hash") == digest and row.get("status") in ("published", "rejected")
             row.update(hash=digest, candidate=item.candidate, issues=item.issues)
             if not keep:
                 row.update(status=item.status, batch=None)

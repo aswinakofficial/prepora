@@ -105,6 +105,33 @@ class TestIntakeStore:
         reparsed = store.record([_item(source, key, text="Invented question, read better?")])
         assert (reparsed.changed, _status(key)) == (1, "ready")  # back through review
 
+    def test_a_changed_parse_waits_while_its_old_copy_is_in_review(self, paper):
+        source, key = paper
+        store = IntakeStore()
+        store.record([_item(source, key)])
+        [(item_id, _)] = store.ready_for_batch(source, key, "test")
+        batch = _query(
+            "INSERT INTO scraped_questions (source_url, parsed_data) VALUES ('x', '{}') "
+            "RETURNING id"
+        )[0][0]
+        try:
+            store.mark_in_review([item_id], batch)
+            waiting = store.record([_item(source, key, text="Invented, read better?")])
+            assert (waiting.changed, waiting.waiting, _status(key)) == (1, 1, "in_review")
+            # The batch still holds the old copy, and the item still points at the batch.
+            assert _query(
+                "SELECT candidate->>'question_text', review_batch_id FROM intake_items "
+                "WHERE id = %s",
+                (item_id,),
+            ) == [("Invented question?", batch)]
+            # Once the batch is decided, the next run picks the change up.
+            _query("UPDATE intake_items SET status = 'published' WHERE id = %s", (item_id,))
+            after = store.record([_item(source, key, text="Invented, read better?")])
+            assert (after.changed, after.waiting, _status(key)) == (1, 0, "ready")
+        finally:
+            _query("DELETE FROM intake_items WHERE paper_key = %s", (key,))
+            _query("DELETE FROM scraped_questions WHERE id = %s", (batch,))
+
     def test_a_held_item_whose_issues_clear_becomes_ready(self, paper):
         source, key = paper
         store = IntakeStore()
