@@ -20,7 +20,7 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 | 3 | [S4-min · Marks, sections, answer status, numeric answers](03-paper-structure-min.md) | #45 | 1 | **Done** (#56, migrated) |
 | 4 | [M · Image storage on R2](04-media-storage.md) | #46 | — | Code done — **needs the owner** (Cloudflare setup, then the live check) |
 | 5 | [GATE CS pilot](05-gate-pilot.md) | #27, #47, #48, #49 | 2, 3, 4 | Ready |
-| 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | Ready |
+| 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | **Done** (PR pending, migration pending) |
 | 8 | [Paper editions: several sources for one paper](08-paper-editions.md) | #70 | 7 | Draft |
 | 9 | [Fixing held questions](09-remediation.md) | #71 | 7, 8 (4 for crops) | Draft |
 | 10 | [Explanations: data model and display](10-explanations.md) | #72 | 7 | Draft |
