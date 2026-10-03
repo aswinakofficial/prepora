@@ -22,7 +22,9 @@ These decide the hard trade-offs. A change that breaks one of them needs a very 
 
 1. **Sourced, reviewed, always labelled.** Every question traces back to its origin, and every
    answer says where it came from: official key, reviewer, or AI-suggested and confirmed by a
-   person ([ADR-015](adr/015-ai-assistance.md)). Nothing is published silently, and missing data is
+   person. Explanations come from the source when it has one; otherwise an AI explanation is
+   checked against the official answer, labelled, and sampled for review
+   ([ADR-015](adr/015-ai-assistance.md)). Nothing is published silently, and missing data is
    never filled in.
 2. **Honest about uncertainty.** Predictions and AI help are always labelled, explained and
    measured.
@@ -163,7 +165,9 @@ and how to measure "a good predicted paper".
 - Every answer shows its provenance. When sources disagree, the disagreement goes to a person to
   resolve, never to whichever source was collected last.
 - Community contributions (the Contribute flow) and "report an error in this question".
-- AI assistance stays optional and labelled, and a person confirms it before anything is published.
+- AI assistance stays optional and labelled. A person confirms AI answers and transcriptions before
+  they're published. AI explanations, used only when the source has none, are published only after
+  automatic checks against the official answer, and a sample is reviewed by a person.
 
 ---
 

@@ -1,6 +1,6 @@
 # ADR-015: Optional AI assistance: suggested, flagged, confirmed
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-10-03 (explanations)
 - **Date:** 2026-10-01
 
 ## Context
@@ -53,3 +53,33 @@ Add an **optional** AI step using Claude (Anthropic API):
   on every claim (`aiPromptVersion`).
 - **Calibration data is a by-product:** GATE's and ISTQB's official keys double as an accuracy
   benchmark.
+
+## Amendment (2026-10-03): explanations
+
+Decided by the owner when planning the quality pipeline
+([knowledge-index §4a](../architecture/knowledge-index.md)).
+
+- **Source first.** A question's own source explanation (an official rationale like MS Learn's or
+  ISTQB's, or a licensed source's) is always used when one exists. AI writes an explanation only
+  when there's none.
+- **One global switch.** AI explanations sit behind a single feature flag, `ai_explanations`, off
+  by default, toggled on the admin Settings page and recorded in the audit log. There are no
+  per-exam settings: the system decides per question.
+- **Auto-checked, not individually confirmed.** Unlike answers and transcriptions, which a person
+  still confirms, an AI explanation is published automatically when every check passes:
+  - the question has an official answer;
+  - the explanation's final answer matches it (inside the range for numeric answers);
+  - an independent verifier (another prompt and model) agrees;
+  - static checks pass.
+
+  It's always labelled "AI-generated explanation". An explanation that fails any check goes to the
+  review queue.
+- **Measured, sampled, and self-limiting.**
+  - Explanations are calibrated per subject against questions that already have source
+    explanations.
+  - 5% of auto-published ones are sampled for review by a person.
+  - Error reports count.
+  - A subject whose error rate crosses the threshold automatically falls back to review-only.
+
+**Why:** an explanation never changes the answer, which comes from the official key, and per-item
+review can't keep up with millions of questions. The checks, label and sampling keep it honest.

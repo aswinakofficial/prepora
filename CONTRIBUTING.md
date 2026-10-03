@@ -268,10 +268,15 @@ and check it with `pnpm db:check`.
   ([not-onboarded](docs/sources/not-onboarded.md)). Certification exams use only practice
   material the vendor itself publishes, never dump sites.
 - **Third-party content is used only as its licence or terms allow.** A source we may only
-  reference can be used to cross-check answers, never displayed. Explanations are written by
-  contributors unless a source grants permission ([ADR-014](docs/adr/014-multi-source-provenance.md)).
+  reference can be used to cross-check answers, never displayed. A source's own explanations are
+  used only as its licence allows; otherwise explanations come from contributors or the AI step
+  ([ADR-014](docs/adr/014-multi-source-provenance.md)).
 - **AI-suggested answers and transcriptions** are optional and always confirmed by a reviewer
-  before publishing, then labelled ([ADR-015](docs/adr/015-ai-assistance.md)).
+  before publishing, then labelled.
+- **AI explanations** are written only when a question's source has none, and only when the global
+  `ai_explanations` feature flag is on. Each is checked against the official answer and by an
+  independent verifier, labelled "AI-generated explanation", and sampled for review
+  ([ADR-015](docs/adr/015-ai-assistance.md)).
 
 ---
 

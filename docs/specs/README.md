@@ -20,7 +20,12 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 | 3 | [S4-min · Marks, sections, answer status, numeric answers](03-paper-structure-min.md) | #45 | 1 | **Done** (#56, migrated) |
 | 4 | [M · Image storage on R2](04-media-storage.md) | #46 | — | Code done — **needs the owner** (Cloudflare setup, then the live check) |
 | 5 | [GATE CS pilot](05-gate-pilot.md) | #27, #47, #48, #49 | 2, 3, 4 | Ready |
-| 6 | [S1 · Exam hierarchies](06-hierarchy.md) | #35 | 5 | Draft — **revisit after the GATE pilot** |
+| 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | Ready |
+| 8 | [Paper editions: several sources for one paper](08-paper-editions.md) | #70 | 7 | Draft |
+| 9 | [Fixing held questions](09-remediation.md) | #71 | 7, 8 (4 for crops) | Draft |
+| 10 | [Explanations: data model and display](10-explanations.md) | #72 | 7 | Draft |
+| 11 | [AI explanations: source first, AI otherwise](11-ai-explanations.md) | #73 | 10 | Draft |
+| 6 | [S1 · Exam hierarchies](06-hierarchy.md) | #35 | 5 | Draft — **after the quality pipeline** |
 
 ### Why this order (and not the one in the knowledge-index doc)
 
@@ -37,6 +42,12 @@ The project has one maintainer for now, so the plan was narrowed (2026-10-02):
 - **Deferred to a later milestone:** full multi-source attestations (S3 — a single answer
   `provenance` column covers one-source-per-exam), languages (S5), universities (S6), faceted search
   (S7), OCR (O), and the optional AI step. They return when a track needs them.
+- **The quality pipeline (Specs 7–11) comes next (owner, 2026-10-03).** One paper exists in
+  several sources at different quality (GATE: clean IITG PDFs, the Drive archive's scans and
+  embedded keys). So held questions are kept and fixed rather than lost, the cleanest source wins
+  per question, and explanations come from the source first, AI otherwise. See
+  [knowledge-index §4a](../architecture/knowledge-index.md). Explanations build on clean
+  questions, so they come last. S1 waits until after this.
 - **Media storage is new.** No published question has an image yet, but GATE's figures will be the
   first, and the deployed site can't serve images from the local disk.
 
