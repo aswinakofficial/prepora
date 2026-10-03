@@ -29,6 +29,12 @@ import {
   isFeatureFlagKey,
 } from "../lib/feature-flags.js";
 import {
+  intakeSummary,
+  listIntakeItems,
+  markIntakePublished,
+  markIntakeRejected,
+} from "../lib/intake.js";
+import {
   assertPublishingAvailable,
   assertScrapingAvailable,
   publishingLockReason,
@@ -587,6 +593,16 @@ async function resolveDuplicate(
         message: `Couldn't apply that to question ${row.questionNumber}: ${await pipelineErrorReason(res)}`,
       });
     }
+    const published = (await res.json().catch(() => null)) as { question_id?: string } | null;
+    // A pipeline connector's question (docs/specs/07-intake.md): no-op for other batches.
+    await markIntakePublished(
+      db,
+      row.scrapedQuestionId,
+      row.questionNumber,
+      published?.question_id,
+    );
+  } else {
+    await markIntakeRejected(db, row.scrapedQuestionId, row.questionNumber);
   }
 
   const status =
@@ -622,6 +638,8 @@ async function processOneReviewItem(
       .update(scrapedQuestions)
       .set({ status: "rejected" })
       .where(eq(scrapedQuestions.id, input.id));
+    // Its intake items (a pipeline connector's batch) won't be published either.
+    await markIntakeRejected(db, input.id);
     await writeAuditLog(db, {
       actorId,
       action: "reject_scraped_question",
@@ -753,6 +771,8 @@ async function processOneReviewItem(
       }
       publishCount++;
       if (result?.occurrence_created) addedCount++;
+      // A pipeline connector's question (docs/specs/07-intake.md): its intake item is published.
+      if (isNormalized) await markIntakePublished(db, input.id, number, result?.question_id);
     } catch (err) {
       failed.push({
         number,
@@ -1231,6 +1251,21 @@ export const adminRouter = {
       );
       return items;
     }),
+
+  // The "Held questions" page (docs/specs/07-intake.md): every paper's intake by status and issue.
+  getIntakeSummary: adminProcedure
+    .route({ method: "GET", path: "/admin/intake", summary: "Intake by paper, status and issue" })
+    .handler(async () => intakeSummary(getDb())),
+
+  listIntakeItems: adminProcedure
+    .route({ method: "GET", path: "/admin/intake/items", summary: "One paper's intake items" })
+    .input(
+      z.object({
+        paperKey: z.string().min(1),
+        status: z.enum(["ready", "held", "in_review", "published", "rejected"]).optional(),
+      }),
+    )
+    .handler(async ({ input }) => listIntakeItems(getDb(), input)),
 
   processReviewItem: adminProcedure
     .route({

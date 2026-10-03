@@ -5,7 +5,7 @@
 **Depends on:** Spec 5 (the GATE connector)
 **Production database:** yes. One migration adds a table and an enum. The admin page reads it, so
 production is migrated before merging, with the owner's go-ahead.
-**Status:** Ready
+**Status:** Implemented (migration `drizzle/0019_intake_items.sql`)
 
 ## Context
 
@@ -172,3 +172,30 @@ and 9 (fixing held questions) build on it.
   items, so a surprising number is caught before batching.
 - **Intake grows with every edition and source.** Rows are small: the candidate is the only large
   field, a few kilobytes each. Archive and prune policy comes later, with S8.
+
+## Decided during implementation
+
+- **Approval finds an intake item by its batch and question number.** Elements still carry
+  `intakeItemId`, but `markIntakePublished` and `markIntakeRejected` (`packages/api/src/lib/intake.ts`)
+  key on `review_batch_id` plus the question's number. A pipeline batch holds one paper, so that
+  pair names one item. It also covers questions a reviewer publishes later from the
+  possible-duplicate screen, whose stored candidate has no intake id:
+  - a "same" or "new" decision marks the item published;
+  - "skip" marks it rejected.
+
+  Batches with no intake rows (MS Learn) are untouched.
+- **`image_option` is its own code.** An option with no text used to count as `figure`; it now
+  gets its own code, so Spec 9 can tell "crop the options" apart from "crop the figure".
+- **The issue labels live in `packages/api/src/lib/issue-labels.ts`,** which has no imports, so the
+  admin page can use them through `@prepora/api/src/shared`. `lib/intake.ts` re-exports them.
+- **The detector's tests stay with GATE** (`connectors/gate/test_parser.py`). They run it on
+  generated papers with `GATE_QUALITY`, which is the behaviour that matters. The core tests
+  (`apps/pipeline/test_intake.py`) cover `Issue`, `content_hash` and the store.
+- **Acceptance, on a scratch local database** (so the owner's pending pilot batches stayed
+  untouched):
+  - the first run recorded 260 items: 143 ready (all sent to review) and 117 held;
+  - a second run found 0 new and 260 unchanged, and wrote no batch;
+  - approving the 2026 CS-1 batch through the admin API made its 45 items `published`, each with
+    its `question_id`;
+  - rejecting the 2025 CS-2 batch made its 36 items `rejected`, and its 29 held items stayed held;
+  - the "Held questions" page was checked in the browser.
