@@ -156,6 +156,72 @@ question_answers  + provenance, claimId, numericMin, numericMax, rangeGroup
   `numericMin`/`numericMax`.
 - **Deprecated.** `questions.source_label` (`ai_source`) is replaced by these explicit fields.
 
+## 4a. Intake, revisions and explanations: quality as data
+
+(Owner decisions of 2026-10-03; built as [Specs 7–11](../specs/README.md).)
+
+The same paper exists in several places at very different quality. For GATE CS, the IITG site has
+clean text PDFs, while the Drive archive has scans, corrupt files, and keys inside the paper. The
+platform absorbs this with five rules:
+
+1. **Every displayed field has provenance.** A question's text, options, answer, explanation and
+   figure each come from somewhere: a source, OCR, AI, or a reviewer. Alternatives are kept as
+   rows, a resolver picks the displayed one by precedence, and nothing is overwritten. Answer
+   claims (§4) are one case of this.
+2. **Quality is data, not a report.** Each parsed question is stored with machine-readable issue
+   codes. A question that can't be published yet is *held* and waits for a fix; it's never dropped.
+3. **Re-running upgrades, never duplicates.** Work is keyed by input hash plus parser or prompt
+   version. A better parser or model re-processes held or old items in place.
+4. **Source quirks live in profiles and adapters,** measured by a committed per-paper quality
+   report (counts only, never content). A new year or source is a catalog entry, plus a layout
+   profile when needed.
+5. **Nothing reaches students without passing a gate.** That's the validation gate for every
+   question, plus the auto-check gate for AI explanations (below). Labels stay on forever.
+
+```
+intake_items           { sourceId, paperKey, edition, number, numberLabel, rawArtifactSha256,
+                         candidate (NormalizedQuestion), contentHash, issues[{code, detail}],
+                         regions, parserVersion, status, reviewBatchId?, questionId? }
+question_revisions     { questionId, origin (source|ocr|ai_transcribed|reviewer_edited),
+                         payload {text, options}, status, intakeItemId?, model?, promptVersion?,
+                         createdBy, confirmedBy }
+question_explanations  { questionId, kind (official|licensed_source|contributor|reviewer|
+                         ai_generated), body, status (pending|published|rejected|superseded),
+                         checks, model?, promptVersion?, sampledForReview, createdBy, confirmedBy }
+questions              + explanationProvenance
+```
+
+- **Intake** (Spec 7): every parsed question becomes an intake item, `ready` or `held` with its
+  issue codes (`figure`, `math`, `layout`, `invalid`, …). Review batches are built from ready
+  items. Held items stay visible on an admin page, counted by issue.
+- **Paper editions** (Spec 8): one paper can come from several sources (`edition`). The importer
+  takes each question's text from its cleanest edition, and records every edition as an
+  attestation (§4).
+- **The remediation ladder** (Spec 9) gives a held item the cheapest fix that clears its issues:
+  1. a better edition;
+  2. a page crop;
+  3. OCR;
+  4. AI transcription, **always confirmed by a reviewer**;
+  5. a reviewer edit.
+
+  Each fix is a revision, and a resolver writes the chosen one to `questions`.
+- **Explanations, source first** (Specs 10–11):
+  - A question's own source explanation (an official rationale like MS Learn's, or a licensed
+    source's) is always used when one exists.
+  - Otherwise, when the single global `ai_explanations` feature flag is on, the pipeline writes one
+    with Claude. It publishes **automatically, labelled "AI-generated explanation"**, only when:
+    - the question has an official answer;
+    - the explanation reaches that answer;
+    - an independent verifier agrees;
+    - static checks pass.
+
+    Anything else goes to review.
+  - **The safety net is automatic,** with no per-exam settings:
+    - calibration against questions that already have source explanations;
+    - a 5% sample of auto-published explanations reviewed by a person;
+    - error reports;
+    - a subject whose error rate crosses the threshold falls back to review-only.
+
 ## 5. URLs and navigation
 
 ```
@@ -215,15 +281,19 @@ tsv tsvector, textNorm (normalize.py v2, for trigram)
 
 ## 7. AI assistance
 
-([ADR-015](../adr/015-ai-assistance.md))
+([ADR-015](../adr/015-ai-assistance.md), amended 2026-10-03)
 
-AI assistance runs only when `ANTHROPIC_API_KEY` is set, in the local pipeline. It produces:
-- `ai_suggested` answer claims;
-- `ai_transcribed` question text (`questions.textSource`: `source | ocr | ai_transcribed |
-  ai_transcribed_confirmed`);
-- AI topic tags.
+AI runs only in the local pipeline, only when `ANTHROPIC_API_KEY` is set. The key never reaches
+the deployed site. It produces:
+- **Explanations,** behind one global feature flag, `ai_explanations` (off by default). They're
+  used only when the question's own source has none. Auto-published, labelled, when the gates in
+  §4a pass; otherwise reviewed.
+- **`ai_suggested` answer claims:** always confirmed by a person, never the answer on their own.
+- **`ai_transcribed` question text** (a revision with origin `ai_transcribed`): always confirmed by
+  a person.
+- **AI topic tags.**
 
-Nothing reaches the published site until an admin confirms it, and a badge stays on it afterwards.
+Every AI output keeps a badge on the site, and its model and prompt version are recorded.
 
 ## 8. Five real cases, mapped
 
