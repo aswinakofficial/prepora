@@ -100,11 +100,49 @@ that share a compulsory part; they are not sittings.
 | 2021 | `2021/cs_2021.pdf` | `Answer_keys2021/cs_merged_2021.pdf` | 27 + 27 |
 | 2019–20 | `2019/cs_2019.pdf` | **no keys** | 48 / 50 |
 
-- **Bulk folder:** `drive.google.com/drive/folders/1sV6FgtOUDl_PGjc36Zdc0eJwK1zZ_2OF`, covering
-  2007–2025 (contents UNVERIFIED).
+- **Bulk folder:** `drive.google.com/drive/folders/1sV6FgtOUDl_PGjc36Zdc0eJwK1zZ_2OF`, linked from
+  the official download page. It holds **one zip per paper** (35: AE … XL, with XH split into
+  XH-C1 to XH-C6). `CS.zip` (51 MB, 24 PDFs) was inspected on 2026-10-03; see "The Drive folder's
+  CS papers" below.
 - **Volume:** about 38 papers a year, most with 65 questions (XE has 197). That's roughly 2,700
   questions a year, of which about 130 per sitting are CS.
 - **Hosts move every year,** and old hosts go dark. Archive raw PDFs as soon as the track starts.
+
+### The Drive folder's CS papers (checked 2026-10-03)
+
+One PDF per year, plus two per year for the years with two sittings (2017, 2021, 2024, 2025).
+Names are irregular: `CS2007.pdf`, `CS1-2017.pdf`, `CS12024.pdf`. "Text" means extractable text;
+"scan" means page images that need OCR. Keys marked "in file" are printed at the end of the same
+PDF.
+
+| Year | Text or scan | Sittings in the file | Answer key | Usable now? |
+|---|---|---|---|---|
+| 2007–2010 | Scan | 1 | Not in the file | No (OCR and a key needed) |
+| 2011 | **Corrupt** (not a valid PDF) | — | — | No |
+| 2012 | Text | 1 | In file, one column per booklet code A–D, includes "Marks to All" | Needs the booklet code mapped |
+| 2013 | Text | 4 sessions in one file | Not in the file | Needs a key |
+| 2014 | Text | 3 sessions | In file, after each session (modern Key/Range table) | **Yes**, per session |
+| 2015 | Mostly images | 3 sessions | Not found | No |
+| 2016 | Text | 2 sets | In file, after each set | **Yes**, per set |
+| 2017 | CS-1 **corrupt**; CS-2 mixed text and images | 2 | CS-2: in file | CS-2 partly |
+| 2018 | Text | 1 | In file (Type / Section / Key/Range / Marks table) | **Yes** |
+| 2019 | Scan | 1 | No official key exists | No |
+| 2020 | Mixed | 1 | In file, a web-page printout with doubled glyphs ("HHoommee") | After cleaning |
+| 2021 | Scan (CS-1 and CS-2) | 2 | Not in the file (key on the IITG archive) | No (OCR needed) |
+| 2022–2023 | Text | 1 | Not in the file; keys on the IITG archive (§3 table) | **Yes** |
+| 2024 | Text | CS-1, CS-2 | Not in the file; final keys on the IITG archive | **Yes** |
+| 2025 | Text | CS-1, CS-2 | Same files as the IITG archive (byte-identical sizes) | Pilot |
+
+**What this means for the track:**
+- After the pilot, the next papers that need **no OCR** are:
+  - 2022, 2023 and 2024, with keys from the IITG archive;
+  - 2014, 2016 and 2018, with keys in the same file. Each needs its key's page range split from
+    the paper's.
+- 2007–2011, 2015, 2019 and 2021 need OCR (track O). 2011 and CS-1 2017 also need a clean copy
+  from another source.
+- Fetching from Drive needs `drive.google.com` (and `drive.usercontent.google.com`) added to the
+  `gate` source's allowed hosts. Large files go through a "can't scan for viruses" confirmation
+  step.
 
 ## 4. Question shape
 
@@ -211,7 +249,8 @@ Sample checked: CS1 2026, a Word 2016 PDF of 46 pages.
 - Link rot as hosts move each year.
 - Math fidelity.
 - Whether shared GA questions across a session really are identical.
-- What the Drive folder contains.
+- ~~What the Drive folder contains.~~ Answered for CS (§3, 2026-10-03). Other papers are likely
+  similar, but unchecked.
 - Whether XL and XH keys follow XE's global numbering.
 
 ## 10. Plan
