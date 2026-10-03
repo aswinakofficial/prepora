@@ -4,9 +4,11 @@ Intake: every question a connector parses is stored first, `ready` or `held` wit
 question waits for a fix (Spec 9); it's never dropped.
 
 Re-running upgrades, never duplicates. An item is keyed by source, paper, edition and number. A
-re-parse with the same content keeps its review status (`in_review`, `published`, `rejected`) and
-only refreshes its version stamps and issues; changed content recomputes it, so an improved parse
-of a published question goes back through review.
+re-parse with the same content keeps its review status (`published`, `rejected`) and only
+refreshes its version stamps and issues; changed content recomputes it, so an improved parse of a
+published question goes back through review. An item still `in_review` is left exactly as it is:
+its batch holds that copy, and a changed parse waits (counted as `waiting`) until the batch is
+decided, when the next run picks it up.
 """
 import hashlib
 import json
@@ -27,8 +29,8 @@ _NOT_CONTENT = {
     "source_url",
     "source_document",
 }
-# Statuses a re-parse with unchanged content leaves alone: a person has (or is about to) decide.
-_DECIDED = ("in_review", "published", "rejected")
+# Statuses a re-parse with unchanged content leaves alone: a person decided.
+_DECIDED = ("published", "rejected")
 
 
 def content_hash(candidate: dict) -> str:
@@ -61,6 +63,7 @@ class RecordResult:
     inserted: int = 0
     changed: int = 0  # content changed since the last parse
     unchanged: int = 0
+    waiting: int = 0  # changed, but its old copy is still in review: applied once that's decided
     statuses: dict[str, int] = field(default_factory=dict)  # every recorded item's status after
 
 
@@ -75,20 +78,22 @@ class IntakeStore:
         try:
             with conn.cursor() as cur:
                 source_id = _source_id(cur, items[0].source)
+                previous = _previous(cur, source_id, items)
                 for item in items:
                     digest = content_hash(item.candidate)
-                    cur.execute(
-                        "SELECT content_hash FROM intake_items WHERE source_id = %s "
-                        "AND paper_key = %s AND edition = %s AND number = %s",
-                        (source_id, item.paper_key, item.edition, item.number),
-                    )
-                    previous = cur.fetchone()
-                    if previous is None:
+                    before = previous.get((item.paper_key, item.edition, item.number))
+                    if before is None:
                         result.inserted += 1
-                    elif previous[0] == digest:
+                    elif before[0] == digest:
                         result.unchanged += 1
                     else:
                         result.changed += 1
+                    if before is not None and before[1] == "in_review":
+                        # Its batch holds this copy; don't change it under the reviewer.
+                        if before[0] != digest:
+                            result.waiting += 1
+                        result.statuses["in_review"] = result.statuses.get("in_review", 0) + 1
+                        continue
                     cur.execute(
                         "INSERT INTO intake_items (source_id, paper_key, edition, number, "
                         "number_label, raw_artifact_sha256, candidate, content_hash, issues, "
@@ -162,6 +167,20 @@ class IntakeStore:
             conn.commit()
         finally:
             conn.close()
+
+
+def _previous(cur, source_id: str, items: list[IntakeItem]) -> dict[tuple, tuple[str, str]]:
+    """(content hash, status) of every item already recorded, one query per paper and edition."""
+    found: dict[tuple, tuple[str, str]] = {}
+    for paper_key, edition in {(item.paper_key, item.edition) for item in items}:
+        cur.execute(
+            "SELECT number, content_hash, status::text FROM intake_items WHERE source_id = %s "
+            "AND paper_key = %s AND edition = %s",
+            (source_id, paper_key, edition),
+        )
+        for number, digest, status in cur.fetchall():
+            found[(paper_key, edition, number)] = (digest, status)
+    return found
 
 
 def _source_id(cur, name: str) -> str:

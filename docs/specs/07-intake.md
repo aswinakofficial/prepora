@@ -45,11 +45,15 @@ and 9 (fixing held questions) build on it.
 2. **A re-parse upserts, it never duplicates.** `content_hash` is the SHA-256 of the candidate
    question's content (text, options, answer, marks, section, answer status), excluding
    provenance and version stamps. On conflict:
-   - **Same hash:** keep the current status (`in_review`, `published` or `rejected` stay as they
-     are), and refresh `parser_version`, `raw_artifact_sha256` and `issues`.
+   - **Same hash:** keep a decided status (`published`, `rejected`), and refresh
+     `parser_version`, `raw_artifact_sha256` and `issues`.
    - **Hash changed:** the status is recomputed (`ready` or `held`). An item that was `published`
      becomes `ready` again: an improved parse goes back through review, where the existing
      possible-duplicate flow offers "same question, use the new wording".
+   - **An item that is `in_review` isn't touched at all,** because its batch holds that copy.
+     Resetting it would leave a stale, still-approvable copy in the old batch. A changed parse
+     waits, counted as `waiting`, and the first run after the batch is decided picks it up. (This
+     was changed from the first draft during review.)
 3. **Status:** `ready | held | in_review | published | rejected`.
    - `superseded` (Spec 8) and `fixing` (Spec 9) are added by those specs, with `ALTER TYPE … ADD
      VALUE`.

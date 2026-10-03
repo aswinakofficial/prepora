@@ -60,7 +60,8 @@ class ImportReport:
         if self.recorded:
             r = self.recorded
             out.append(
-                f"  intake: {r.inserted} new, {r.changed} changed, {r.unchanged} unchanged; "
+                f"  intake: {r.inserted} new, {r.changed} changed ({r.waiting} waiting for "
+                f"review to finish), {r.unchanged} unchanged; "
                 + ", ".join(f"{n} {status}" for status, n in sorted(r.statuses.items()))
             )
         out += [f"  join gap: {gap}" for gap in self.join_gaps]
