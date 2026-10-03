@@ -122,6 +122,24 @@ def cmd_import_markdown(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
+def cmd_gate_import(args: argparse.Namespace) -> int:
+    """Imports GATE papers into review batches (docs/specs/05-gate-pilot.md); prints a report per
+    paper. Exits 1 if any paper didn't join completely or had invalid questions."""
+    from prepora_pipeline.connectors.gate.catalog import PAPERS, find_papers
+    from prepora_pipeline.connectors.gate.run import import_paper
+
+    papers = PAPERS if args.all_pilot else find_papers(year=args.year, sitting=args.sitting)
+    if not papers or not (args.all_pilot or args.year or args.sitting):
+        print("Choose papers with --year/--sitting, or --all-pilot.", file=sys.stderr)
+        return 1
+    ok = True
+    for paper in papers:
+        report = import_paper(paper)
+        print("\n".join(report.lines()))
+        ok = ok and not report.join_gaps and not report.invalid
+    return 0 if ok else 1
+
+
 def cmd_media_sync(_args: argparse.Namespace) -> int:
     """Uploads every image a published question uses that R2 doesn't have yet — the back-fill for
     images published before MEDIA_STORE=r2 was set, and the release check before images go live."""
@@ -201,6 +219,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Report question pairs whose wording is at least this similar (default: 0.85).",
     )
     dedupe_audit_parser.set_defaults(func=cmd_dedupe_audit)
+
+    gate_import_parser = subparsers.add_parser(
+        "gate-import", help="Import GATE papers into review batches (clean questions only)."
+    )
+    gate_import_parser.add_argument("--year", type=int)
+    gate_import_parser.add_argument("--sitting", help='e.g. "CS-1"')
+    gate_import_parser.add_argument(
+        "--all-pilot", action="store_true", help="The four pilot papers (2025-2026, CS-1/CS-2)."
+    )
+    gate_import_parser.set_defaults(func=cmd_gate_import)
 
     media_sync_parser = subparsers.add_parser(
         "media-sync", help="Upload every published image R2 doesn't have yet (MEDIA_STORE=r2)."

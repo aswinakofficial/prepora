@@ -300,3 +300,18 @@ subscripts, superscripts, figures and tables. The owner chose to **publish only 
   The two false-positive patterns found (option markers, two values spaced on one line) are tuned
   out. Lowering the bar or silencing true positives would publish wrong text, so this goes to the
   owner at the pilot run (#49).
+- **The importer (#48).** `gate-import` registers GATE (organization, exam type, exam) **before**
+  validating, because validation requires a registered exam. Clean questions go into one
+  `normalized-v1` review batch per paper; flagged ones are held back and listed. An incomplete join
+  writes nothing.
+  - Smoke run against the local database, 2026 CS-1: 65 parsed, 65 joined, 45 in the batch (69%),
+    20 held back, 0 invalid.
+- **Approval of `normalized-v1` batches** skips exam resolution and publishes each element's
+  `normalized` unchanged (`lib/normalized-batches.ts`). Holds and failures use the question's own
+  number. The generic "answer not in options" review check skips such elements: their answer is
+  structured, and their display answer ("4.24 to 4.26") isn't option text.
+- **No review-page badge.** Under the owner's decision, flagged questions never reach a batch, so
+  there's nothing for a "check the crop" badge to mark. It comes back with the crop path.
+- **An existing import cycle fixed.** `import prepora_pipeline.stages.validate` on its own used to
+  fail (validate → stable_id → dedupe → stable_id). `dedupe/check.py` now imports the module
+  rather than the name.
