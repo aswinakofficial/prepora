@@ -221,7 +221,8 @@ class TestPaper:
         questions = parse_paper(extract_pages(invented_paper(boxes={2: [(140, 290, 60, 40)]})))
         q4 = questions[3]
         assert q4.options == {"A": "", "B": "", "C": "", "D": ""}
-        assert q4.flags == ["figure"]
+        assert q4.flags == ["figure", "image_option"]
+        assert {i.detail for i in q4.issues} >= {"an option has no text"}
         [region] = q4.regions
         x0, top, x1, bottom = region.bbox
         assert region.page == 2
