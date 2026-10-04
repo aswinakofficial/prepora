@@ -540,6 +540,7 @@ function AdminReviewPage() {
             return (
               <div
                 key={item.id}
+                data-testid={`review-batch-${item.id}`}
                 className={`border rounded-2xl overflow-hidden transition-all ${
                   item.pendingDecisions > 0
                     ? "border-amber-900/60 bg-amber-950/10"

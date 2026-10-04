@@ -1,0 +1,59 @@
+name: PR acceptance
+
+# Enforces the testing working agreement (CLAUDE.md → Working agreements → Testing): every PR
+# records its acceptance results, and a PR that changes what users or admins see waits for the
+# owner to try it (`ui-change` needs `owner-verified`). Reads only the PR's own body and labels.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  acceptance:
+    name: Acceptance results recorded
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the PR body and labels
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+
+          body = os.environ.get("BODY") or ""
+          labels = set(json.loads(os.environ.get("LABELS") or "[]"))
+          problems = []
+
+          match = re.search(r"^## Acceptance results\s*$(.*?)(?=^## |\Z)", body, re.M | re.S)
+          if not match:
+              problems.append('Add an "## Acceptance results" section (see the PR template).')
+          else:
+              section = re.sub(r"<!--.*?-->", "", match.group(1), flags=re.S)
+              if re.search(r"^\s*- \[ \]", section, re.M):
+                  problems.append("Acceptance results has an unticked box.")
+              rows = [
+                  line for line in section.splitlines()
+                  if line.strip().startswith("|") and not re.match(r"^\|[\s#|:-]*\|?$", line.strip())
+                  and not line.strip().startswith("| # |")
+              ]
+              filled = [r for r in rows if len([c for c in r.split("|")[1:-1] if c.strip()]) >= 4]
+              na = re.search(r"^\s*N/A:\s*\S", section, re.M | re.I)
+              if not filled and not na:
+                  problems.append(
+                      'Acceptance results needs filled-in rows (step, expected, result, checked by), '
+                      'or a line "N/A: <why>" for a change with nothing to see in the UI.'
+                  )
+
+          if "ui-change" in labels and "owner-verified" not in labels:
+              problems.append(
+                  "This PR changes what users or admins see (`ui-change`): it waits for the owner "
+                  "to try it and add `owner-verified`."
+              )
+
+          for p in problems:
+              print(f"::error::{p}")
+          sys.exit(1 if problems else 0)
+          PY

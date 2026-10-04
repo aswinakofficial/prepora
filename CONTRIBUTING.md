@@ -236,14 +236,22 @@ and secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env`.
    # If you changed Python code:
    (cd apps/pipeline && venv/bin/ruff check . && venv/bin/pytest -q)
    (cd apps/scraper && venv/bin/ruff check . && venv/bin/pytest -q)
+
+   # The UI acceptance suite: real browser, real app, against your LOCAL database only
+   # (first time: pnpm exec playwright install chromium)
+   E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e
    ```
+
+   A change to something users or admins can see needs an e2e test in `tests/e2e/` for what it
+   does. A feature's spec lists the exact steps to test.
 
    `pnpm exec biome check --write .` fixes formatting for you.
 4. **Commit** using [Conventional Commits](https://www.conventionalcommits.org):
    `feat(web): …`, `fix(api): …`, `docs: …`, `test: …`, `chore: …`. Explain *why* in the body when
    it isn't obvious.
-5. **Open a pull request** against `main`. Describe what changed, why, and how you tested it
-   (screenshots help for UI changes). Keep PRs focused — several small PRs review faster than one
+5. **Open a pull request** against `main`. Describe what changed and why, and fill in the
+   template's **Acceptance results**: each step you checked, its result, and the test or screenshot
+   that shows it. CI checks that section. Keep PRs focused — several small PRs review faster than one
    large one. Your branch needs to be up to date with `main` before it can merge.
 
 Changed the database schema? Run `pnpm db:generate`, commit the generated migration in `drizzle/`,
