@@ -202,7 +202,10 @@ class TestImport:
 
 @pytest.mark.skipif(not __import__("os").environ.get("DATABASE_URL"), reason="needs DATABASE_URL")
 def test_import_registers_gate_writes_intake_and_a_real_review_batch():
+    from prepora_pipeline.core import sync_sources_from_yaml
     from prepora_pipeline.core.db import get_db_connection
+
+    sync_sources_from_yaml()  # as a real run requires (`sync-sources`): registers `gate`
 
     files = {PAPER.qp_url: invented_paper(), PAPER.key_url: key_pdf(KEY_ROWS)}
     batch_ids = []
