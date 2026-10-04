@@ -47,6 +47,10 @@ function normalized(u: string, number: number, extra: Record<string, unknown>) {
 }
 
 test.describe("review queue to published question", () => {
+  // A full admin flow — sign in, several page loads, publishing through the pipeline service — on
+  // a dev server that compiles each page on first visit: more than the default 30s.
+  test.setTimeout(120_000);
+
   test("approving a batch publishes its questions, which grade and show marks", async ({
     page,
   }) => {
