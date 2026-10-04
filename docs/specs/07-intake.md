@@ -20,6 +20,19 @@ This spec makes every parsed question a stored **intake item**, either `ready` o
 machine-readable issue codes, before anything reaches the review queue. Specs 8 (paper editions)
 and 9 (fixing held questions) build on it.
 
+## Deliverable and UI acceptance
+
+When this is done, the owner can see every imported question in the admin, including the ones not
+yet good enough to publish, and why they're held. Checked by `tests/e2e/intake.spec.ts`.
+
+| # | Step | Expected |
+|---|---|---|
+| 1 | Open Admin → Held questions (in the menu under Review) | One row per imported paper, with counts for ready, in review, published, held and rejected, and the held count per reason |
+| 2 | Click "Show held questions" on a paper | Each held question shows its number, the start of its text, and its reason ("Figure or image: something is drawn in the question") |
+| 3 | Approve that paper's batch in Admin → Review, then reopen Held questions | Its questions moved from "In review" to "Published"; held ones stay held |
+| 4 | Reject another paper's batch, then reopen Held questions | Its questions show as "Rejected"; held ones stay held |
+| 5 | Re-run the import for an unchanged paper (`gate-import`) | It reports 0 new and every question unchanged, and writes no review batch (checked by the pipeline's tests) |
+
 ## Scope
 
 **In scope:**
