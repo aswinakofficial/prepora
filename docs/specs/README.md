@@ -25,7 +25,7 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 | 13 | [Math recovery from the PDF](13-math-recovery.md) | #78 | 12 | Draft |
 | 14 | [Figures and image options from the PDF](14-figures.md) | #79 | 4 (**owner's R2 setup**), 12 | Draft |
 | 15 | [AI transcription for what the PDF can't give](15-ai-transcription.md) | #80 | 12–14 | Draft |
-| 8 | [Paper editions: several sources for one paper](08-paper-editions.md) | #70 | 7, 13 | Draft |
+| 8 | [Paper assembly: completing one paper from several sources](08-paper-editions.md) | #70 | 7, 13 | Draft |
 | 10 | [Explanations: data model and display](10-explanations.md) | #72 | 7 | Draft |
 | 11 | [AI explanations: source first, AI otherwise](11-ai-explanations.md) | #73 | 10 | Draft |
 | 9 | [Fixing held questions](09-remediation.md) | #71 | — | Superseded by 13–15 |
@@ -51,7 +51,8 @@ The project has one maintainer for now, so the plan was narrowed (2026-10-02):
 - **One exam at a time: finish GATE first (owner, 2026-10-04).** MS Learn is finished. GATE is
   finished when its questions read like the printed paper: math rendered (Spec 12), math rebuilt
   from the PDF (Spec 13), figures shown (Spec 14), and AI transcription for the rest (Spec 15).
-  Then more GATE papers and sources (Spec 8). Other exams start after that, following the
+  Then more GATE papers, each **assembled from several sources** so one source's gaps (a scan, a
+  missing key, a corrupt file) are filled by another (Spec 8). Other exams start after that, following the
   definition of done in [docs/sources](../sources/README.md#definition-of-done-for-an-exam).
 - **The quality pipeline (Specs 7–11) comes next (owner, 2026-10-03).** One paper exists in
   several sources at different quality (GATE: clean IITG PDFs, the Drive archive's scans and

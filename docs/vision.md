@@ -21,8 +21,8 @@ This page is the "why" and the "where next". The order work happens in is
 These decide the hard trade-offs. A change that breaks one of them needs a very good reason.
 
 1. **Sourced, reviewed, always labelled.** Every question traces back to its origin, and every
-   answer says where it came from: official key, reviewer, or AI-suggested and confirmed by a
-   person. Explanations come from the source when it has one; otherwise an AI explanation is
+   answer says where it came from: an official key, two independent sources that agree (labelled
+   as not official), a reviewer, or AI-suggested and confirmed by a person. Explanations come from the source when it has one; otherwise an AI explanation is
    checked against the official answer, labelled, and sampled for review
    ([ADR-015](adr/015-ai-assistance.md)). Nothing is published silently, and missing data is
    never filled in.

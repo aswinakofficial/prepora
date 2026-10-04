@@ -70,3 +70,18 @@ The source research ([docs/sources](../sources/README.md)) found:
 - **Moderation work increases.** Only official or consensus claims resolve automatically.
 - **Back-fill.** Existing MS Learn questions each get one attestation and one `official_sample_key`
   claim.
+
+## Amendment (2026-10-04): completing a paper from several sources
+
+Decided by the owner while planning "Finish GATE" ([Spec 8](../specs/08-paper-editions.md)).
+
+- **Papers are assembled field by field.** Each question's text, options, figure, answer and
+  explanation come from the best source that has them. Every field records where it came from, so
+  a source's gaps (a scanned paper, a missing key, a corrupt file) are filled from another source
+  of the same paper.
+- **Answers without an official key** are published automatically when **at least two independent
+  non-official sources agree**. They're labelled "Answer from 2 independent sources, not an
+  official key". One source, or sources that disagree, means the review queue. An official key
+  always wins when one exists, and a disagreement with it is logged.
+- **The licence rule is unchanged.** A `reference_only` source can confirm an answer and count
+  towards agreement, but its text and explanations are never displayed.

@@ -382,7 +382,9 @@ step.
 - **Placements add a second path to a paper.** Listing queries must go through placements,
   centralised in `catalog-questions.ts`.
 - **Answer conflicts** are moderation work. Only official or consensus claims resolve
-  automatically, and third-party-only answers are shown as unverified.
+  automatically. Answers from two or more agreeing independent sources publish labelled as not
+  official ([ADR-014](../adr/014-multi-source-provenance.md), 2026-10-04 amendment); a single
+  source's answer waits for review.
 - **Indic full-text search** is weak in core Postgres. Trigram matching is the baseline until
   embeddings.
 - **Moving to canonical question URLs** needs 301s for every indexed legacy URL. Generate them
