@@ -20,12 +20,18 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 | 3 | [S4-min · Marks, sections, answer status, numeric answers](03-paper-structure-min.md) | #45 | 1 | **Done** (#56, migrated) |
 | 4 | [M · Image storage on R2](04-media-storage.md) | #46 | — | Code done — **needs the owner** (Cloudflare setup, then the live check) |
 | 5 | [GATE CS pilot](05-gate-pilot.md) | #27, #47, #48, #49 | 2, 3, 4 | Ready |
-| 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | Ready |
-| 8 | [Paper editions: several sources for one paper](08-paper-editions.md) | #70 | 7 | Draft |
-| 9 | [Fixing held questions](09-remediation.md) | #71 | 7, 8 (4 for crops) | Draft |
+| 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | Ready (PR #75) |
+| 12 | [Math display: Markdown and LaTeX on every question surface](12-math-display.md) | #77 | 7 | Ready |
+| 13 | [Math recovery from the PDF](13-math-recovery.md) | #78 | 12 | Draft |
+| 14 | [Figures and image options from the PDF](14-figures.md) | #79 | 4 (**owner's R2 setup**), 12 | Draft |
+| 15 | [AI transcription for what the PDF can't give](15-ai-transcription.md) | #80 | 12–14 | Draft |
+| 8 | [Paper assembly: completing one paper from several sources](08-paper-editions.md) | #70 | 7, 13 | Draft |
 | 10 | [Explanations: data model and display](10-explanations.md) | #72 | 7 | Draft |
 | 11 | [AI explanations: source first, AI otherwise](11-ai-explanations.md) | #73 | 10 | Draft |
-| 6 | [S1 · Exam hierarchies](06-hierarchy.md) | #35 | 5 | Draft — **after the quality pipeline** |
+| 9 | [Fixing held questions](09-remediation.md) | #71 | — | Superseded by 13–15 |
+| 6 | [S1 · Exam hierarchies](06-hierarchy.md) | #35 | 5 | Draft — **after GATE is finished** |
+
+Specs keep their numbers once written; the table's order is the build order.
 
 ### Why this order (and not the one in the knowledge-index doc)
 
@@ -42,6 +48,12 @@ The project has one maintainer for now, so the plan was narrowed (2026-10-02):
 - **Deferred to a later milestone:** full multi-source attestations (S3 — a single answer
   `provenance` column covers one-source-per-exam), languages (S5), universities (S6), faceted search
   (S7), OCR (O), and the optional AI step. They return when a track needs them.
+- **One exam at a time: finish GATE first (owner, 2026-10-04).** MS Learn is finished. GATE is
+  finished when its questions read like the printed paper: math rendered (Spec 12), math rebuilt
+  from the PDF (Spec 13), figures shown (Spec 14), and AI transcription for the rest (Spec 15).
+  Then more GATE papers, each **assembled from several sources** so one source's gaps (a scan, a
+  missing key, a corrupt file) are filled by another (Spec 8). Other exams start after that, following the
+  definition of done in [docs/sources](../sources/README.md#definition-of-done-for-an-exam).
 - **The quality pipeline (Specs 7–11) comes next (owner, 2026-10-03).** One paper exists in
   several sources at different quality (GATE: clean IITG PDFs, the Drive archive's scans and
   embedded keys). So held questions are kept and fixed rather than lost, the cleanest source wins
