@@ -5,7 +5,8 @@ connectors that run in the pipeline rather than the scraper.
 
 A batch whose metadata says `format: "normalized-v1"` carries, on every element, the complete
 NormalizedQuestion (`normalized`), which approval publishes as it is
-(docs/specs/05-gate-pilot.md).
+(docs/specs/05-gate-pilot.md), and the intake item it came from (`intakeItemId`,
+docs/specs/07-intake.md), which approval marks as published.
 """
 from typing import Any
 
@@ -30,21 +31,5 @@ def create_review_batch(
             batch_id = cur.fetchone()[0]
         conn.commit()
         return batch_id
-    finally:
-        conn.close()
-
-
-def pending_batch_for(source_url: str) -> str | None:
-    """The id of a batch from this source URL still waiting in the review queue, if any."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM scraped_questions WHERE source_url = %s AND status = 'pending' "
-                "ORDER BY created_at DESC LIMIT 1",
-                (source_url,),
-            )
-            row = cur.fetchone()
-            return row[0] if row else None
     finally:
         conn.close()

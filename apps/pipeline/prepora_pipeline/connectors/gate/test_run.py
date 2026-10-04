@@ -2,10 +2,13 @@
 nothing is fetched, nothing real is committed."""
 import pytest
 
+from prepora_pipeline.core.intake import RecordResult, content_hash
+from prepora_pipeline.core.quality import CropRegion
+
 from .catalog import PaperSpec
 from .key_parser import GateKeyRow
 from .normalizer import GateNormalizeError, to_normalized
-from .paper_parser import CropRegion, GateQuestion
+from .paper_parser import GateQuestion
 from .run import import_paper
 from .test_parser import invented_paper, key_pdf
 
@@ -19,7 +22,7 @@ KEY_ROWS = [
 ]
 
 
-def _question(number=11, options=None, flags=None):
+def _question(number=11, options=None, issues=None):
     return GateQuestion(
         number=number,
         label=f"Q.{number}",
@@ -28,7 +31,7 @@ def _question(number=11, options=None, flags=None):
         marks_heading=1,
         page=0,
         regions=[CropRegion(0, (0, 0, 1, 1))],
-        flags=flags or [],
+        issues=issues or [],
     )
 
 
@@ -91,18 +94,63 @@ class _Store:
         return RawArtifact.model_construct(sha256=sha, **kw)
 
 
-def _run(key_rows, boxes=None, pending=None):
+class FakeIntake:
+    """IntakeStore's behaviour, in memory: same content keeps a decided status, changed content
+    is recomputed (core/intake.py; the real store is tested against the database below)."""
+
+    def __init__(self):
+        self.rows: dict[tuple, dict] = {}
+
+    def record(self, items):
+        result = RecordResult()
+        for item in items:
+            key = (item.paper_key, item.edition, item.number)
+            digest = content_hash(item.candidate)
+            row = self.rows.get(key)
+            if row is None:
+                result.inserted += 1
+                row = self.rows[key] = {"id": f"i{item.number}", "batch": None}
+            elif row["hash"] == digest:
+                result.unchanged += 1
+            else:
+                result.changed += 1
+            if row.get("status") == "in_review":  # its batch holds this copy
+                result.waiting += row["hash"] != digest
+                result.statuses["in_review"] = result.statuses.get("in_review", 0) + 1
+                continue
+            keep = row.get("hash") == digest and row.get("status") in ("published", "rejected")
+            row.update(hash=digest, candidate=item.candidate, issues=item.issues)
+            if not keep:
+                row.update(status=item.status, batch=None)
+            result.statuses[row["status"]] = result.statuses.get(row["status"], 0) + 1
+        return result
+
+    def ready_for_batch(self, source, paper_key, edition):
+        return [
+            (row["id"], row["candidate"])
+            for (p, e, _), row in sorted(self.rows.items())
+            if (p, e) == (paper_key, edition) and row["status"] == "ready" and not row["batch"]
+        ]
+
+    def mark_in_review(self, ids, batch_id):
+        for row in self.rows.values():
+            if row["id"] in ids:
+                row.update(status="in_review", batch=batch_id)
+
+
+def _run(key_rows, boxes=None, intake=None):
     files = {PAPER.qp_url: invented_paper(boxes=boxes), PAPER.key_url: key_pdf(key_rows)}
     batches = []
+    intake = intake or FakeIntake()
     report = import_paper(
         PAPER,
         fetch=files.__getitem__,
         store=_Store(),
-        write_batch=lambda *batch: batches.append(batch) or "b1",
-        find_pending=lambda url: pending,
+        write_batch=lambda *batch: batches.append(batch) or f"b{len(batches)}",
+        intake=intake,
         register=False,
     )
-    return report, batches
+    return report, batches, intake
 
 
 class TestImport:
@@ -111,76 +159,97 @@ class TestImport:
         # Registration is a database write (tested with the database below); here, pretend it ran.
         monkeypatch.setattr("prepora_pipeline.stages.validate._exam_is_registered", lambda _: True)
 
-    def test_clean_questions_go_into_one_normalized_batch_and_flagged_ones_are_held_back(self):
-        report, batches = _run(KEY_ROWS, boxes={2: [(140, 290, 60, 40)]})
-        assert (report.parsed, report.joined, report.in_batch) == (4, 4, 3)
-        assert report.held_back == [(4, ["figure"])]
-        assert report.invalid == [] and report.batch_id == "b1"
+    def test_every_question_goes_to_intake_and_only_ready_ones_to_review(self):
+        report, batches, intake = _run(KEY_ROWS, boxes={2: [(140, 290, 60, 40)]})
+        assert (report.parsed, report.joined, report.clean, report.in_batch) == (4, 4, 3, 3)
+        assert report.held == [(4, ["figure", "image_option"])]
+        assert report.recorded.inserted == 4 and report.batch_id == "b1"
+        held = intake.rows[("gate/2099/cs/CS-1", "iitg", 4)]
+        assert held["status"] == "held"
+        assert {i.code for i in held["issues"]} == {"figure", "image_option"}
 
         [(url, elements, metadata)] = batches
         assert url == PAPER.qp_url
         assert metadata["format"] == "normalized-v1"
         assert (metadata["exam"], metadata["paper"], metadata["year"]) == ("GATE", "CS-1", 2099)
         assert [e["normalized"]["number"] for e in elements] == [1, 2, 3]
+        assert [e["intakeItemId"] for e in elements] == ["i1", "i2", "i3"]
         assert [e["answer"] for e in elements] == ["B", "A | C", "2 to 2"]
-        assert elements[2]["options"] == [] and elements[2]["normalized"]["answer"]["ranges"] == [
-            [2.0, 2.0]
-        ]
-        assert all(not e["normalized"]["needs_review"] for e in elements)
+        assert elements[2]["options"] == []
+        assert elements[2]["normalized"]["answer"]["ranges"] == [[2.0, 2.0]]
         assert "clean" in report.lines()[0]
 
-    def test_a_paper_already_waiting_in_review_isnt_queued_twice(self):
-        report, batches = _run(KEY_ROWS, pending="older-batch")
+    def test_a_second_run_records_nothing_new_and_writes_no_batch(self):
+        _, _, intake = _run(KEY_ROWS)
+        report, batches, _ = _run(KEY_ROWS, intake=intake)
         assert batches == [] and report.batch_id is None
-        assert report.already_pending == "older-batch"
-        assert "still waiting in review" in "\n".join(report.lines())
+        assert (report.recorded.inserted, report.recorded.unchanged) == (0, 4)
+        assert report.recorded.statuses == {"in_review": 3, "held": 1}
+        assert any("no new review batch" in line for line in report.lines())
 
     def test_an_incomplete_join_writes_nothing(self):
-        report, batches = _run(KEY_ROWS[:3])  # the key has no row for Q.4
-        assert batches == [] and report.batch_id is None
+        report, batches, intake = _run(KEY_ROWS[:3])  # the key has no row for Q.4
+        assert batches == [] and report.batch_id is None and intake.rows == {}
         assert report.join_gaps == ["Q.4 has no key row"]
 
-    def test_a_question_whose_type_disagrees_with_its_key_is_listed_invalid(self):
+    def test_a_question_whose_type_disagrees_with_its_key_is_held_with_the_reason(self):
         rows = [*KEY_ROWS[:2], ("3", "3", "MCQ", "CS-1", "A", "2"), KEY_ROWS[3]]
-        report, batches = _run(rows)
-        assert [n for n, _ in report.invalid] == [3]
+        report, batches, intake = _run(rows)
+        assert (3, ["type_mismatch"]) in report.held
+        assert intake.rows[("gate/2099/cs/CS-1", "iitg", 3)]["candidate"]["key"]["qtype"] == "MCQ"
         assert [e["normalized"]["number"] for e in batches[0][1]] == [1, 2]
 
 
 @pytest.mark.skipif(not __import__("os").environ.get("DATABASE_URL"), reason="needs DATABASE_URL")
-def test_import_registers_gate_and_writes_a_real_review_batch():
+def test_import_registers_gate_writes_intake_and_a_real_review_batch():
+    from prepora_pipeline.core import sync_sources_from_yaml
     from prepora_pipeline.core.db import get_db_connection
+
+    sync_sources_from_yaml()  # as a real run requires (`sync-sources`): registers `gate`
 
     files = {PAPER.qp_url: invented_paper(), PAPER.key_url: key_pdf(KEY_ROWS)}
     batch_ids = []
-    try:
-        first = import_paper(PAPER, fetch=files.__getitem__, store=_Store())
-        batch_ids.append(first.batch_id)
-        # Registering again is idempotent, and the paper isn't queued a second time.
-        again = import_paper(PAPER, fetch=files.__getitem__, store=_Store())
-        assert again.batch_id is None and again.already_pending == first.batch_id
+
+    def query(sql, params=()):
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT e.status, o.slug, t.slug FROM exams e "
-                    "JOIN organizations o ON o.id = e.organization_id "
-                    "JOIN exam_types t ON t.id = e.exam_type_id WHERE e.slug = 'gate'"
-                )
-                assert cur.fetchall() == [("published", "ncb-gate", "competitive")]
-                cur.execute(
-                    "SELECT parsed_data->'metadata'->>'format', "
-                    "jsonb_array_length(parsed_data->'extractedElements'), status "
-                    "FROM scraped_questions WHERE id = %s",
-                    (batch_ids[0],),
-                )
-                assert cur.fetchone() == ("normalized-v1", 3, "pending")  # Q.4 is held back
+                cur.execute(sql, params)
+                return cur.fetchall()
         finally:
             conn.close()
+
+    try:
+        first = import_paper(PAPER, fetch=files.__getitem__, store=_Store())
+        batch_ids.append(first.batch_id)
+        # Registering again is idempotent, and nothing is recorded or queued a second time.
+        again = import_paper(PAPER, fetch=files.__getitem__, store=_Store())
+        assert again.batch_id is None and again.recorded.unchanged == 4
+        assert query(
+            "SELECT e.status, o.slug, t.slug FROM exams e "
+            "JOIN organizations o ON o.id = e.organization_id "
+            "JOIN exam_types t ON t.id = e.exam_type_id WHERE e.slug = 'gate'"
+        ) == [("published", "ncb-gate", "competitive")]
+        assert query(
+            "SELECT parsed_data->'metadata'->>'format', "
+            "jsonb_array_length(parsed_data->'extractedElements'), status "
+            "FROM scraped_questions WHERE id = %s",
+            (first.batch_id,),
+        ) == [("normalized-v1", 3, "pending")]  # Q.4 (image options) is held
+        assert query(
+            "SELECT number, status::text, review_batch_id IS NOT NULL, issues->0->>'code' "
+            "FROM intake_items WHERE paper_key = 'gate/2099/cs/CS-1' ORDER BY number"
+        ) == [
+            (1, "in_review", True, None),
+            (2, "in_review", True, None),
+            (3, "in_review", True, None),
+            (4, "held", False, "image_option"),
+        ]
     finally:
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
+                cur.execute("DELETE FROM intake_items WHERE paper_key = 'gate/2099/cs/CS-1'")
                 cur.execute("DELETE FROM scraped_questions WHERE id = ANY(%s)", (batch_ids,))
             conn.commit()
         finally:
