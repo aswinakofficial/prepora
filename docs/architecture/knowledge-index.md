@@ -200,8 +200,9 @@ questions              + explanationProvenance
 - **The remediation ladder** (Spec 9) gives a held item the cheapest fix that clears its issues:
   1. a better edition;
   2. a page crop;
-  3. OCR;
-  4. AI transcription, **always confirmed by a reviewer**;
+  3. math rebuilt from the PDF's glyph positions, and figures cut out of the page;
+  4. AI transcription, **auto-checked against the PDF's own words and numbers** (ADR-015,
+     2026-10-04 amendment);
   5. a reviewer edit.
 
   Each fix is a revision, and a resolver writes the chosen one to `questions`.
@@ -289,8 +290,9 @@ the deployed site. It produces:
   used only when the question's own source has none. Auto-published, labelled, when the gates in
   §4a pass; otherwise reviewed.
 - **`ai_suggested` answer claims:** always confirmed by a person, never the answer on their own.
-- **`ai_transcribed` question text** (a revision with origin `ai_transcribed`): always confirmed by
-  a person.
+- **`ai_transcribed` question text** (a revision with origin `ai_transcribed`): only for what can't
+  be rebuilt from the PDF. Auto-published when it matches the PDF's own words and numbers and a
+  second pass agrees; otherwise reviewed.
 - **AI topic tags.**
 
 Every AI output keeps a badge on the site, and its model and prompt version are recorded.

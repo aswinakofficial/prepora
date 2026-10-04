@@ -165,8 +165,9 @@ and how to measure "a good predicted paper".
 - Every answer shows its provenance. When sources disagree, the disagreement goes to a person to
   resolve, never to whichever source was collected last.
 - Community contributions (the Contribute flow) and "report an error in this question".
-- AI assistance stays optional and labelled. A person confirms AI answers and transcriptions before
-  they're published. AI explanations, used only when the source has none, are published only after
+- AI assistance stays optional and labelled. A person confirms AI answers before they're published.
+  AI transcriptions, used only where the PDF can't give the text, are checked automatically against
+  the PDF's own words and numbers, and sampled for review. AI explanations, used only when the source has none, are published only after
   automatic checks against the official answer, and a sample is reviewed by a person.
 
 ---

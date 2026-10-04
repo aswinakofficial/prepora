@@ -4,6 +4,14 @@
 **Depends on:** Spec 7
 **Design:** [knowledge-index §4a](../architecture/knowledge-index.md), and §4 (attestations)
 
+## Deliverable and UI acceptance
+| # | Step | Expected |
+|---|---|---|
+| 1 | Import GATE CS 2022, 2023 and 2024 (official site) and 2014, 2016 and 2018 (Drive) | Admin → Held questions lists every paper, each with its edition |
+| 2 | Open a question that appears in two sources | The question page says "Seen in 2 sources" |
+| 3 | Compare a paper whose editions differ in quality | Each question's text comes from the cleaner edition; the other edition's items show as superseded |
+| 4 | Open `docs/sources/reports/` in the repo | One committed report per paper (counts only), which CI compares on re-runs |
+
 ## Scope (to be detailed)
 - **Editions in the catalog.** The GATE catalog becomes a list of *editions* per paper, each with a
   source, URLs, and a format profile:

@@ -5,6 +5,14 @@
 **Design:** [knowledge-index §4a](../architecture/knowledge-index.md), and
 [ADR-015's amendment](../adr/015-ai-assistance.md)
 
+## Deliverable and UI acceptance
+| # | Step | Expected |
+|---|---|---|
+| 1 | Reveal the answer to an MS Learn question | Its explanation shows, labelled "Official explanation" |
+| 2 | Reveal the answer to a question whose explanation was written by a reviewer | It shows, labelled "Reviewer explanation" |
+| 3 | Click "Report an error" under an explanation, and submit | The report appears in Admin with the question linked |
+| 4 | Open Practice (Learn mode) | Explanations show the same labels |
+
 ## Scope (to be detailed)
 - **New table `question_explanations`**: question, kind (`official | licensed_source | contributor
   | reviewer | ai_generated`), body, status (`pending | published | rejected | superseded`),
