@@ -16,9 +16,9 @@ import {
   questions,
   subjects,
   topics,
-  users,
 } from "@prepora/db/schema";
 import { eq } from "drizzle-orm";
+import { signInAsAdmin } from "./helpers/admin";
 
 // docs/roadmap/engineering-roadmap.md item 24's E2E requirement: "empty-state and seeded-state
 // coverage per page." Each test seeds real rows directly (mirroring tests/e2e/admin-pipeline.spec.ts
@@ -238,8 +238,14 @@ test.describe("question detail page — real data, anonymous reveal", () => {
 
       // docs/roadmap/engineering-roadmap.md item 25: submitAnswer is public now, so an anonymous
       // visitor can reveal the answer directly — no sign-in gate.
-      await page.getByText("Correct answer").click();
-      await page.getByRole("button", { name: /reveal answer/i }).click();
+      // A click before the page hydrates is lost (the option stays unselected and the reveal
+      // button disabled), so select until the button is enabled.
+      const reveal = page.getByRole("button", { name: /reveal answer/i });
+      await expect(async () => {
+        await page.getByText("Correct answer").click();
+        await expect(reveal).toBeEnabled({ timeout: 1000 });
+      }).toPass({ timeout: 15_000 });
+      await reveal.click();
       await expect(page.getByText(/^Correct/)).toBeVisible({ timeout: 10_000 });
     } finally {
       // docs/roadmap/engineering-roadmap.md item 25: revealing an answer now writes a real
@@ -303,24 +309,12 @@ test.describe("practice — honest empty state for an exam with no published que
 });
 
 test.describe("admin contributions — real submit and real admin review", () => {
-  // Same admin-auth convention as tests/e2e/admin-pipeline.spec.ts: ADMIN_USERS must include this
-  // email when the dev server starts (export it alongside your other env vars before running
-  // `pnpm test:e2e`), since Better Auth's session has no role field to check instead.
-  const E2E_ADMIN_EMAIL = "e2e-admin-contributions@example.com";
-
   test("a submitted contribution appears in the admin queue and can be approved", async ({
     page,
-    context,
   }) => {
     const db = getDb();
     const marker = randomUUID().slice(0, 8);
-
-    await db.delete(users).where(eq(users.email, E2E_ADMIN_EMAIL));
-    const signUpRes = await context.request.post("/api/auth/sign-up/email", {
-      data: { name: "E2E Admin", email: E2E_ADMIN_EMAIL, password: "e2e-test-password-123!" },
-    });
-    expect(signUpRes.ok()).toBe(true);
-    const { user } = await signUpRes.json();
+    await signInAsAdmin(page); // the e2e admin (tests/e2e/helpers/admin.ts)
 
     const title = `E2E Contribution ${marker}`;
 
@@ -369,7 +363,6 @@ test.describe("admin contributions — real submit and real admin review", () =>
       await expect(page.getByText("APPROVED").first()).toBeVisible();
     } finally {
       await db.delete(contributions).where(eq(contributions.examSlug, `E2E Authority ${marker}`));
-      await db.delete(users).where(eq(users.id, user.id));
     }
   });
 });

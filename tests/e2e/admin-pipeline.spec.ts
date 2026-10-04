@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { getDb } from "@prepora/db";
-import { pipelineJobStages, pipelineJobs, sources, users } from "@prepora/db/schema";
+import { pipelineJobStages, pipelineJobs, sources } from "@prepora/db/schema";
 import { eq } from "drizzle-orm";
+import { signInAsAdmin } from "./helpers/admin";
 
 // docs/roadmap/engineering-roadmap.md item 21's E2E requirement: "trigger a job against a fixture
 // source and watch it through to completion in the UI." Triggering a *real* crawl here would mean
@@ -16,37 +17,16 @@ import { eq } from "drizzle-orm";
 // counts and a degraded source correctly — exercising the real DB -> oRPC -> React Query -> DOM
 // path end to end, which is exactly what "watch it through to completion in the UI" is checking.
 //
-// Admin auth note: @prepora/auth's isAdminUser() checks user.role === "admin" first, but Better
-// Auth doesn't know about the users.role column (no additionalFields config exposes it on the
-// session), so that check is currently unreachable in practice — the only mechanism that actually
-// grants admin today is the ADMIN_USERS email allowlist. This test therefore requires
-// ADMIN_USERS to include E2E_ADMIN_EMAIL below when the dev server starts (export it alongside
-// your other env vars before running `pnpm test:e2e`) rather than relying on role='admin'.
-const E2E_ADMIN_EMAIL = "e2e-admin@example.com";
-
+// Admin access comes from the ADMIN_USERS allowlist, which playwright.config.ts sets to the e2e
+// admin for its own test web app (tests/e2e/helpers/admin.ts).
 test.describe("admin pipeline / job inspection and source health", () => {
   test("a completed job renders with correct per-stage counts, and a source with recent failures shows as degraded", async ({
     page,
-    context,
   }) => {
     const db = getDb();
     const unique = randomUUID().slice(0, 8);
 
-    // A leftover user from a previous crashed run would make sign-up fail with "already exists" —
-    // pre-clean defensively, matching the fixture convention used throughout this repo's own
-    // test suites (create, use, always clean up; never assume a clean slate).
-    await db.delete(users).where(eq(users.email, E2E_ADMIN_EMAIL));
-
-    // Real signup through Better Auth's own email/password endpoint (enabled server-side; the UI
-    // only exposes Google sign-in, but the endpoint is real) — this sets a real, correctly signed
-    // session cookie in this browser context, rather than hand-rolling one. Admin access comes
-    // from ADMIN_USERS (see the module comment above), not from a role column this test would
-    // otherwise need to set.
-    const signUpRes = await context.request.post("/api/auth/sign-up/email", {
-      data: { name: "E2E Admin", email: E2E_ADMIN_EMAIL, password: "e2e-test-password-123!" },
-    });
-    expect(signUpRes.ok()).toBe(true);
-    const { user } = await signUpRes.json();
+    await signInAsAdmin(page);
 
     const sourceId = `e2e-source-${unique}`;
     await db.insert(sources).values({
@@ -96,7 +76,6 @@ test.describe("admin pipeline / job inspection and source health", () => {
       await db.delete(pipelineJobStages).where(eq(pipelineJobStages.jobId, job.id));
       await db.delete(pipelineJobs).where(eq(pipelineJobs.id, job.id));
       await db.delete(sources).where(eq(sources.name, sourceId));
-      await db.delete(users).where(eq(users.id, user.id));
     }
   });
 });

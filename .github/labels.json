@@ -2,7 +2,7 @@
   {
     "name": "good first issue",
     "color": "7057ff",
-    "description": "Small, well-described, little context needed \u2014 a great first contribution"
+    "description": "Small, well-described, little context needed — a great first contribution"
   },
   {
     "name": "help wanted",
@@ -197,12 +197,12 @@
   {
     "name": "status: triage",
     "color": "ededed",
-    "description": "New \u2014 a maintainer will review and label it"
+    "description": "New — a maintainer will review and label it"
   },
   {
     "name": "status: needs design",
     "color": "e99695",
-    "description": "Approach not settled yet \u2014 discuss before starting work"
+    "description": "Approach not settled yet — discuss before starting work"
   },
   {
     "name": "status: maintainer",
@@ -218,5 +218,15 @@
     "name": "epic",
     "color": "5319e7",
     "description": "Tracks a larger piece of work split into smaller issues"
+  },
+  {
+    "name": "ui-change",
+    "color": "5319e7",
+    "description": "Changes what users or admins see; needs the owner's UI check (owner-verified) before merging"
+  },
+  {
+    "name": "owner-verified",
+    "color": "0e8a16",
+    "description": "The owner tried this PR in the UI and confirmed it works"
   }
 ]

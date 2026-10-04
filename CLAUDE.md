@@ -57,6 +57,9 @@ These apply to every change, whichever model or person makes it.
   dependencies are merged; don't start a spec marked **Draft**.
 - Implement what the spec says. If the spec is wrong or silent on a real decision, stop and ask the
   owner — don't invent the design. Record the answer in the spec in the same PR.
+- **Deliverable first.** Before writing code, the spec has a "Deliverable and UI acceptance" section:
+  what the owner will be able to see or do when it's done, as numbered steps in the UI, each with
+  its expected result. A spec without one isn't ready to build.
 - Keep scope to the spec's issue(s). Notice something else? Open (or suggest) a separate issue.
 
 ## Issue workflow (the board moves itself)
@@ -67,11 +70,17 @@ These apply to every change, whichever model or person makes it.
 3. **PR:** the description says `Closes #N` for every issue it finishes (this moves cards to
    *In review*), summarises what and why, and lists how it was tested. End PR bodies with the
    attribution line from the session's instructions.
-4. **Review, then merge — the implementing session does both, without waiting for the owner:**
+4. **Review, test, then merge.** The implementing session does all three. It waits for the owner
+   only for a `ui-change` PR's sign-off and for production migrations (below).
    - Run a code review of the PR's diff before merging (the `/code-review` skill at `high`, or an
      equivalent independent review pass). Fix every real finding, re-run the checks, and add a
      short "Review" section to the PR description (what was checked, what was fixed, anything
      deliberately left).
+   - Fill in the PR's **Acceptance results** (see Testing below). CI fails a PR without them.
+   - **`ui-change` PRs wait for the owner.** If the PR changes what users or admins see, label it
+     `ui-change` and post the "Verify it yourself" steps. It merges only after the owner has tried
+     it and added the `owner-verified` label; CI enforces this. Backend-only, docs, test and CI
+     PRs merge once CI is green.
    - Merge only when CI is green and the branch is up to date with `main` (branch protection
      requires both; use `gh api -X PUT repos/aswinakofficial/prepora/pulls/N/update-branch` and
      wait for CI). Use merge commits (`gh pr merge N --merge`).
@@ -84,10 +93,31 @@ These apply to every change, whichever model or person makes it.
    PR, how it was verified, and any follow-ups (opened as new issues). If the issue belongs to an
    epic, tick its checkbox in the epic's body. Update the spec's status in docs/specs/README.md.
 
+## Testing (mandatory before merging)
+
+- **Every spec's acceptance steps are e2e tests.** Each step in a spec's "Deliverable and UI
+  acceptance" is checked by a Playwright test in `tests/e2e/`. A step that truly can't be automated
+  is done by hand, with a screenshot in the PR. Tests seed their own rows with invented content and
+  clean up.
+- **The core regression suite stays green:** browsing, the question page, practice, search, the
+  admin review → publish flow, and contributions. A change that breaks it doesn't merge.
+- **Run them locally** against a throwaway local database (never `.env`'s; the config refuses
+  anything that isn't local):
+  ```
+  E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e
+  ```
+  It starts its own web app (port 3100) and pipeline service (port 8101), so dev servers on
+  3000/8001 don't matter. CI runs the same suite on every PR (`E2E acceptance (Playwright)`), and
+  that check is required.
+- **Record the results** in the PR's "Acceptance results" table: each step, its expected result,
+  pass or fail, and the test (or screenshot) that checked it. Add "Verify it yourself" steps the
+  owner can follow.
+
 ## Checks before every PR
 
 ```
 pnpm lint && pnpm typecheck && pnpm test          # with DATABASE_URL pointing at the LOCAL db for DB tests
+E2E_DATABASE_URL=<local db url> pnpm test:e2e      # the UI acceptance suite (see Testing)
 (cd apps/pipeline && venv/bin/ruff check . && venv/bin/pytest -q)
 (cd apps/scraper && venv/bin/ruff check . && venv/bin/pytest -q)
 pnpm db:check                                       # whenever packages/db or drizzle/ changed

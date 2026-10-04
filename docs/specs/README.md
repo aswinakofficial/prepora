@@ -53,6 +53,18 @@ The project has one maintainer for now, so the plan was narrowed (2026-10-02):
 
 ## Writing a new spec
 
-Copy the shape of an existing one: **Context → Scope (in/out) → Decisions → Changes (per file) →
-Migration → Tests → Acceptance → Owner checkpoints → Risks**. Keep decisions explicit — a spec that
-leaves a design choice open isn't ready.
+Copy the shape of an existing one: **Context → Deliverable and UI acceptance → Scope (in/out) →
+Decisions → Changes (per file) → Migration → Tests → Owner checkpoints → Risks**. Keep decisions
+explicit — a spec that leaves a design choice open isn't ready.
+
+**Deliverable and UI acceptance comes first, and it's mandatory** ([working
+agreements](../../CLAUDE.md#testing-mandatory-before-merging)). It's written before any code: what
+the owner will be able to see or do when the spec is done, as numbered steps in the UI, each with an
+expected result. For example:
+
+| # | Step | Expected |
+|---|---|---|
+| 1 | Open Admin → Held questions | One row per imported paper, with ready/held counts |
+| 2 | Expand a paper's held questions | Each shows its number, text and reason ("figure: …") |
+
+Each step becomes a Playwright test in `tests/e2e/`. The PR reports each step's result.
