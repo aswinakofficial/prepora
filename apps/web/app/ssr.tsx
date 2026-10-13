@@ -82,13 +82,19 @@ export default defineEventHandler(async (event) => {
   // docs/architecture/prepora-next-level-plan.md finding #19.
   if (request.url.includes("/api/health")) {
     let database: "connected" | "unreachable" = "unreachable";
+    let migrations: number | null = null;
     try {
       await getDb().execute(sql`select 1`);
       database = "connected";
+      // Read by the Release workflow: has production been migrated ahead of this merge?
+      const result = await getDb().execute(
+        sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
+      );
+      migrations = Number((result.rows[0] as { n: number } | undefined)?.n ?? 0);
     } catch {
-      database = "unreachable";
+      // database stays as found; migrations stays unknown.
     }
-    return new Response(JSON.stringify(healthBody(database)), {
+    return new Response(JSON.stringify(healthBody(database, undefined, undefined, migrations)), {
       status: 200,
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });

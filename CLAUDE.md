@@ -72,7 +72,8 @@ spec is automated, and enforced by tools rather than intentions.
   block, for every agent:
   - pushing to `main` and force-pushing;
   - merging any other way than the Release workflow;
-  - loading `.env` (production);
+  - anything production: `.env.production`, `scripts/env.sh production`, `pnpm dev:prod`, and
+    `migrate-prod.sh --allow-unsafe`;
   - database writes without the local database;
   - destructive `rm -rf`.
 
@@ -113,9 +114,13 @@ These apply to every change, whichever model or person makes it.
      `scripts/team/release.sh N`). It merges only when every required check is green and the
      branch is up to date (`gh api -X PUT repos/aswinakofficial/prepora/pulls/N/update-branch`
      first).
-     - **Migrations:** it migrates production *before* merging, automatically when Squawk
-       (`.squawk.toml`) finds every new migration safe; anything that drops, renames, retypes or
-       rewrites data waits for the owner's approval in GitHub.
+     - **Migrations first, from this machine:** if the PR adds migrations, the release agent
+       runs `scripts/team/migrate-prod.sh N` before releasing. It needs the PR green and checked
+       out, applies the migrations to the local database first, and migrates production only when
+       every new migration is additive (`scripts/team/migration_data_check.py` and Squawk). Anything
+       that drops, renames, retypes or rewrites data waits for the owner, who reruns it with
+       `--allow-unsafe`. The Release workflow refuses to merge until `/api/health` shows production
+       has the PR's migrations.
      - **After merging:** it waits for the live site to report the merge commit and smoke-tests
        it.
      - Agents never merge, or migrate production, any other way (the guardrails enforce it).
@@ -136,8 +141,8 @@ These apply to every change, whichever model or person makes it.
   A step that truly can't be automated is done by hand, with a screenshot in the PR.
 - **The core regression suite stays green:** browsing, the question page, practice, search, the
   admin review → publish flow, and contributions. A change that breaks it doesn't merge.
-- **Run them locally** against a throwaway local database (never `.env`'s; the config refuses
-  anything that isn't local):
+- **Run them locally** against a throwaway local database (the config refuses anything that isn't
+  local):
   ```
   E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e
   ```
@@ -167,13 +172,19 @@ Run DB-backed tests against the **local** database (`scripts/dev-db.sh start`; U
 
 ## Production safety
 
-- The root `.env` points at the **production** Neon database.
-  - **Agents never change production directly.** Migrations happen in the Release workflow.
-    Back-fills, deletes, `sync-sources`, imports and publishing need the owner's explicit
-    go-ahead in the conversation, even if a spec says the step is needed.
-  - **Read-only questions** go through `scripts/team/prod-read.sh`.
-- **Merging to `main` deploys the site** (Cloudflare Pages). The Release workflow migrates first,
-  then merges, then checks the live site.
+- **Two environments, local first** (`scripts/env.sh`):
+  - **`.env` is the local database:** development, tests, and everything agents do. `pnpm dev` runs
+    through `scripts/env.sh local`, which refuses a `.env` that points anywhere else, and
+    `drizzle-kit` refuses a non-local database outside production mode.
+  - **`.env.production` is production.** It's used only by the owner's real scraping, ingestion and
+    publishing (`pnpm dev:prod`), by `scripts/team/migrate-prod.sh`, and, read-only, by
+    `scripts/team/prod-read.sh`.
+- **Agents never change production directly.** Production is migrated only by
+  `scripts/team/migrate-prod.sh N` (additive migrations). Back-fills, deletes, `sync-sources`,
+  imports and publishing are the owner's: they need the owner's explicit go-ahead in the
+  conversation, even if a spec says the step is needed.
+- **Merging to `main` deploys the site** (Cloudflare Pages). Production is migrated first, then the
+  Release workflow merges and checks the live site.
 - Scraping and publishing are local-only by design (`lib/local-only-services.ts`); don't weaken that.
 - Never enter, print or commit credentials (API keys, tokens, database URLs). Secrets are set by the
   owner (`gh secret set …`, Cloudflare dashboard).

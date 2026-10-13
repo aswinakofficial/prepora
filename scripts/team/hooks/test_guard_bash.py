@@ -41,6 +41,15 @@ BLOCKED = [
     # Re-review of #85.
     f"rm -rf {Path(__file__).resolve().parents[3]}",
     "psql \"$(grep DATABASE_URL .env | cut -d= -f2-)\" -c 'select 1'",
+    # Local-first environments: production is the owner's, except migrate-prod.sh <pr>.
+    "bash scripts/env.sh production pnpm db:migrate",
+    "scripts/env.sh production venv/bin/python -m prepora_pipeline.cli publish --file q.json",
+    "PREPORA_ENV=production pnpm db:migrate",
+    "pnpm dev:prod",
+    "cat .env.production",
+    "grep DATABASE_URL .env.production",
+    "scripts/team/migrate-prod.sh 90 --allow-unsafe",
+    "bash scripts/env.sh local true && bash scripts/env.sh production pnpm db:push",
 ]
 ALLOWED = [
     "git push -u origin feat/intake",
@@ -69,6 +78,12 @@ ALLOWED = [
     "psql $L -c 'select 1'",
     "E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e",
     "rm -rf scripts/team/__pycache__",
+    "bash scripts/env.sh local pnpm db:migrate",
+    "scripts/env.sh local pnpm db:seed:dev",
+    "cd apps/pipeline && bash ../../scripts/env.sh local venv/bin/python -m prepora_pipeline.cli "
+    "gate-import --all-pilot",
+    "scripts/team/migrate-prod.sh 90",
+    "scripts/team/release.sh 90 --dry-run",
     "cp .env.example .env.test && psql $L -c 'select 1'",
 ]
 
