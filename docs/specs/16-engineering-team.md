@@ -5,7 +5,7 @@
 **Depends on:** #76 (mandatory UI acceptance testing), merged
 **Production database:** no schema change. Production is migrated from the owner's machine by
 `scripts/team/migrate-prod.sh`, never from GitHub (amended 2026-10-14).
-**Status:** Approved by the owner (2026-10-13); amended 2026-10-14 (local-first environments, decision 5); implemented, with the owner's one-time setup and the pilot (`/ship-spec 12`) to follow
+**Status:** Approved by the owner (2026-10-13); done in #85; amended 2026-10-14 for local-first environments (decision 5, #87). Next: the owner's one-time setup, then the pilot (`/ship-spec 12`)
 
 ## Context
 
