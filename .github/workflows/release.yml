@@ -1,7 +1,7 @@
 name: Release
 
 # Ships one green PR to production (docs/specs/16-engineering-team.md, decision 5): verify the PR,
-# check production already has its migrations, merge, then wait for the live site to report the merge
+# check production has exactly its migrations, merge, then wait for the live site to report the merge
 # commit and smoke-test it. Started by the release agent: scripts/team/release.sh <pr>.
 #
 # Production is migrated before this runs, from the owner's machine, by scripts/team/migrate-prod.sh
@@ -64,16 +64,21 @@ jobs:
           ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
 
-      - name: Production already has this PR's migrations
+      - name: Production has exactly this PR's migrations
         env:
           PR: ${{ inputs.pr }}
         run: |
           want=$(jq '.entries | length' drizzle/meta/_journal.json)
-          have=$(curl -fsS --max-time 15 https://prepora.xpar.in/api/health | jq -r '.migrations // empty')
+          want_latest=$(jq '.entries | last | .when' drizzle/meta/_journal.json)
+          health=$(curl -fsS --max-time 15 https://prepora.xpar.in/api/health)
+          have=$(jq -r '.migrations // empty' <<<"$health")
+          have_latest=$(jq -r '.latestMigration // empty | floor' <<<"$health")
           [ -n "$have" ] || { echo "::error::/api/health doesn't report production's migrations"; exit 1; }
-          echo "Journal: $want migrations; production: $have" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$have" -lt "$want" ]; then
-            echo "::error::Production has $have of $want migrations. Run scripts/team/migrate-prod.sh $PR first."
+          echo "Journal: $want migrations, latest $want_latest; production: $have, latest $have_latest" >> "$GITHUB_STEP_SUMMARY"
+          # Exactly, not "at least": production can be ahead when another PR was migrated but not
+          # merged, and then this PR's own migration may not be applied.
+          if [ "$have" != "$want" ] || [ "$have_latest" != "$want_latest" ]; then
+            echo "::error::Production's migrations ($have, latest $have_latest) aren't this PR's ($want, latest $want_latest). Run scripts/team/migrate-prod.sh $PR first; if production is ahead, release the PR that migrated it first."
             exit 1
           fi
 

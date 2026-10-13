@@ -35,7 +35,8 @@ test("health reports the database's migration count", async ({ page }) => {
     expect(body.status).toBe("ok");
     const journal = (
       await import("../../../drizzle/meta/_journal.json", { with: { type: "json" } })
-    ).default as { entries: unknown[] };
+    ).default as { entries: { when: number }[] };
     expect(body.migrations).toBeGreaterThanOrEqual(journal.entries.length);
+    expect(body.latestMigration).toBeGreaterThanOrEqual(journal.entries.at(-1)?.when ?? 0);
   });
 });

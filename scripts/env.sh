@@ -19,28 +19,55 @@ mode=${1:?usage: scripts/env.sh <local|production> <command…>}
 shift
 [ $# -gt 0 ] || { echo "usage: scripts/env.sh <local|production> <command…>" >&2; exit 2; }
 
+# Each KEY=VALUE line of a dotenv file, exported as is: one pair of surrounding quotes is removed,
+# and nothing is expanded or run (`&`, `$` and spaces are just characters). Comments, blank lines
+# and an `export ` prefix are handled as dotenv does.
+load() {
+  local line key value
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    case "$line" in '' | \#*) continue ;; esac
+    line=${line#export }
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    key=${BASH_REMATCH[1]}
+    value=${BASH_REMATCH[2]}
+    if [[ "$value" =~ ^\"(.*)\"[[:space:]]*$ ]] || [[ "$value" =~ ^\'(.*)\'[[:space:]]*$ ]]; then
+      value=${BASH_REMATCH[1]}
+    else
+      value=${value%%[[:space:]]#*}
+      value=${value%"${value##*[![:space:]]}"}
+    fi
+    export "$key=$value"
+  done < "$1"
+}
 keys() { sed -n 's/^\(export \)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)=.*/\2/p' "$1"; }
-db_host() { sed -n 's/^DATABASE_URL=//p' "$1" | tail -n 1 | sed -E "s/^[\"']//; s/[\"']$//; s#^[a-z]+://([^@/]*@)?##; s#[:/].*##"; }
+host_of() { printf '%s' "$1" | sed -E "s#^[a-z]+://([^@/]*@)?##; s#[:/?].*##"; }
 is_local() { case "$1" in 127.0.0.1|localhost|"[::1]") return 0 ;; *) return 1 ;; esac; }
 
 case "$mode" in
   local)
     [ -f .env ] || { echo "No .env. Run: pnpm bootstrap" >&2; exit 1; }
-    host=$(db_host .env)
-    if ! is_local "$host"; then
+    load .env
+    # The value actually loaded, whatever the file's line order or `export` prefixes.
+    if ! is_local "$(host_of "${DATABASE_URL:-}")"; then
       echo "Refusing: .env's DATABASE_URL isn't the local database. Production" >&2
       echo "settings belong in .env.production (see CONTRIBUTING.md → Environments)." >&2
       exit 1
     fi
-    file=.env
     ;;
   production)
     [ -f .env.production ] || { echo "No .env.production (see CONTRIBUTING.md → Environments)." >&2; exit 1; }
-    file=.env.production
     if [ -f .env ]; then
       for key in $(keys .env); do
         grep -q "^\(export \)\{0,1\}$key=" .env.production || export "$key="
       done
+    fi
+    load .env.production
+    host=$(host_of "${DATABASE_URL:-}")
+    if [ -z "$host" ] || is_local "$host"; then
+      echo "Refusing: .env.production's DATABASE_URL is missing or local, so this wouldn't reach" >&2
+      echo "production." >&2
+      exit 1
     fi
     export PREPORA_ENV=production
     ;;
@@ -50,8 +77,4 @@ case "$mode" in
     ;;
 esac
 
-set -a
-# shellcheck disable=SC1090
-. "./$file"
-set +a
 exec "$@"

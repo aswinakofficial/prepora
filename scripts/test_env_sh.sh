@@ -21,6 +21,26 @@ check "production loads .env.production" \
 check "production blanks keys only .env has" \
   "$(bash scripts/env.sh production sh -c 'echo "[${DEV_ADMIN_EMAIL-unset}]"')" "[]"
 
+# Values are data, never shell code (review of #87): Neon's `&`, a `$`, spaces, comments, quotes.
+printf '%s\n' 'DATABASE_URL=postgresql://u:p@ep-x.example.test/db?sslmode=require&channel_binding=require' \
+  'PRICE=a$b' 'NAME=two words # a comment' "QUOTED='x \$y # z'" > .env.production
+check "an unquoted & stays in the value" \
+  "$(bash scripts/env.sh production sh -c 'echo "$DATABASE_URL"')" \
+  "postgresql://u:p@ep-x.example.test/db?sslmode=require&channel_binding=require"
+check "\$ and spaces are kept, comments dropped" \
+  "$(bash scripts/env.sh production sh -c 'echo "$PRICE|$NAME|$QUOTED"')" 'a$b|two words|x $y # z'
+printf 'DATABASE_URL=postgresql://prepora@127.0.0.1:5544/x\n' > .env.production
+check "production refuses a local DATABASE_URL" \
+  "$(bash scripts/env.sh production true >/dev/null 2>&1 && echo ran || echo refused)" "refused"
+printf 'SHARED=prod\n' > .env.production
+check "production refuses a missing DATABASE_URL" \
+  "$(bash scripts/env.sh production true >/dev/null 2>&1 && echo ran || echo refused)" "refused"
+
+# The check is on the value loaded, whatever the line order.
+printf 'DATABASE_URL=postgresql://prepora@127.0.0.1:5544/x\nexport DATABASE_URL=postgresql://u:p@ep-x.example.test/db\n' > .env
+check "local checks the value loaded, not the first line" \
+  "$(bash scripts/env.sh local true >/dev/null 2>&1 && echo ran || echo refused)" "refused"
+
 printf 'DATABASE_URL=postgresql://u:p@ep-x.example.test/db\n' > .env
 check "local refuses a non-local .env" "$(bash scripts/env.sh local true >/dev/null 2>&1 && echo ran || echo refused)" "refused"
 rm .env.production

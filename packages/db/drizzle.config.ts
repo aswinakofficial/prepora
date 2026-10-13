@@ -29,13 +29,17 @@ const host = (() => {
     return "";
   }
 })();
-if (
-  !["localhost", "127.0.0.1", "[::1]", "::1"].includes(host) &&
-  process.env.PREPORA_ENV !== "production"
-) {
+const isLocal = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(host);
+if (!isLocal && process.env.PREPORA_ENV !== "production") {
   throw new Error(
     `DATABASE_URL points at '${host}', not a local database. Production is migrated only by ` +
       "scripts/team/migrate-prod.sh (or, by the owner, scripts/env.sh production pnpm db:migrate).",
+  );
+}
+// And the other way round: in production mode, a local URL means .env.production didn't load.
+if (isLocal && process.env.PREPORA_ENV === "production") {
+  throw new Error(
+    "PREPORA_ENV=production, but DATABASE_URL is local: .env.production didn't load.",
   );
 }
 

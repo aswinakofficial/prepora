@@ -172,16 +172,24 @@ which means the old code keeps working after the migration runs.
   their machine (`pnpm dev:prod`), `scripts/team/migrate-prod.sh`, and `scripts/team/prod-read.sh`
   (read-only).
 
-`env.sh` exports the chosen file before the command starts. Node's `--env-file`, dotenv and
+`env.sh` reads the chosen file as data (`KEY=VALUE` lines; one pair of quotes removed; nothing
+expanded, so a URL's `&` or a `$` is just a character) and exports it before the command starts. Node's `--env-file`, dotenv and
 python-dotenv never override a variable that's already set, so every process uses that file. In
-production mode a key only `.env` has is set to empty, so nothing local leaks in.
+production mode a key only `.env` has is set to empty, so nothing local leaks in. Production mode
+refuses a missing or local `DATABASE_URL`, and local mode checks the value actually loaded.
 `drizzle.config.ts` refuses a non-local database unless `PREPORA_ENV=production` (set only by
-`env.sh production`).
+`env.sh production`), and a local one when it is.
 
-**1. Migrate production** (the release agent: `scripts/team/migrate-prod.sh <pr>`). It runs only
-when:
+**1. Migrate production** (the release agent: `scripts/team/migrate-prod.sh <pr>`). **Only `main`'s
+code runs with the production URL:** the script re-runs `main`'s copy of itself, which works in a
+temporary worktree of `origin/main` with only `drizzle/` taken from the PR, installed with
+`--ignore-scripts`. It runs only when:
 - the PR is open against `main`, green and up to date (so CI ran every test, e2e included, on a
-  fresh local database), and the checkout is exactly the PR's head;
+  fresh local database), and changes no existing migration;
+- production's applied migrations are exactly the first ones in the PR's journal, matched by
+  timestamp (drizzle's `created_at` is the journal's `when`). It stops if production has one the
+  journal doesn't (another PR was migrated but isn't merged), or lacks one older than its latest
+  (drizzle would skip it);
 - every migration production doesn't have yet is **additive**:
   - `scripts/team/migration_data_check.py` flags data statements (`DELETE`, `UPDATE`, `INSERT`,
     `TRUNCATE`, `COPY`, `MERGE`), drops of tables, schemas, types or views, column drops, renames,
@@ -192,7 +200,7 @@ when:
   Both checks come from `main`, so a PR can't loosen them.
 
 Then it applies the migrations to the local database, then to production, and checks that
-production's applied-migration count equals the journal's.
+production's migrations now match the journal exactly.
 - **A migration that isn't additive** stops the script. The agent tells the owner what it does;
   the owner reruns it with `--allow-unsafe`, which the guardrails block for agents.
 - `pnpm db:check` checks only the journal, not a database, so it runs in CI.
@@ -200,11 +208,14 @@ production's applied-migration count equals the journal's.
 **2. The Release workflow** (`.github/workflows/release.yml`, `workflow_dispatch` with a PR number,
 started by `scripts/team/release.sh`). It holds no database secret and needs no environment:
 1. **Verify the PR:** open, all required checks green, branch up to date.
-2. **Production has its migrations:** the journal's count is at most production's, read from
-   `/api/health`'s `migrations` (decision 6). Otherwise it stops: "run migrate-prod.sh first".
+2. **Production has exactly its migrations:** the journal's count and latest `when` equal
+   `/api/health`'s `migrations` and `latestMigration` (decision 6). Not "at least": production can
+   be ahead when another PR was migrated but not merged. Otherwise it stops.
 3. **Merge** the PR (merge commit) with the workflow's built-in token, only if the head is the one
    verified. A merge by the built-in token doesn't start other workflows, so it then starts the
    board workflow (`project-status.yml`, a `workflow_dispatch`) for the issues the PR closes.
+   CodeQL's scan of `main` after the merge doesn't run either; that's accepted, since CodeQL
+   already scanned the PR, and the weekly schedule and the next PR rescan `main`.
 4. **Post-deploy check:**
    - poll `https://prepora.xpar.in/api/health` (for up to 15 minutes) until it reports the merge
      commit (decision 6);
@@ -217,8 +228,9 @@ started by `scripts/team/release.sh`). It holds no database secret and needs no 
 ### 6. Health reports the commit
 `/api/health` adds `commit`, the git SHA the build came from. Cloudflare Pages exposes it at build
 time as `CF_PAGES_COMMIT_SHA`, injected through Vite's `define`. It's `null` in local builds.
-It also adds `migrations`, the number of migrations the database has applied (`null` if unknown),
-which the Release workflow checks before merging.
+It also adds `migrations`, the number of migrations the database has applied, and
+`latestMigration`, the newest one's timestamp (both `null` if unknown), which the Release workflow
+checks before merging.
 
 ### 7. Continuous checks (free for public repositories)
 - **CodeQL:** `.github/workflows/codeql.yml`, JavaScript/TypeScript and Python. A required check.
@@ -383,3 +395,22 @@ from their own machine. So:
   dropped, and the board is moved by starting `project-status.yml` after the merge.
 - **The guardrails** block every direct use of production by agents; `scripts/env.sh local` counts
   as the local database.
+
+**The review of #87** found two high, two medium and two low issues. Fixed:
+- **`migrate-prod.sh` ran the PR's own code with the production URL**, apart from the classifiers.
+  Now only `main`'s code runs (decision 5).
+- **Counting migrations wasn't enough.** If another PR's migration was applied but not merged, a
+  PR's own migration could be skipped, or checked only in part. Migrations are now matched by
+  timestamp, and the release requires an exact match.
+- **`env.sh` sourced the files as shell code.** Neon's default URL (`…&channel_binding=require`)
+  lost its value, so production mode would have run against the local database. Values are now
+  read as data, and both modes check the URL they loaded.
+- **The local check read the file's last line, not the loaded value.**
+- **CodeQL after merge:** accepted (decision 5).
+
+**Writing about production:** the guardrails block any command that mentions production, quoted
+text included, because `"$(cat …)"` inside a quoted argument would run. Commit messages and PR bodies
+that mention it go through a file (`git commit -F`, `--body-file`).
+
+**Pending the owner:** keeping agents' Read, Grep and Edit tools away from `.env.production` needs
+a deny rule in `.claude/settings.json` (only the owner changes permissions).

@@ -83,21 +83,27 @@ export default defineEventHandler(async (event) => {
   if (request.url.includes("/api/health")) {
     let database: "connected" | "unreachable" = "unreachable";
     let migrations: number | null = null;
+    let latestMigration: number | null = null;
     try {
       await getDb().execute(sql`select 1`);
       database = "connected";
-      // Read by the Release workflow: has production been migrated ahead of this merge?
+      // Read by the Release workflow: does production have exactly this release's migrations?
       const result = await getDb().execute(
-        sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
+        sql`select count(*)::int as n, max(created_at)::float8 as latest from drizzle.__drizzle_migrations`,
       );
-      migrations = Number((result.rows[0] as { n: number } | undefined)?.n ?? 0);
+      const row = result.rows[0] as { n: number; latest: number | null } | undefined;
+      migrations = Number(row?.n ?? 0);
+      latestMigration = row?.latest == null ? null : Number(row.latest);
     } catch {
-      // database stays as found; migrations stays unknown.
+      // database stays as found; the migration fields stay unknown.
     }
-    return new Response(JSON.stringify(healthBody(database, undefined, undefined, migrations)), {
-      status: 200,
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    });
+    return new Response(
+      JSON.stringify(healthBody(database, undefined, undefined, migrations, latestMigration)),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      },
+    );
   }
 
   if (request.url.includes("/api/auth")) {
