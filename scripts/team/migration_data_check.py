@@ -16,6 +16,14 @@ DATA = re.compile(
     r"^DROP\s+(?:TABLE|SCHEMA|TYPE|VIEW|MATERIALIZED\s+VIEW)\b",
     re.I,
 )
+# Code runs inside procedural blocks, functions, triggers and rules, so their bodies can change
+# data whatever they start with: any of them waits for the owner. So does a bare SELECT or CALL,
+# which can run such code.
+CODE = re.compile(
+    r"^(?:DO|CALL|SELECT)\b|^CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?"
+    r"(?:FUNCTION|PROCEDURE|TRIGGER|RULE|EVENT\s+TRIGGER)\b|\$\w*\$",
+    re.I,
+)
 # Within ALTER …: dropping a column (COLUMN is optional in Postgres) or renaming anything.
 ALTER_UNSAFE = re.compile(
     r"\bDROP\b(?!\s+(?:DEFAULT|NOT\s+NULL|CONSTRAINT|INDEX|IDENTITY|EXPRESSION)\b)|\bRENAME\b",
@@ -23,16 +31,33 @@ ALTER_UNSAFE = re.compile(
 )
 
 
+# One token of SQL: a dollar-quoted body or a string (kept whole, so a `;` or `--` inside doesn't
+# count), a comment (dropped), a `;` (ends the statement), or any other character.
+TOKEN = re.compile(
+    r"(?P<body>\$(?P<tag>\w*)\$.*?\$(?P=tag)\$|'(?:[^']|'')*')|(?P<comment>--[^\n]*|/\*.*?\*/)|"
+    r"(?P<end>;)|(?P<other>.)",
+    re.S,
+)
+
+
 def statements(sql: str) -> list[str]:
-    sql = re.sub(r"--.*$", "", sql, flags=re.M)
-    sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.S)
-    return [" ".join(s.split()) for s in re.split(r";", sql) if s.strip()]
+    found, current = [], []
+    for m in TOKEN.finditer(sql):
+        if m.group("end"):
+            found.append("".join(current))
+            current = []
+        elif not m.group("comment"):
+            current.append(m.group(0))
+    found.append("".join(current))
+    return [" ".join(s.split()) for s in found if s.strip()]
 
 
 def unsafe_statements(sql: str) -> list[str]:
     return [
         s for s in statements(sql)
-        if DATA.search(s) or (re.match(r"ALTER\b", s, re.I) and ALTER_UNSAFE.search(s))
+        if DATA.search(s)
+        or CODE.search(s)
+        or (re.match(r"ALTER\b", s, re.I) and ALTER_UNSAFE.search(s))
     ]
 
 

@@ -329,4 +329,9 @@ The re-review found one more medium issue and three low ones, all fixed:
   looks at the whole line.
 - **Dependabot PRs** skip "Acceptance results recorded".
 
-The guard has 53 cases and the migration checker 21.
+The third pass found that data changes inside procedural code (a `DO $$ … $$` block, a function
+then `SELECT f()`) passed both checks. The checker now reads SQL token by token: a dollar-quoted
+body, string or comment can't hide or split a statement. Any `DO`, `CALL`, `SELECT`, function,
+procedure, trigger or rule, or any dollar-quoted body, waits for the owner.
+
+The guard has 53 cases and the migration checker 31.

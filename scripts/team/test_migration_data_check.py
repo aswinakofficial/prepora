@@ -19,6 +19,14 @@ UNSAFE = [
     'ALTER TABLE "exams" RENAME COLUMN "a" TO "b"',
     'ALTER TABLE "exams" RENAME TO "tests"',
     "-- harmless comment\nDELETE FROM q",
+    # Re-review of #85: code that changes data inside a procedural body.
+    "DO $$ BEGIN DELETE FROM questions WHERE true; END $$;",
+    "CREATE OR REPLACE FUNCTION f() RETURNS void AS $$ UPDATE questions SET x = 1; $$ LANGUAGE sql",
+    "SELECT f()",
+    "CALL p()",
+    "CREATE TRIGGER t AFTER INSERT ON q FOR EACH ROW EXECUTE FUNCTION f()",
+    "CREATE RULE r AS ON INSERT TO q DO INSTEAD NOTHING",
+    "CREATE TABLE a (x text DEFAULT '--'); DELETE FROM q",
 ]
 SAFE = [
     'CREATE TABLE "x" ("id" uuid PRIMARY KEY, "e" uuid)',
@@ -31,6 +39,9 @@ SAFE = [
     'DROP INDEX "questions_slug_idx"',
     'CREATE INDEX "x_idx" ON "x" USING btree ("deleted_at")',
     "-- DELETE FROM q\nCREATE TABLE y (id int)",
+    "/* UPDATE q */ CREATE TABLE z (id int)",
+    "CREATE TABLE a (x text DEFAULT 'a;DELETE')",
+    'CREATE EXTENSION IF NOT EXISTS "pg_trgm"',
 ]
 
 failures = [f"not flagged: {s!r}" for s in UNSAFE if not unsafe_statements(s)]
