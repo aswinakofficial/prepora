@@ -234,17 +234,18 @@ suite stays in `tests/e2e/`.
 
 ## Owner setup (outside the agents' reach, about 15 minutes, step by step in the PR)
 
-1. **Secret `PROD_DATABASE_URL`:** GitHub → Settings → Environments → create
-   `production-migrate` (no reviewers) and `production-unsafe` (required reviewer: you). Add the
-   secret to **both environments**, not as a repository secret, so only the Release workflow's
-   migrate job can read it.
-2. **Secret `RELEASE_TOKEN`:** a fine-grained personal access token for this repository only, with
-   *Contents: read and write* and *Pull requests: read and write*. It's stored in the
-   `production-migrate` and `production-unsafe` environments, and also as an environment secret
-   of a third environment, `release` (no reviewers), used by the merge step. The Release workflow
-   merges with it rather than the built-in `GITHUB_TOKEN`, because GitHub doesn't start other
-   workflows (the project board, the labels sync) from events the built-in token causes. The
-   ruleset "Protect main" already allows merging when checks pass, so no bypass is needed.
+1. **Three environments** (GitHub → Settings → Environments): `production-migrate` (no
+   reviewers), `production-unsafe` (required reviewer: you) and `release` (no reviewers). In each,
+   set **Deployment branches and tags → Selected branches → `main`**, so only `main`'s copy of the
+   Release workflow can use their secrets: a branch with an edited workflow gets none.
+2. **Secrets, as environment secrets, never repository secrets:**
+   - `PROD_DATABASE_URL` in `production-migrate` and `production-unsafe`, so only the migrate jobs
+     can read it;
+   - `RELEASE_TOKEN` in `release`: a fine-grained personal access token for this repository only,
+     with *Contents: read and write* and *Pull requests: read and write*. The merge step uses it
+     rather than the built-in `GITHUB_TOKEN`, because GitHub doesn't start other workflows (the
+     project board, the labels sync) from events the built-in token causes. The ruleset "Protect
+     main" already allows merging when checks pass, so no bypass is needed.
 3. **Enable Dependabot alerts and security updates** (Settings → Code security).
 4. **Confirm Cloudflare Pages** deploys `main` from git (unchanged), and that `CF_PAGES_COMMIT_SHA`
    is available in its build (it is by default).

@@ -6,8 +6,9 @@ name: Release
 # commit and smoke-test it. Started by the release agent: scripts/team/release.sh <pr>.
 #
 # Owner setup (the spec's "Owner setup"): environments `production-migrate` (no reviewers),
-# `production-unsafe` (required reviewer: the owner) and `release` (no reviewers); the secret
-# PROD_DATABASE_URL in the two production-* environments, and RELEASE_TOKEN in all three.
+# `production-unsafe` (required reviewer: the owner) and `release` (no reviewers), each limited to
+# the `main` branch; the secret PROD_DATABASE_URL in the two production-* environments, and
+# RELEASE_TOKEN in `release`.
 
 on:
   workflow_dispatch:
