@@ -16,6 +16,9 @@ permissions:
 jobs:
   acceptance:
     name: Acceptance results recorded
+    # Dependabot's bumps change no behaviour a spec describes; CI and the e2e suite still check them.
+    # A skipped required check counts as passed.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check the PR body and labels

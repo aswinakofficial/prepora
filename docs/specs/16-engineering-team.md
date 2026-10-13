@@ -192,7 +192,8 @@ time as `CF_PAGES_COMMIT_SHA`, injected through Vite's `define`. It's `null` in 
 - **CodeQL:** `.github/workflows/codeql.yml`, JavaScript/TypeScript and Python. A required check.
 - **Dependabot:** `.github/dependabot.yml`, weekly, for npm (root workspace), pip
   (`apps/pipeline`, `apps/scraper`) and GitHub Actions, with grouped minor and patch updates. Its
-  PRs go through the same gates, and the release persona releases the green ones.
+  PRs go through the same gates, except "Acceptance results recorded", which skips them (a version
+  bump has no acceptance steps); the release persona releases the green ones.
 - **Accessibility:** `@axe-core/playwright` checks every page the acceptance and core tests visit.
   Serious and critical violations fail; others are reported in the summary.
 - **Health:** `.github/workflows/health.yml`, hourly. It's the read-only smoke suite against
@@ -311,3 +312,20 @@ The lower-severity findings are fixed too:
 - **Tool limits:** the spec now says which limits are enforced and which are instructions.
 
 The guard's tests grew from 36 to 49 cases.
+
+The re-review found one more medium issue and three low ones, all fixed:
+- **The data-statement check** matched the `ON DELETE … ON UPDATE …` clause of every foreign key,
+  so it held 10 of the 19 existing migrations, most of them additive. It's now
+  `scripts/team/migration_data_check.py`, which checks each statement. It flags statements that
+  start with DELETE, UPDATE, INSERT, TRUNCATE, COPY or MERGE (or a WITH holding one); DROP TABLE,
+  SCHEMA, TYPE and VIEW; and an ALTER that drops a column or renames anything. DROP INDEX and DROP
+  CONSTRAINT are left to Squawk. Of the existing migrations it flags only 0003's three column
+  drops. The Release workflow runs main's copy of the checker and of `.squawk.toml`, so a PR can't
+  loosen the checks on its own migrations. It has its own tests in CI.
+- **The guard's repository path** was `scripts/`, not the repository root, so `rm -rf <repo>`
+  wasn't blocked.
+- **`psql` with a value read from `.env`** through `$(grep … .env | cut …)` is blocked; the check
+  looks at the whole line.
+- **Dependabot PRs** skip "Acceptance results recorded".
+
+The guard has 53 cases and the migration checker 21.

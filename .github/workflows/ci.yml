@@ -31,6 +31,7 @@ jobs:
       - run: pnpm test
       # The agent team's guardrails (docs/specs/16-engineering-team.md, decision 3).
       - run: python3 scripts/team/hooks/test_guard_bash.py
+      - run: python3 scripts/team/test_migration_data_check.py
 
   db-check:
     name: drizzle-kit check

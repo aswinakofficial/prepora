@@ -23,7 +23,8 @@ import re
 import shlex
 import sys
 
-REPO = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+# This file is scripts/team/hooks/guard_bash.py.
+REPO = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # `DATABASE_URL=<local>` as an assignment for this sub-command, not E2E_DATABASE_URL or a comment.
 LOCAL_DB = re.compile(
@@ -92,6 +93,17 @@ def check_rm(part: str) -> None:
             block(f"`rm -rf {target}`. Delete specific paths only.")
 
 
+ENV_FILE = re.compile(r"(^|[\s/'\"=<(])\.env([\s'\")]|$)")
+
+
+def check_line(line: str) -> None:
+    """Checks that need the whole line: `psql "$(grep DATABASE_URL .env | cut …)"` splits into
+    parts that don't show the .env and the psql together."""
+    if re.search(r"(^|[\s(])psql(\s|$)", line) and ENV_FILE.search(line):
+        block("psql with a value read from the root .env (it points at PRODUCTION). Use "
+              "scripts/team/prod-read.sh for read-only production questions.")
+
+
 def check_part(part: str) -> None:
     if re.search(r"\bgit\s+push\b", part):
         if re.search(r"(\s|:)(main|master)(\s|$)", part + " "):
@@ -133,7 +145,10 @@ def main() -> None:
         sys.exit(0)
     if call.get("tool_name") != "Bash":
         sys.exit(0)
-    for part in parts_of(call.get("tool_input", {}).get("command", "")):
+    command = call.get("tool_input", {}).get("command", "")
+    for line in strip_heredocs(command).split("\n"):
+        check_line(strip_comment(line))
+    for part in parts_of(command):
         check_part(part)
     sys.exit(0)
 

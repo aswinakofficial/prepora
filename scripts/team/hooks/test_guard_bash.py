@@ -38,6 +38,9 @@ BLOCKED = [
     "rm -rf ~/",
     'rm -rf "$HOME"',
     "rm -r -f ~",
+    # Re-review of #85.
+    f"rm -rf {Path(__file__).resolve().parents[3]}",
+    "psql \"$(grep DATABASE_URL .env | cut -d= -f2-)\" -c 'select 1'",
 ]
 ALLOWED = [
     "git push -u origin feat/intake",
@@ -65,6 +68,8 @@ ALLOWED = [
     "psql postgresql://prepora@127.0.0.1:5544/prepora_dev -c 'select 1'",
     "psql $L -c 'select 1'",
     "E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e",
+    "rm -rf scripts/team/__pycache__",
+    "cp .env.example .env.test && psql $L -c 'select 1'",
 ]
 
 
