@@ -95,7 +95,16 @@ git worktree.
   release), to keep cost down.
 - The reviewer never writes code, and QA never writes product code, so each checks the others'
   work.
-- Tool limits are what make this real, not instructions.
+
+**What's enforced, and what's an instruction** (corrected during review):
+- **Enforced:**
+  - which tools each persona has, for example the reviewer has no `Edit` or `Write`;
+  - the guardrail hook, for every persona;
+  - the required checks and the Release workflow.
+- **By instruction:** the path limits in the table ("under `docs/` only", "`tests/e2e/` only").
+  Claude Code scopes tools per agent, not file paths per agent.
+- **Backstop for the path limits:** the reviewer checks every PR's diff against the persona that
+  made it, and CI checks the outcome (evidence, tests, Squawk).
 
 ### 2. Workflows as skills (`.claude/skills/<name>/SKILL.md`)
 - **`/next`:** reads `docs/specs/README.md` and the issues, then reports the next Ready spec whose
@@ -158,8 +167,13 @@ The Release workflow (`workflow_dispatch` with a PR number, started by the relea
    - **Unsafe** (drop, rename, type change, a blocking index, a rewrite): the job runs in the
      environment `production-unsafe`, which **requires the owner's approval**; GitHub notifies
      them.
-   - **Re-check:** after migrating, `pnpm db:check` against production and the migration count
-     are confirmed.
+   - **Re-check:** after migrating, production's applied-migration count must equal the journal's.
+     `pnpm db:check` checks only the journal, not a database, so it runs in CI instead.
+   - **Data statements** (`DELETE`, `UPDATE`, `INSERT`, `TRUNCATE`, `RENAME`, and `DROP` other
+     than `DROP DEFAULT`) are unsafe whatever Squawk says. Squawk checks schema changes, not data.
+   - **Migrations run with `main`'s tooling** (package scripts, drizzle config, no install scripts)
+     and only the PR's `drizzle/` files. A PR's own code never runs with the production database
+     URL.
 4. **Merge** the PR (merge commit).
 5. **Post-deploy check:**
    - poll `https://prepora.xpar.in/api/health` (for up to 15 minutes) until it reports the merge
@@ -271,3 +285,29 @@ suite stays in `tests/e2e/`.
   workflow's migrate job. Agents never see it; the hooks block local use.
 - **Chat-driven means work stops when the session ends.** Each persona leaves its state in GitHub
   (issue comments, PRs), so the next session resumes with `/next`.
+
+## Decided during implementation (review of #85)
+
+The independent review (the reviewer persona, run as a separate agent) found two high and five
+medium issues. All are fixed:
+1. **The guard's local-database check** is anchored to `DATABASE_URL=` in the same sub-command.
+   `E2E_DATABASE_URL=…`, a local URL on another sub-command, or a comment no longer let a
+   production migration through.
+2. **Data statements are unsafe** in the Release workflow, before Squawk runs (decision 5).
+3. **Migrations run with `main`'s tooling** and the PR's `drizzle/` only (decision 5).
+4. **`release.sh` finds exactly the run it started,** through a request id in the run's name.
+5. **The guard checks each line and sub-command on its own,** so a `git push` followed by a
+   `gh pr create --base main` on the next line is no longer blocked. Pipes are split too.
+6. **The evidence link** must be this repository's successful CI run for the PR's current head
+   (checked through the API), and `N/A:` doesn't excuse filled-in rows.
+7. **QA must use `acceptanceStep`,** and CI fails an acceptance step without a screenshot.
+
+The lower-severity findings are fixed too:
+- **Guard coverage:** `export … .env` and `xargs` are blocked, and so is `psql` against a non-local
+  URL; `rm -rf` matches `~/`, `"$HOME"`, `-r -f` and the repository's own path.
+- **The post-deploy wait** has curl timeouts, a 30-minute job limit and a check that the merge
+  commit is known.
+- **The evidence reporter** keeps only each test's last attempt.
+- **Tool limits:** the spec now says which limits are enforced and which are instructions.
+
+The guard's tests grew from 36 to 49 cases.

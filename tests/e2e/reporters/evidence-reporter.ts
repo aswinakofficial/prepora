@@ -23,18 +23,28 @@ interface Row {
 const OUT = "test-results/acceptance-evidence.md";
 
 export default class EvidenceReporter implements Reporter {
-  private rows: Row[] = [];
-  private videos: Array<{ test: string; file: string }> = [];
+  // Per test, only its last attempt: with retries, an earlier failed attempt would otherwise show
+  // as extra failing rows next to the passing ones.
+  private byTest = new Map<string, { rows: Row[]; video?: { test: string; file: string } }>();
+
+  private get rows(): Row[] {
+    return [...this.byTest.values()].flatMap((t) => t.rows);
+  }
+
+  private get videos(): Array<{ test: string; file: string }> {
+    return [...this.byTest.values()].flatMap((t) => (t.video ? [t.video] : []));
+  }
 
   onTestEnd(test: TestCase, result: TestResult): void {
     if (!test.location.file.includes("/acceptance/")) return;
     const title = test.titlePath().slice(-1)[0];
+    const rows: Row[] = [];
     const steps = result.steps.flatMap(function walk(s: TestStep): TestStep[] {
       return s.category === "test.step" ? [s] : s.steps.flatMap(walk);
     });
     for (const s of steps) {
       const shot = result.attachments.find((a) => a.name === `evidence: ${s.title}` && a.path);
-      this.rows.push({
+      rows.push({
         test: title,
         step: s.title,
         ok: !s.error,
@@ -44,13 +54,14 @@ export default class EvidenceReporter implements Reporter {
       });
     }
     if (steps.length === 0)
-      this.rows.push({ test: title, step: "(no steps)", ok: result.status === "passed" });
+      rows.push({ test: title, step: "(no steps)", ok: result.status === "passed" });
     const video = result.attachments.find((a) => a.name === "video" && a.path);
-    if (video?.path)
-      this.videos.push({
-        test: title,
-        file: `${basename(dirname(video.path))}/${basename(video.path)}`,
-      });
+    this.byTest.set(test.id, {
+      rows,
+      video: video?.path
+        ? { test: title, file: `${basename(dirname(video.path))}/${basename(video.path)}` }
+        : undefined,
+    });
   }
 
   onEnd(result: FullResult): void {

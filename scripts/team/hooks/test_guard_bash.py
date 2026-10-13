@@ -29,6 +29,15 @@ BLOCKED = [
     "rm -fr ..",
     # A blocked command after a heredoc still counts.
     "cat > x.md <<'EOF'\ntext\nEOF\ngh pr merge 3",
+    # Review of #85: the local-database prefix must set DATABASE_URL for the same sub-command.
+    "E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm db:migrate",
+    "DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test && pnpm db:migrate",
+    "pnpm db:migrate # DATABASE_URL=localhost",
+    "export $(grep -v '^#' .env | xargs) && psql \"$DATABASE_URL\" -c 'select 1'",
+    "psql postgresql://u:p@ep-x.neon.tech/db -c 'delete from questions'",
+    "rm -rf ~/",
+    'rm -rf "$HOME"',
+    "rm -r -f ~",
 ]
 ALLOWED = [
     "git push -u origin feat/intake",
@@ -50,6 +59,12 @@ ALLOWED = [
     # Text inside a heredoc isn't a command.
     "cat > notes.md <<'EOF'\nNever run gh pr merge or git push --force here.\nEOF",
     "python3 - <<'PY'\nprint('pnpm db:migrate')\nPY",
+    # Review of #85: lines are separate commands.
+    "git push -u origin feat/x\ngh pr create --base main --title t --body-file b.md",
+    "git push -u origin feat/x\ngh workflow run release.yml -f pr=85",
+    "psql postgresql://prepora@127.0.0.1:5544/prepora_dev -c 'select 1'",
+    "psql $L -c 'select 1'",
+    "E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e",
 ]
 
 

@@ -2,13 +2,16 @@ name: PR acceptance
 
 # Enforces the testing working agreement (CLAUDE.md → Working agreements → Testing): every PR
 # records its acceptance results, linked to the CI run with the evidence (screenshots and video per
-# acceptance step). Reads only the PR's own body.
+# acceptance step). The link must be this repository's successful CI run for the PR's current head,
+# so evidence can't come from another repo, an old commit or a failed run. Reads the PR's body and
+# that one run.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   pull-requests: read
+  actions: read
 
 jobs:
   acceptance:
@@ -19,9 +22,12 @@ jobs:
         env:
           BODY: ${{ github.event.pull_request.body }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import json, os, re, sys
+          import json, os, re, sys, urllib.request
 
           body = os.environ.get("BODY") or ""
           labels = set(json.loads(os.environ.get("LABELS") or "[]"))
@@ -48,15 +54,42 @@ jobs:
                   )
 
           # UI sign-off is by evidence, not a label (owner, 2026-10-13; docs/specs/16-engineering-team.md):
-          # a PR with acceptance rows links the CI run whose "Acceptance evidence" shows each step.
-          if match and not na and filled and not re.search(
-              r"Evidence:\s*https://github\.com/[^/\s]+/[^/\s]+/actions/runs/\d+", section
-          ):
-              problems.append(
-                  "Acceptance results need an evidence link: a line "
-                  '"Evidence: https://github.com/<owner>/<repo>/actions/runs/<id>" pointing at the '
-                  "CI run whose summary shows each step's screenshot and video."
+          # filled-in rows need a link to this repo's successful CI run for the PR's current head,
+          # whose "Acceptance evidence" summary shows each step. "N/A:" doesn't excuse filled rows.
+          if match and filled:
+              repo = os.environ.get("REPO", "")
+              link = re.search(
+                  r"Evidence:\s*https://github\.com/" + re.escape(repo) + r"/actions/runs/(\d+)",
+                  section,
               )
+              if not link:
+                  problems.append(
+                      f'Acceptance results need an evidence link: "Evidence: https://github.com/{repo}'
+                      '/actions/runs/<id>", the CI run whose summary shows each step.'
+                  )
+              elif os.environ.get("GH_TOKEN"):
+                  req = urllib.request.Request(
+                      f"https://api.github.com/repos/{repo}/actions/runs/{link.group(1)}",
+                      headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                               "Accept": "application/vnd.github+json"},
+                  )
+                  try:
+                      run = json.load(urllib.request.urlopen(req, timeout=20))
+                  except Exception as exc:
+                      problems.append(f"The evidence run {link.group(1)} couldn't be read: {exc}")
+                  else:
+                      if run.get("name") != "CI":
+                          problems.append("The evidence link must be a run of the CI workflow.")
+                      if run.get("head_sha") != os.environ.get("HEAD_SHA"):
+                          problems.append(
+                              "The evidence run is for an older commit; link the CI run for the "
+                              "PR's current head (update the link after each push)."
+                          )
+                      if run.get("conclusion") != "success":
+                          problems.append(
+                              f"The evidence run hasn't succeeded (status: {run.get('status')}, "
+                              f"conclusion: {run.get('conclusion')})."
+                          )
 
           for p in problems:
               print(f"::error::{p}")

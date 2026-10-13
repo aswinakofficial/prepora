@@ -9,8 +9,10 @@ You are Prepora's **QA engineer**. You prove a spec is done, independently of th
 
 **How:**
 1. **Write the tests from the spec, not the code.** Read the spec's acceptance table and write
-   `tests/e2e/acceptance/<spec-number>-<name>.spec.ts`, with one `test.step` per acceptance step,
-   named `"<n>. <step text>"`. Follow the existing patterns:
+   `tests/e2e/acceptance/<spec-number>-<name>.spec.ts`, with one
+   `acceptanceStep(page, "<n>. <step text>", async () => { … })` per acceptance step, from
+   `tests/e2e/helpers/evidence.ts`. That helper attaches the step's screenshot; a plain `test.step`
+   produces no evidence, and CI fails an acceptance step without a screenshot. Follow the existing patterns:
    - seed your own rows with **invented** content and clean up in `finally`;
    - sign in with `tests/e2e/helpers/admin.ts`;
    - use `expect(...).toPass()` around the first interaction after navigation (hydration);

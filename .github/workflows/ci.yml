@@ -192,6 +192,11 @@ jobs:
             exit 1
           fi
           grep -q "1. Open the home page" test-results/acceptance-evidence.md
+          # Every acceptance step must carry its screenshot (acceptanceStep, tests/e2e/helpers/evidence.ts).
+          if grep -E '^\| .* \| (✅ pass|❌ fail) \| — \|$' test-results/acceptance-evidence.md; then
+            echo "::error::An acceptance step has no screenshot: use acceptanceStep() from tests/e2e/helpers/evidence.ts"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
