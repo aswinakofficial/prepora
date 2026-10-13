@@ -163,8 +163,13 @@ install_dependencies() {
     if [ ! -x "apps/$app/venv/bin/python" ]; then
       python3 -m venv "apps/$app/venv"
     fi
-    "apps/$app/venv/bin/python" -m pip install --quiet --upgrade pip
-    "apps/$app/venv/bin/python" -m pip install --quiet -r "apps/$app/requirements.txt"
+    # A venv made by uv (the maintainers' setup) has no pip; install through uv when there is one.
+    if command -v uv >/dev/null 2>&1; then
+      uv pip install --quiet --python "apps/$app/venv/bin/python" -r "apps/$app/requirements.txt"
+    else
+      "apps/$app/venv/bin/python" -m pip install --quiet --upgrade pip
+      "apps/$app/venv/bin/python" -m pip install --quiet -r "apps/$app/requirements.txt"
+    fi
     ok "Python environment apps/$app/venv"
   done
 
