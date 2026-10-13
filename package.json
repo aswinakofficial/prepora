@@ -31,6 +31,7 @@
     "content:report": "tsx scripts/content-report.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@biomejs/biome": "^2.5.14",
     "@cloudflare/workers-types": "^5.20260901.1",
     "@playwright/test": "^1.49.0",

@@ -29,6 +29,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # The agent team's guardrails (docs/specs/16-engineering-team.md, decision 3).
+      - run: python3 scripts/team/hooks/test_guard_bash.py
 
   db-check:
     name: drizzle-kit check
@@ -177,13 +179,32 @@ jobs:
 
       - run: pnpm test:e2e
 
+      # The PR's acceptance evidence (docs/specs/16-engineering-team.md, decision 4): every
+      # acceptance step's result and screenshot, and each test's video, in the job summary and as
+      # an artifact. Spec 16's own acceptance test must have produced it.
+      - name: Publish acceptance evidence
+        if: always()
+        run: |
+          if [ -f test-results/acceptance-evidence.md ]; then
+            cat test-results/acceptance-evidence.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No acceptance evidence was produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          grep -q "1. Open the home page" test-results/acceptance-evidence.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-evidence
+          path: test-results
+          retention-days: 30
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
-          path: |
-            playwright-report
-            test-results
+          path: playwright-report
           retention-days: 7
 
   # Proves the contributor setup in CONTRIBUTING.md still works from a clean checkout: the same

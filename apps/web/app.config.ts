@@ -25,6 +25,12 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss(), lingui()],
     envDir: "../../",
+    // The git commit this build came from, reported by /api/health so the Release workflow can tell
+    // when a merge is live (docs/specs/16-engineering-team.md, decision 6). Cloudflare Pages sets
+    // CF_PAGES_COMMIT_SHA during its build; local builds report null.
+    define: {
+      __PREPORA_COMMIT__: JSON.stringify(process.env.CF_PAGES_COMMIT_SHA ?? null),
+    },
   },
   react: {
     babel: {

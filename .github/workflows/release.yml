@@ -1,0 +1,206 @@
+name: Release
+
+# Ships one green PR to production (docs/specs/16-engineering-team.md, decision 5): verify, check
+# new migrations with Squawk, migrate production BEFORE merging (safe migrations automatically,
+# unsafe ones after the owner's approval), merge, then wait for the live site to report the merge
+# commit and smoke-test it. Started by the release agent: scripts/team/release.sh <pr>.
+#
+# Owner setup (the spec's "Owner setup"): environments `production-migrate` (no reviewers),
+# `production-unsafe` (required reviewer: the owner) and `release` (no reviewers); the secret
+# PROD_DATABASE_URL in the two production-* environments, and RELEASE_TOKEN in all three.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to release"
+        required: true
+      dry_run:
+        description: "Run every check but don't migrate or merge"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  verify:
+    name: Verify the PR and its migrations
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      migrations: ${{ steps.migrations.outputs.files }}
+      unsafe: ${{ steps.squawk.outputs.unsafe }}
+    steps:
+      - name: The PR is open, targets main, is up to date and its required checks passed
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          json=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json state,baseRefName,mergeStateStatus,headRefOid,isDraft)
+          echo "$json"
+          [ "$(jq -r .state <<<"$json")" = OPEN ] || { echo "::error::PR $PR isn't open"; exit 1; }
+          [ "$(jq -r .baseRefName <<<"$json")" = main ] || { echo "::error::PR $PR doesn't target main"; exit 1; }
+          [ "$(jq -r .isDraft <<<"$json")" = false ] || { echo "::error::PR $PR is a draft"; exit 1; }
+          state=$(jq -r .mergeStateStatus <<<"$json")
+          [ "$state" = CLEAN ] || { echo "::error::PR $PR isn't ready to merge (mergeStateStatus=$state): checks must pass and the branch must be up to date"; exit 1; }
+          echo "head_sha=$(jq -r .headRefOid <<<"$json")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: New migrations in this PR
+        id: migrations
+        run: |
+          git fetch origin main --depth=50
+          files=$(git diff --name-only --diff-filter=A origin/main...HEAD -- 'drizzle/*.sql' | tr '\n' ' ')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "New migrations: ${files:-none}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Squawk (is every new migration safe to apply automatically?)
+        id: squawk
+        env:
+          FILES: ${{ steps.migrations.outputs.files }}
+        run: |
+          if [ -z "$FILES" ]; then echo "unsafe=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if npx -y squawk-cli@2 --config .squawk.toml $FILES; then
+            echo "unsafe=false" >> "$GITHUB_OUTPUT"
+            echo "Squawk: safe, so production will be migrated automatically." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "unsafe=true" >> "$GITHUB_OUTPUT"
+            echo "Squawk: **unsafe**, so the migration waits for the owner's approval (environment production-unsafe)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  migrate:
+    name: Migrate production (safe)
+    needs: verify
+    if: needs.verify.outputs.migrations != '' && needs.verify.outputs.unsafe == 'false' && !inputs.dry_run
+    runs-on: ubuntu-latest
+    environment: production-migrate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.head_sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: pnpm db:migrate
+      - name: Production has every migration in the journal
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          want=$(jq '.entries | length' drizzle/meta/_journal.json)
+          got=$(psql "$DATABASE_URL" -At -c "select count(*) from drizzle.__drizzle_migrations")
+          echo "Journal: $want migrations; production: $got" >> "$GITHUB_STEP_SUMMARY"
+          [ "$want" = "$got" ]
+
+  migrate-unsafe:
+    name: Migrate production (unsafe; owner approval)
+    needs: verify
+    if: needs.verify.outputs.migrations != '' && needs.verify.outputs.unsafe == 'true' && !inputs.dry_run
+    runs-on: ubuntu-latest
+    environment: production-unsafe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.head_sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: pnpm db:migrate
+      - name: Production has every migration in the journal
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          want=$(jq '.entries | length' drizzle/meta/_journal.json)
+          got=$(psql "$DATABASE_URL" -At -c "select count(*) from drizzle.__drizzle_migrations")
+          [ "$want" = "$got" ]
+
+  merge:
+    name: Merge
+    needs: [verify, migrate, migrate-unsafe]
+    if: >-
+      always() && !inputs.dry_run && needs.verify.result == 'success' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') &&
+      (needs.migrate-unsafe.result == 'success' || needs.migrate-unsafe.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: release
+    outputs:
+      merge_sha: ${{ steps.merge.outputs.merge_sha }}
+    steps:
+      - name: Merge (only if the head hasn't moved since it was verified)
+        id: merge
+        env:
+          # A personal token, so the merge starts the workflows that follow it (the project board);
+          # GitHub doesn't start workflows from events caused by the built-in token.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PR: ${{ inputs.pr }}
+          HEAD_SHA: ${{ needs.verify.outputs.head_sha }}
+        run: |
+          gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --merge --match-head-commit "$HEAD_SHA"
+          sha=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json mergeCommit --jq .mergeCommit.oid)
+          echo "merge_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Merged PR #$PR as $sha" >> "$GITHUB_STEP_SUMMARY"
+
+  post-deploy:
+    name: Post-deploy check
+    needs: merge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the live site to serve the merge commit (up to 15 minutes)
+        env:
+          SHA: ${{ needs.merge.outputs.merge_sha }}
+        run: |
+          for i in $(seq 1 90); do
+            live=$(curl -fsS https://prepora.xpar.in/api/health | jq -r .commit || true)
+            [ "$live" = "$SHA" ] && { echo "Live on $SHA" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+            sleep 10
+          done
+          echo "::error::The live site still reports '$live', not $SHA, after 15 minutes"; exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge.outputs.merge_sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Read-only smoke test of production
+        env:
+          SMOKE_EXPECT_COMMIT: ${{ needs.merge.outputs.merge_sha }}
+        run: pnpm exec playwright test -c playwright.smoke.config.ts
+      - name: Open an incident on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Release of PR #${{ inputs.pr }}: post-deploy check failed`;
+            await github.rest.issues.create({
+              ...context.repo,
+              title,
+              labels: ["incident"],
+              body: `The post-deploy check for PR #${{ inputs.pr }} (merge ${{ needs.merge.outputs.merge_sha }}) failed. Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\nNothing was rolled back automatically. The lead agent proposes a fix to the owner.`,
+            });

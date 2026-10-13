@@ -5,7 +5,7 @@
 **Depends on:** #76 (mandatory UI acceptance testing), merged
 **Production database:** no schema change. A release workflow gains the ability to migrate
 production, set up by the owner (see Owner setup).
-**Status:** Draft, for the owner's review and approval as a whole
+**Status:** Approved by the owner (2026-10-13); implemented, with the owner's one-time setup and the pilot (`/ship-spec 12`) to follow
 
 ## Context
 
