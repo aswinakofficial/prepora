@@ -222,11 +222,11 @@
   {
     "name": "ui-change",
     "color": "5319e7",
-    "description": "Changes what users or admins see; needs the owner's UI check (owner-verified) before merging"
+    "description": "Changes what users or admins see; its acceptance evidence shows each step"
   },
   {
-    "name": "owner-verified",
-    "color": "0e8a16",
-    "description": "The owner tried this PR in the UI and confirmed it works"
+    "name": "incident",
+    "color": "b60205",
+    "description": "Production is unhealthy or a post-deploy check failed (opened automatically)"
   }
 ]

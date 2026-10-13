@@ -51,12 +51,27 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  reporter: [
+    ["list"],
+    ["./tests/e2e/reporters/evidence-reporter.ts"],
+    ...(process.env.CI ? ([["html", { open: "never" }]] as const) : []),
+  ],
   use: {
     baseURL: BASE_URL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  projects: [
+    // The core regression suite: evidence only when something fails.
+    { name: "core", testIgnore: /acceptance\// },
+    // Each spec's UI acceptance (tests/e2e/acceptance/): every run is recorded, video and a
+    // screenshot per acceptance step (helpers/evidence.ts), as the PR's evidence.
+    {
+      name: "acceptance",
+      testMatch: /acceptance\/.*\.spec\.ts$/,
+      use: { video: "on", screenshot: "on" },
+    },
+  ],
   webServer: [
     {
       command: `node ./node_modules/vinxi/bin/cli.mjs dev --port ${WEB_PORT}`,

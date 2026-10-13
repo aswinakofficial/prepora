@@ -5,6 +5,7 @@ import { getRouterManifest } from "@tanstack/react-start/router-manifest";
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { defineEventHandler, toWebRequest } from "vinxi/http";
 import { getAuth } from "../lib/auth";
+import { healthBody } from "../lib/health";
 import { serveMediaFile } from "../lib/media-files";
 import { syncRuntimeEnv } from "../lib/runtime-env";
 import { createRouter } from "./router.ts";
@@ -87,14 +88,10 @@ export default defineEventHandler(async (event) => {
     } catch {
       database = "unreachable";
     }
-    return new Response(
-      JSON.stringify({
-        status: database === "connected" ? "ok" : "degraded",
-        timestamp: new Date().toISOString(),
-        database,
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(healthBody(database)), {
+      status: 200,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
   }
 
   if (request.url.includes("/api/auth")) {

@@ -3,6 +3,14 @@
     "playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest"]
+    },
+    "postgres-local": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://prepora@127.0.0.1:5544/prepora_dev"
+      ]
     }
   }
 }
