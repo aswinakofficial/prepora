@@ -1,6 +1,6 @@
 # Spec 9 · Fixing held questions (the remediation ladder)
 
-**Status:** Draft. It's written in full when Spec 8 is merged.
+**Status:** Superseded (2026-10-04). Split into [Spec 13](13-math-recovery.md) (math from the PDF), [Spec 14](14-figures.md) (figures) and [Spec 15](15-ai-transcription.md) (AI transcription), with the "a better edition" step in [Spec 8](08-paper-editions.md).
 **Depends on:** Specs 7 and 8; Spec 4's R2 setup for crops
 **Design:** [knowledge-index §4a](../architecture/knowledge-index.md)
 

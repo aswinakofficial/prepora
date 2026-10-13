@@ -119,6 +119,37 @@ each.
 10. **The source's own plan.** Phases, a pilot with acceptance criteria, and which knowledge-index
     foundation steps it depends on.
 
+## Definition of done for an exam
+
+Prepora takes **one exam at a time** to done, then starts the next (owner, 2026-10-04). MS Learn is
+done; GATE is next ([specs](../specs/README.md)). Every exam's sources differ, so each gets its own
+adapter. But the adapter is small, because the heavy lifting is shared:
+
+- **Shared:** PDF and HTML stages, intake and quality, dedupe, publishing, rendering (Markdown and
+  LaTeX), images, grading, and the review UI.
+- **Per source:** a catalog of what to fetch, layout and key profiles measured on the real files,
+  and a parser that turns them into NormalizedQuestions. Quirks live there, never in the shared
+  stages.
+
+An exam is **done** when all of these hold:
+
+1. **Coverage:** every in-scope official paper is in the catalog, and each paper's answer key
+   joins to its questions completely.
+2. **Nothing is lost:** every question is either published or held with a reason (Admin → Held
+   questions). Holds have been worked down with the fix ladder (a better edition, math rebuilt
+   from the PDF, figures, AI transcription), and anything still held is listed with the reason in
+   the dossier.
+3. **It reads like the paper:** math, code, tables, figures and image options render correctly on
+   the question page and in practice (checked by e2e tests and the owner).
+4. **It grades like the exam:** single and multiple answers, numeric ranges, marks, negative marks,
+   and marks-to-all or dropped questions.
+5. **It's measured:** a per-paper quality report is committed, and re-importing is idempotent
+   (nothing new, nothing duplicated).
+6. **It's allowed and attributed:** the dossier's permission decision is recorded, and each page
+   says where the question came from.
+7. **It's explained:** the source's own explanations are used where it has them; otherwise AI
+   explanations, when the global flag is on ([ADR-015](../adr/015-ai-assistance.md)).
+
 ## Ground rules that apply to every source
 
 - **Never published without an official answer or a person's confirmation, and always labelled.**

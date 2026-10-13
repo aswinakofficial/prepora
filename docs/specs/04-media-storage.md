@@ -3,7 +3,7 @@
 **Issue:** #46
 **Milestone:** P · PDF stages (it's GATE's last prerequisite)
 **Depends on:** nothing
-**Status:** code merged; waiting on the owner's Cloudflare setup and the live acceptance check
+**Status:** Done (2026-10-13): set up and checked live on the `r2.dev` address; see "Set up: the `r2.dev` address for now"
 **Owner actions:** yes, Cloudflare account setup (marked **[Owner]**). Claude never enters
 credentials or changes Cloudflare settings without the owner's explicit go-ahead.
 
@@ -128,3 +128,23 @@ images in production.
 - **No page CSP to change.** The site sets no Content-Security-Policy on pages (only the sandbox
   policy on `/api/media` responses), so images from `media.prepora.xpar.in` need no allow-listing.
 - **#46 stays open** after this PR, for the owner's setup and the acceptance check above.
+
+## Set up: the `r2.dev` address for now (owner, 2026-10-13)
+
+The domain `prepora.xpar.in` is managed in a shared Cloudflare account, and R2 custom domains have
+to be in the bucket's own account. So the bucket `prepora-media` lives in the owner's own account
+and is served from its **public development URL** (`https://pub-….r2.dev`), which is enabled.
+`MEDIA_PUBLIC_BASE_URL` points there.
+
+- **Live check (2026-10-13):** a test image uploaded through `R2MediaStore` with a bucket-scoped
+  token was fetched from the `r2.dev` address with status 200, `image/png`, and `public,
+  max-age=31536000, immutable`, byte for byte. It was then deleted.
+- **Moving to a production address later is one setting.** The database stores only storage keys,
+  and `mediaUrl()` builds URLs from `MEDIA_PUBLIC_BASE_URL` per request. So:
+  - a custom domain in the bucket's account means changing that variable in Cloudflare Pages;
+  - moving the bucket to another account means pointing `STORAGE_*` at the new bucket, running
+    `media-sync` (which re-uploads every published image from the local store), then changing the
+    variable.
+- **Before real traffic:** Cloudflare rate-limits `r2.dev` and doesn't cache it at the edge. Move to
+  a custom domain in the bucket's account (a domain the owner controls) before images serve real
+  traffic. Follow-up: #82.

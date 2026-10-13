@@ -279,8 +279,10 @@ and check it with `pnpm db:check`.
   reference can be used to cross-check answers, never displayed. A source's own explanations are
   used only as its licence allows; otherwise explanations come from contributors or the AI step
   ([ADR-014](docs/adr/014-multi-source-provenance.md)).
-- **AI-suggested answers and transcriptions** are optional and always confirmed by a reviewer
-  before publishing, then labelled.
+- **AI-suggested answers** are optional and always confirmed by a reviewer before publishing, then
+  labelled. **AI transcriptions** (only for what can't be rebuilt from the PDF itself) publish
+  automatically only when they match the PDF's own words and numbers and a second pass agrees.
+  They're labelled, and sampled for review.
 - **AI explanations** are written only when a question's source has none, and only when the global
   `ai_explanations` feature flag is on. Each is checked against the official answer and by an
   independent verifier, labelled "AI-generated explanation", and sampled for review
