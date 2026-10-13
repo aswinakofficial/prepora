@@ -22,8 +22,9 @@ repo=$(git rev-parse --show-toplevel)
 cd "$repo"
 if [ "${PREPORA_MIGRATE_FROM_MAIN:-}" != 1 ]; then
   git fetch -q origin main
-  exec env PREPORA_MIGRATE_FROM_MAIN=1 bash -c "$(git show origin/main:scripts/team/migrate-prod.sh)" \
-    migrate-prod "$@"
+  src=$(git show origin/main:scripts/team/migrate-prod.sh) && [ -n "$src" ] ||
+    { echo "migrate-prod: main has no scripts/team/migrate-prod.sh, so nothing was migrated." >&2; exit 1; }
+  exec env PREPORA_MIGRATE_FROM_MAIN=1 bash -c "$src" migrate-prod "$@"
 fi
 
 pr=${1:?usage: scripts/team/migrate-prod.sh <pr> [--allow-unsafe]}

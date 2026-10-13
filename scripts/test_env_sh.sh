@@ -36,6 +36,10 @@ printf 'SHARED=prod\n' > .env.production
 check "production refuses a missing DATABASE_URL" \
   "$(bash scripts/env.sh production true >/dev/null 2>&1 && echo ran || echo refused)" "refused"
 
+printf '%s\n' 'DATABASE_URL="postgresql://prepora@127.0.0.1:5544/x" # local' > .env
+check "a quoted value with a trailing comment" \
+  "$(bash scripts/env.sh local sh -c 'echo "$DATABASE_URL"')" "postgresql://prepora@127.0.0.1:5544/x"
+
 # The check is on the value loaded, whatever the line order.
 printf 'DATABASE_URL=postgresql://prepora@127.0.0.1:5544/x\nexport DATABASE_URL=postgresql://u:p@ep-x.example.test/db\n' > .env
 check "local checks the value loaded, not the first line" \

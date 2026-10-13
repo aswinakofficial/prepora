@@ -31,7 +31,8 @@ load() {
     [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
     key=${BASH_REMATCH[1]}
     value=${BASH_REMATCH[2]}
-    if [[ "$value" =~ ^\"(.*)\"[[:space:]]*$ ]] || [[ "$value" =~ ^\'(.*)\'[[:space:]]*$ ]]; then
+    # A quoted value may be followed by a `# comment`.
+    if [[ "$value" =~ ^\"([^\"]*)\"[[:space:]]*(#.*)?$ ]] || [[ "$value" =~ ^\'([^\']*)\'[[:space:]]*(#.*)?$ ]]; then
       value=${BASH_REMATCH[1]}
     else
       value=${value%%[[:space:]]#*}
