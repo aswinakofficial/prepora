@@ -174,6 +174,30 @@ there. Google sign-in is optional locally (see [Google sign-in](#optional-google
 | `pnpm db:seed:dev` | Re-seeds demo data (idempotent). Refuses to run against a hosted Neon database. |
 | `pnpm db:local destroy` then `pnpm bootstrap --project-db` | Start over with an empty project-local database. |
 
+### Environments (maintainer)
+
+Contributors only ever need `.env`, the local database. The maintainer has a second file:
+
+| File | Database | Used by |
+|---|---|---|
+| `.env` | local | `pnpm dev`, tests, `pnpm db:*`, pipeline commands, and every agent |
+| `.env.production` | production | `pnpm dev:prod` (the owner's real scraping, ingestion and publishing), `scripts/team/migrate-prod.sh`, and `scripts/team/prod-read.sh` (read-only) |
+
+`scripts/env.sh <local|production> <command>` runs a command against one of them. `pnpm dev` goes
+through `scripts/env.sh local`, which refuses a `.env` that points anywhere but the local database,
+and `drizzle-kit` refuses a non-local database outside production mode. Production is migrated
+before a release by `scripts/team/migrate-prod.sh <pr>`
+([Spec 16](docs/specs/16-engineering-team.md), decision 5).
+
+To move an existing production `.env` to this layout:
+
+```bash
+mv .env .env.production
+pnpm bootstrap
+```
+
+`pnpm bootstrap` then writes a new local `.env`, migrates the local database and seeds it.
+
 ### Setting it up by hand
 
 Prefer not to run scripts? This is all `pnpm bootstrap` does:
