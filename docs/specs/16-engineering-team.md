@@ -331,7 +331,7 @@ The re-review found one more medium issue and three low ones, all fixed:
 
 The third pass found that data changes inside procedural code (a `DO $$ … $$` block, a function
 then `SELECT f()`) passed both checks. The checker now reads SQL token by token: a dollar-quoted
-body, string or comment can't hide or split a statement. Any `DO`, `CALL`, `SELECT`, function,
+body, string or comment can't hide or split a statement. Any `DO`, `CALL`, `SELECT`, `PREPARE`, `EXECUTE`, function,
 procedure, trigger or rule, or any dollar-quoted body, waits for the owner.
 
-The guard has 53 cases and the migration checker 31.
+The guard has 53 cases and the migration checker 32.

@@ -17,10 +17,10 @@ DATA = re.compile(
     re.I,
 )
 # Code runs inside procedural blocks, functions, triggers and rules, so their bodies can change
-# data whatever they start with: any of them waits for the owner. So does a bare SELECT or CALL,
-# which can run such code.
+# data whatever they start with: any of them waits for the owner. So does a bare SELECT, CALL,
+# PREPARE or EXECUTE, which can run such code.
 CODE = re.compile(
-    r"^(?:DO|CALL|SELECT)\b|^CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?"
+    r"^(?:DO|CALL|SELECT|PREPARE|EXECUTE)\b|^CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?"
     r"(?:FUNCTION|PROCEDURE|TRIGGER|RULE|EVENT\s+TRIGGER)\b|\$\w*\$",
     re.I,
 )
