@@ -8,8 +8,11 @@ Everything else exits 0.
 Blocked:
 - pushing to main, and force-pushing (except --force-with-lease to a non-main branch);
 - merging a PR (`gh pr merge`, or the merge API): merging happens only in the Release workflow;
-- loading the root .env into a shell (it holds the PRODUCTION database URL), and psql against a
-  non-local database. Read-only questions go through scripts/team/prod-read.sh;
+- anything production: .env.production, `scripts/env.sh production`, PREPORA_ENV=production,
+  `pnpm dev:prod`, psql against a non-local database, and `migrate-prod.sh --allow-unsafe` (the
+  owner's). Production is migrated only by scripts/team/migrate-prod.sh <pr>, which allows only
+  additive migrations; read-only questions go through scripts/team/prod-read.sh;
+- loading .env into a shell (use scripts/env.sh local);
 - database writes (migrations, pushes, pipeline imports and publishing) unless the same
   sub-command sets DATABASE_URL to the LOCAL database;
 - `rm -rf` on the home directory, the filesystem root, the repository itself or .git.
@@ -26,10 +29,16 @@ import sys
 # This file is scripts/team/hooks/guard_bash.py.
 REPO = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-# `DATABASE_URL=<local>` as an assignment for this sub-command, not E2E_DATABASE_URL or a comment.
+# `DATABASE_URL=<local>` as an assignment for this sub-command (not E2E_DATABASE_URL or a comment),
+# or the sub-command runs through `scripts/env.sh local`, which refuses a non-local .env.
 LOCAL_DB = re.compile(
     r"(?:^|\s)(?:env\s+)?DATABASE_URL=(?:\S*(?:127\.0\.0\.1|localhost|\[::1\])\S*|"
-    r"\$?\(bash\s+(?:\.\./)*scripts/dev-db\.sh\s+url\))"
+    r"\$?\(bash\s+(?:\.\./)*scripts/dev-db\.sh\s+url\))|"
+    r"^(?:bash\s+)?(?:\./)?(?:\.\./)*scripts/env\.sh\s+local\s"
+)
+PRODUCTION = re.compile(
+    r"\.env\.production\b|\benv\.sh\s+production\b|\bPREPORA_ENV=\S*production|\bdev:prod\b|"
+    r"migrate-prod\.sh\b.*--allow-unsafe"
 )
 DB_WRITES = re.compile(
     r"(db:migrate|db:push|db:reset|db:seed|drizzle-kit\s+(migrate|push)|"
@@ -105,6 +114,12 @@ def check_line(line: str) -> None:
 
 
 def check_part(part: str) -> None:
+    if PRODUCTION.search(part):
+        block(
+            "using production directly. Migrate production only with scripts/team/migrate-prod.sh "
+            "<pr> (additive migrations); anything else, and the owner's real ingestion "
+            "(pnpm dev:prod), is the owner's. Read-only questions: scripts/team/prod-read.sh."
+        )
     if re.search(r"\bgit\s+push\b", part):
         if re.search(r"(\s|:)(main|master)(\s|$)", part + " "):
             block("pushing to main. Push your branch and open a PR; the Release workflow merges.")
@@ -119,9 +134,9 @@ def check_part(part: str) -> None:
         or re.search(r"(\./)?(\.\./)*\.env\b.*\|?\s*xargs", part)
     ):
         block(
-            "loading the root .env (it points at PRODUCTION). For a read-only production question "
-            "use scripts/team/prod-read.sh; for local work set "
-            "DATABASE_URL=$(bash scripts/dev-db.sh url)."
+            "loading .env into a shell. Run the command through scripts/env.sh local, or set "
+            "DATABASE_URL=$(bash scripts/dev-db.sh url) on it. Read-only production questions: "
+            "scripts/team/prod-read.sh."
         )
     if re.search(r"(^|\s)psql(\s|$)", part) and not part.startswith("scripts/team/prod-read.sh"):
         url = re.search(r"postgres(?:ql)?://\S+", part)
@@ -131,9 +146,10 @@ def check_part(part: str) -> None:
                       "for read-only production questions.")
     if DB_WRITES.search(part) and not LOCAL_DB.search(part):
         block(
-            "a database write without the LOCAL database. Prefix the same command with "
-            "DATABASE_URL=$(bash scripts/dev-db.sh url) (fish: env DATABASE_URL=(bash "
-            "scripts/dev-db.sh url) …). Production changes only through the Release workflow."
+            "a database write without the LOCAL database. Run it as scripts/env.sh local <command>, "
+            "or prefix it with DATABASE_URL=$(bash scripts/dev-db.sh url) (fish: env "
+            "DATABASE_URL=(bash scripts/dev-db.sh url) …). Production is migrated only by "
+            "scripts/team/migrate-prod.sh <pr>."
         )
     check_rm(part)
 

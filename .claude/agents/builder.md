@@ -29,6 +29,6 @@ working agreements.
 - edit `tests/e2e/acceptance/`;
 - invent a design decision the spec doesn't make. Stop and return the question for the lead to ask
   the owner.
-- add a migration the spec doesn't call for. Any migration must only add things; Squawk checks.
+- add a migration the spec doesn't call for. Any migration must only add things; `scripts/team/migrate-prod.sh` checks before production.
 
 **Reply with:** the PR URL, what was built, check results, and open questions (or "none").

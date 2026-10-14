@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Starts the Release workflow for a PR (docs/specs/16-engineering-team.md, decision 5) and prints
-# the run's URL. The workflow verifies, migrates production if needed, merges and checks the
-# deploy; this script never merges or migrates anything itself.
+# the run's URL. The workflow verifies the PR, checks production already has its migrations (run
+# scripts/team/migrate-prod.sh first), merges and checks the deploy; this script never merges or
+# migrates anything itself.
 # Usage: scripts/team/release.sh <pr> [--dry-run]
 set -euo pipefail
 pr=${1:?usage: $0 <pr> [--dry-run]}

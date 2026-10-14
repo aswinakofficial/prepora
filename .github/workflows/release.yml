@@ -1,14 +1,13 @@
 name: Release
 
-# Ships one green PR to production (docs/specs/16-engineering-team.md, decision 5): verify, check
-# new migrations with Squawk, migrate production BEFORE merging (safe migrations automatically,
-# unsafe ones after the owner's approval), merge, then wait for the live site to report the merge
+# Ships one green PR to production (docs/specs/16-engineering-team.md, decision 5): verify the PR,
+# check production has exactly its migrations, merge, then wait for the live site to report the merge
 # commit and smoke-test it. Started by the release agent: scripts/team/release.sh <pr>.
 #
-# Owner setup (the spec's "Owner setup"): environments `production-migrate` (no reviewers),
-# `production-unsafe` (required reviewer: the owner) and `release` (no reviewers), each limited to
-# the `main` branch; the secret PROD_DATABASE_URL in the two production-* environments, and
-# RELEASE_TOKEN in `release`.
+# Production is migrated before this runs, from the owner's machine, by scripts/team/migrate-prod.sh
+# (safe migrations by the agent; anything else by the owner). This workflow holds no database secret:
+# it reads production's migration count from /api/health. It merges with the built-in token, so it
+# needs no environment or personal token either.
 
 on:
   workflow_dispatch:
@@ -44,8 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       head_sha: ${{ steps.pr.outputs.head_sha }}
-      migrations: ${{ steps.migrations.outputs.files }}
-      unsafe: ${{ steps.squawk.outputs.unsafe }}
     steps:
       - name: The PR is open, targets main, is up to date and its required checks passed
         id: pr
@@ -67,132 +64,42 @@ jobs:
           ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
 
-      - name: New migrations in this PR
-        id: migrations
-        run: |
-          git fetch origin main --depth=50
-          files=$(git diff --name-only --diff-filter=A origin/main...HEAD -- 'drizzle/*.sql' | tr '\n' ' ')
-          echo "files=$files" >> "$GITHUB_OUTPUT"
-          echo "New migrations: ${files:-none}" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Is every new migration safe to apply automatically?
-        id: squawk
+      - name: Production has exactly this PR's migrations
         env:
-          FILES: ${{ steps.migrations.outputs.files }}
-        run: |
-          if [ -z "$FILES" ]; then echo "unsafe=false" >> "$GITHUB_OUTPUT"; exit 0; fi
-          # Squawk checks schema changes, not data statements: a migration that deletes, updates,
-          # inserts or truncates rows, or drops or renames a table, column or type, is unsafe
-          # however it's written (scripts/team/migration_data_check.py). The checker and Squawk's
-          # config come from main, so a PR can't loosen the checks on its own migrations.
-          git show origin/main:scripts/team/migration_data_check.py > "$RUNNER_TEMP/data_check.py"
-          git show origin/main:.squawk.toml > "$RUNNER_TEMP/squawk.toml"
-          if ! python3 "$RUNNER_TEMP/data_check.py" $FILES; then
-            echo "unsafe=true" >> "$GITHUB_OUTPUT"
-            echo "A migration changes or removes data (see the step log), so it waits for the owner's approval." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if npx -y squawk-cli@2 --config "$RUNNER_TEMP/squawk.toml" $FILES; then
-            echo "unsafe=false" >> "$GITHUB_OUTPUT"
-            echo "Squawk: safe, so production will be migrated automatically." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "unsafe=true" >> "$GITHUB_OUTPUT"
-            echo "Squawk: **unsafe**, so the migration waits for the owner's approval (environment production-unsafe)." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  migrate:
-    name: Migrate production (safe)
-    needs: verify
-    if: needs.verify.outputs.migrations != '' && needs.verify.outputs.unsafe == 'false' && !inputs.dry_run
-    runs-on: ubuntu-latest
-    environment: production-migrate
-    steps:
-      # main's tooling (package.json, drizzle config, install scripts); only the PR's migrations
-      # (drizzle/), so a PR's own code never runs with the production database URL.
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Take only drizzle/ from the PR
-        env:
-          HEAD_SHA: ${{ needs.verify.outputs.head_sha }}
-        run: |
-          git fetch origin "$HEAD_SHA"
-          git checkout "$HEAD_SHA" -- drizzle/
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Apply migrations
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: pnpm db:migrate
-      - name: Production has every migration in the journal
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PR: ${{ inputs.pr }}
         run: |
           want=$(jq '.entries | length' drizzle/meta/_journal.json)
-          got=$(psql "$DATABASE_URL" -At -c "select count(*) from drizzle.__drizzle_migrations")
-          echo "Journal: $want migrations; production: $got" >> "$GITHUB_STEP_SUMMARY"
-          [ "$want" = "$got" ]
-
-  migrate-unsafe:
-    name: Migrate production (unsafe; owner approval)
-    needs: verify
-    if: needs.verify.outputs.migrations != '' && needs.verify.outputs.unsafe == 'true' && !inputs.dry_run
-    runs-on: ubuntu-latest
-    environment: production-unsafe
-    steps:
-      # main's tooling (package.json, drizzle config, install scripts); only the PR's migrations
-      # (drizzle/), so a PR's own code never runs with the production database URL.
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Take only drizzle/ from the PR
-        env:
-          HEAD_SHA: ${{ needs.verify.outputs.head_sha }}
-        run: |
-          git fetch origin "$HEAD_SHA"
-          git checkout "$HEAD_SHA" -- drizzle/
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Apply migrations
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: pnpm db:migrate
-      - name: Production has every migration in the journal
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: |
-          want=$(jq '.entries | length' drizzle/meta/_journal.json)
-          got=$(psql "$DATABASE_URL" -At -c "select count(*) from drizzle.__drizzle_migrations")
-          [ "$want" = "$got" ]
+          want_latest=$(jq '.entries | last | .when' drizzle/meta/_journal.json)
+          health=$(curl -fsS --max-time 15 https://prepora.xpar.in/api/health)
+          have=$(jq -r '.migrations // empty' <<<"$health")
+          have_latest=$(jq -r '.latestMigration // empty | floor' <<<"$health")
+          [ -n "$have" ] || { echo "::error::/api/health doesn't report production's migrations"; exit 1; }
+          echo "Journal: $want migrations, latest $want_latest; production: $have, latest $have_latest" >> "$GITHUB_STEP_SUMMARY"
+          # Exactly, not "at least": production can be ahead when another PR was migrated but not
+          # merged, and then this PR's own migration may not be applied.
+          if [ "$have" != "$want" ] || [ "$have_latest" != "$want_latest" ]; then
+            echo "::error::Production's migrations ($have, latest $have_latest) aren't this PR's ($want, latest $want_latest). Run scripts/team/migrate-prod.sh $PR first; if production is ahead, release the PR that migrated it first."
+            exit 1
+          fi
 
   merge:
     name: Merge
-    needs: [verify, migrate, migrate-unsafe]
-    if: >-
-      always() && !inputs.dry_run && needs.verify.result == 'success' &&
-      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') &&
-      (needs.migrate-unsafe.result == 'success' || needs.migrate-unsafe.result == 'skipped')
+    needs: verify
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
-    environment: release
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      # To start the board workflow (below).
+      actions: write
     outputs:
       merge_sha: ${{ steps.merge.outputs.merge_sha }}
     steps:
       - name: Merge (only if the head hasn't moved since it was verified)
         id: merge
         env:
-          # A personal token, so the merge starts the workflows that follow it (the project board);
-          # GitHub doesn't start workflows from events caused by the built-in token.
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           PR: ${{ inputs.pr }}
           HEAD_SHA: ${{ needs.verify.outputs.head_sha }}
         run: |
@@ -200,6 +107,17 @@ jobs:
           sha=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json mergeCommit --jq .mergeCommit.oid)
           echo "merge_sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Merged PR #$PR as $sha" >> "$GITHUB_STEP_SUMMARY"
+      - name: Move the closed issues' cards on the board
+        # A merge by the built-in token doesn't start other workflows, except a workflow_dispatch.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          issues=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json closingIssuesReferences --jq '[.closingIssuesReferences[].number] | join(" ")')
+          if [ -n "$issues" ]; then
+            gh workflow run project-status.yml -R "$GITHUB_REPOSITORY" -f issues="$issues"
+            echo "Board sync started for: $issues" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   post-deploy:
     name: Post-deploy check
