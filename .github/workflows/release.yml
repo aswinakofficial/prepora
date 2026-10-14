@@ -59,7 +59,7 @@ jobs:
           [ "$state" = CLEAN ] || { echo "::error::PR $PR isn't ready to merge (mergeStateStatus=$state): checks must pass and the branch must be up to date"; exit 1; }
           echo "head_sha=$(jq -r .headRefOid <<<"$json")" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
@@ -136,11 +136,11 @@ jobs:
             sleep 10
           done
           echo "::error::The live site still reports '$live', not $SHA, after 15 minutes"; exit 1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.merge.outputs.merge_sha }}
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
