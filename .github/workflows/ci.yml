@@ -14,7 +14,7 @@ jobs:
     name: Lint, typecheck, test (Node)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
@@ -38,7 +38,7 @@ jobs:
     name: drizzle-kit check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
@@ -65,7 +65,7 @@ jobs:
       run:
         working-directory: apps/scraper
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -104,7 +104,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://prepora@localhost:5432/prepora_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
@@ -156,7 +156,7 @@ jobs:
     env:
       E2E_DATABASE_URL: postgresql://prepora@localhost:5432/prepora_e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
@@ -221,7 +221,7 @@ jobs:
     name: Fresh setup (pnpm bootstrap)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
@@ -262,7 +262,7 @@ jobs:
     name: Production build (Cloudflare)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Version comes from package.json's "packageManager" (setting it here too is an error).
       - uses: pnpm/action-setup@v4
