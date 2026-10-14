@@ -46,3 +46,6 @@ apps/web/public/rss.xml
 
 # Local installer downloads (e.g. a desktop app .deb) — never repository content.
 *.deb
+
+# Agent worktrees (Claude Code `isolation: worktree`)
+.claude/worktrees/
