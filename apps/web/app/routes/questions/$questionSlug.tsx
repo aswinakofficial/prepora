@@ -10,6 +10,7 @@ import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
 import { CANONICAL_ORIGIN } from "../../../lib/site-config";
 import { QuestionImages } from "../../components/question/QuestionImages";
+import { RichText } from "../../components/question/RichText";
 import { Skeleton, SkeletonRegion } from "../../components/ui/Skeleton";
 
 export const Route = createFileRoute("/questions/$questionSlug")({
@@ -265,9 +266,13 @@ function QuestionPage() {
 
         {/* Question Reading Area */}
         <section className="mb-24">
-          <p className="text-3xl md:text-4xl text-white font-light leading-snug mb-16 max-w-2xl whitespace-pre-line">
-            {question.text}
-          </p>
+          <RichText
+            text={question.text}
+            html={question.textHtml}
+            format={question.textFormat}
+            className="text-3xl md:text-4xl text-white font-light leading-snug mb-16 max-w-2xl"
+            plainClassName="whitespace-pre-line"
+          />
           <QuestionImages images={question.images} placement="question" className="-mt-8 mb-16" />
 
           {primary?.marks != null && (
@@ -321,7 +326,12 @@ function QuestionPage() {
                       : "text-slate-400 group-hover:text-slate-300"
                   }`}
                 >
-                  {opt.text}
+                  <RichText
+                    as="span"
+                    text={opt.text}
+                    html={opt.html}
+                    format={question.textFormat}
+                  />
                   <QuestionImages
                     images={question.images}
                     placement="option"
@@ -385,7 +395,13 @@ function QuestionPage() {
                 <ul className="mt-3 space-y-1 text-lg text-slate-300">
                   {correctOptions.map((option) => (
                     <li key={option.id}>
-                      {option.key} · {option.text}
+                      {option.key} ·{" "}
+                      <RichText
+                        as="span"
+                        text={option.text}
+                        html={option.html}
+                        format={question.textFormat}
+                      />
                     </li>
                   ))}
                   {isNumerical && acceptedNumeric && <li>Accepted: {acceptedNumeric}</li>}
@@ -400,9 +416,18 @@ function QuestionPage() {
                       <h2 className="font-mono text-sm tracking-widest text-slate-500 uppercase mb-4">
                         Why
                       </h2>
-                      <p className="text-lg text-slate-400 leading-relaxed max-w-2xl whitespace-pre-line">
-                        {explanation}
-                      </p>
+                      {question.textFormat === "markdown" && result.explanationHtml ? (
+                        <RichText
+                          text={result.explanation}
+                          html={result.explanationHtml}
+                          format={question.textFormat}
+                          className="text-lg text-slate-400 leading-relaxed max-w-2xl"
+                        />
+                      ) : (
+                        <p className="text-lg text-slate-400 leading-relaxed max-w-2xl whitespace-pre-line">
+                          {explanation}
+                        </p>
+                      )}
                       <QuestionImages
                         images={result.explanationImages}
                         placement="explanation"

@@ -21,6 +21,7 @@ import {
 import { canonicalLink } from "../../lib/json-ld";
 import { orpc } from "../../lib/orpc";
 import { type QuestionImage, QuestionImages } from "../components/question/QuestionImages";
+import { RichText } from "../components/question/RichText";
 import { placeholderKeys, Skeleton, SkeletonRegion } from "../components/ui/Skeleton";
 
 const practiceSearchSchema = z.object({
@@ -59,7 +60,11 @@ type Stage = "active" | "results";
 interface Question {
   id: string;
   text: string;
-  options: { id: string; key: string; text: string }[];
+  /** Server-rendered HTML for a markdown question (Spec 12). */
+  textHtml?: string;
+  textFormat?: string;
+  explanationHtml?: string | null;
+  options: { id: string; key: string; text: string; html?: string }[];
   correctKey: string;
   /** Every correct option — more than one for a "Choose N" question. */
   correctKeys?: string[];
@@ -525,9 +530,14 @@ function PracticePage() {
                       </div>
 
                       {/* Question Text */}
-                      <h3 className="text-xl sm:text-2xl text-slate-100 font-light leading-relaxed whitespace-pre-line">
-                        {q.text}
-                      </h3>
+                      <RichText
+                        as="h3"
+                        text={q.text}
+                        html={q.textHtml}
+                        format={q.textFormat}
+                        className="text-xl sm:text-2xl text-slate-100 font-light leading-relaxed"
+                        plainClassName="whitespace-pre-line"
+                      />
                       <QuestionImages images={q.images} placement="question" />
                       <SelectionHint required={required} selected={userAns.length} />
 
@@ -622,7 +632,12 @@ function PracticePage() {
                                   {opt.key}
                                 </span>
                                 <span className="text-base font-light text-slate-200">
-                                  {opt.text}
+                                  <RichText
+                                    as="span"
+                                    text={opt.text}
+                                    html={opt.html}
+                                    format={q.textFormat}
+                                  />
                                   <QuestionImages
                                     images={q.images}
                                     placement="option"
@@ -657,7 +672,16 @@ function PracticePage() {
                               )}
                             </span>
                           </div>
-                          <ResolutionText text={resolution.explanation} />
+                          {q.textFormat === "markdown" && q.explanationHtml ? (
+                            <RichText
+                              text={q.explanation}
+                              html={q.explanationHtml}
+                              format={q.textFormat}
+                              className="text-sm sm:text-base text-slate-300 font-light leading-relaxed"
+                            />
+                          ) : (
+                            <ResolutionText text={resolution.explanation} />
+                          )}
                           <QuestionImages
                             images={q.images}
                             placement="explanation"
@@ -732,9 +756,14 @@ function PracticePage() {
                 </button>
               </div>
 
-              <h2 className="text-2xl md:text-3xl lg:text-4xl font-light tracking-tight text-white mb-16 leading-relaxed whitespace-pre-line">
-                {currentQ.text}
-              </h2>
+              <RichText
+                as="h2"
+                text={currentQ.text}
+                html={currentQ.textHtml}
+                format={currentQ.textFormat}
+                className="text-2xl md:text-3xl lg:text-4xl font-light tracking-tight text-white mb-16 leading-relaxed"
+                plainClassName="whitespace-pre-line"
+              />
               <QuestionImages
                 images={currentQ.images}
                 placement="question"
@@ -816,7 +845,12 @@ function PracticePage() {
                           {opt.key}
                         </span>
                         <span className="text-lg font-light flex-1 pt-1 md:pt-0">
-                          {opt.text}
+                          <RichText
+                            as="span"
+                            text={opt.text}
+                            html={opt.html}
+                            format={currentQ.textFormat}
+                          />
                           <QuestionImages
                             images={currentQ.images}
                             placement="option"
@@ -852,7 +886,16 @@ function PracticePage() {
                       <div className="flex items-center gap-3 text-[10px] font-mono text-slate-400 uppercase tracking-widest mb-6">
                         <Sparkles className="w-3.5 h-3.5" /> Resolution Logic
                       </div>
-                      <ResolutionText text={resolution.explanation} />
+                      {currentQ.textFormat === "markdown" && currentQ.explanationHtml ? (
+                        <RichText
+                          text={currentQ.explanation}
+                          html={currentQ.explanationHtml}
+                          format={currentQ.textFormat}
+                          className="text-sm sm:text-base text-slate-300 font-light leading-relaxed"
+                        />
+                      ) : (
+                        <ResolutionText text={resolution.explanation} />
+                      )}
                       <QuestionImages
                         images={currentQ.images}
                         placement="explanation"

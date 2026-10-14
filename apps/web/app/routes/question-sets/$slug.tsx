@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
+import { RichText } from "../../components/question/RichText";
 import { SkeletonListRows } from "../../components/ui/Skeleton";
 
 export const Route = createFileRoute("/question-sets/$slug")({
@@ -110,7 +111,7 @@ function QuestionSetPage() {
                     {String(q.number).padStart(2, "0")}
                   </span>
                   <span className="text-lg text-slate-300 group-hover:text-white transition-colors truncate max-w-2xl font-light">
-                    {q.text}
+                    <RichText as="span" text={q.text} html={q.textHtml} format={q.textFormat} />
                   </span>
                 </div>
                 <div className="flex items-center gap-6 shrink-0 pl-14 md:pl-0">

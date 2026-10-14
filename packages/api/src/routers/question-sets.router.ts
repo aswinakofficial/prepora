@@ -51,6 +51,8 @@ export const questionSetsRouter = {
           return {
             number: occ.originalQuestionNumber ?? idx + 1,
             text: q.questionText,
+            textHtml: q.textHtml,
+            textFormat: q.textFormat,
             slug: q.slug,
             topic: q.topicName || occ.subjectName || "General",
             difficulty: q.difficulty,

@@ -12,6 +12,7 @@ from prepora_pipeline.contracts import (
     NormalizedQuestion,
     NumericalAnswer,
 )
+from prepora_pipeline.core.markdown import escape_markdown
 
 from .catalog import PaperSpec
 from .key_parser import GateKeyRow
@@ -74,9 +75,15 @@ def to_normalized(
         marks=float(key.marks),
         # Dossier §4: a wrong MCQ answer costs a third of its marks; MSQ and NAT cost nothing.
         negative_marks=key.marks / 3 if key.qtype == "MCQ" else 0.0,
-        question_text=question.text,
+        # Markdown (docs/specs/12-math-display.md): prose is escaped so only the intended
+        # formatting renders; the parser's code fences stay as they are.
+        question_text=escape_markdown(question.text),
+        text_format="markdown",
         question_type=QUESTION_TYPES[key.qtype],
-        options=[NormalizedOption(key=k, text=t) for k, t in sorted(question.options.items())],
+        options=[
+            NormalizedOption(key=k, text=escape_markdown(t))
+            for k, t in sorted(question.options.items())
+        ],
         answer=answer,
         answer_status=answer_status,
         answer_provenance="official_final",

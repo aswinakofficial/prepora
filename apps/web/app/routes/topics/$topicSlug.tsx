@@ -4,6 +4,7 @@ import { ArrowUpRight, BookOpen, Search, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { breadcrumbListJsonLd, canonicalLink } from "../../../lib/json-ld";
 import { orpc } from "../../../lib/orpc";
+import { RichText } from "../../components/question/RichText";
 import { SkeletonListRows } from "../../components/ui/Skeleton";
 
 export const Route = createFileRoute("/topics/$topicSlug")({
@@ -279,7 +280,7 @@ function TopicPage() {
 
                     {/* Question Content */}
                     <h3 className="text-lg text-slate-200 group-hover:text-white font-light tracking-tight mb-4 leading-relaxed transition-colors">
-                      {q.text}
+                      <RichText as="span" text={q.text} html={q.textHtml} format={q.textFormat} />
                     </h3>
 
                     {/* Footer Row: Action Link */}

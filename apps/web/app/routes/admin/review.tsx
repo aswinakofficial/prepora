@@ -1,3 +1,4 @@
+import { renderRichText } from "@prepora/api/src/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -17,6 +18,7 @@ import React, { useState } from "react";
 import { extractLabeledSection, mergeReadingResources } from "../../../lib/additional-reading";
 import { orpc } from "../../../lib/orpc";
 import { type QuestionImage, QuestionImages } from "../../components/question/QuestionImages";
+import { RichText } from "../../components/question/RichText";
 import {
   type DuplicateChoice,
   DuplicateDecisions,
@@ -64,6 +66,13 @@ interface QuestionElement {
   additionalReading?: string | string[];
   additionalReadings?: string[];
   additionalReadingLinks?: Array<{ text: string; url?: string }>;
+  /** A connector's complete NormalizedQuestion (normalized-v1 batches). */
+  normalized?: {
+    text_format?: string;
+    question_text?: string;
+    options?: Array<{ text?: string }>;
+    explanation?: string | null;
+  };
 }
 
 const ADDITIONAL_READING_STOP_LABELS = [
@@ -719,6 +728,12 @@ function AdminReviewPage() {
                     ) : (
                       elements.map((rawQ, qIdx) => {
                         const q = parseQuestionElement(rawQ, qIdx);
+                        // Spec 12: a markdown question previews as it will publish, rendered here
+                        // in the browser with the same function the API uses on the server.
+                        const norm = rawQ.normalized;
+                        const isMarkdown = norm?.text_format === "markdown";
+                        const mdHtml = (text: string | null | undefined) =>
+                          renderRichText(text ?? "", "markdown");
 
                         return (
                           <div key={qIdx} className={`${qIdx > 0 ? "pt-6" : ""} space-y-4`}>
@@ -733,9 +748,18 @@ function AdminReviewPage() {
                                     {q.exam}
                                   </span>
                                 </div>
-                                <h3 className="text-sm md:text-base font-medium text-slate-100 leading-relaxed font-sans whitespace-pre-line">
-                                  {q.questionText}
-                                </h3>
+                                {isMarkdown ? (
+                                  <RichText
+                                    text={q.questionText}
+                                    html={mdHtml(norm?.question_text)}
+                                    format="markdown"
+                                    className="text-sm md:text-base font-medium text-slate-100 leading-relaxed font-sans"
+                                  />
+                                ) : (
+                                  <h3 className="text-sm md:text-base font-medium text-slate-100 leading-relaxed font-sans whitespace-pre-line">
+                                    {q.questionText}
+                                  </h3>
+                                )}
                                 <QuestionImages
                                   images={q.images}
                                   placement="question"
@@ -783,7 +807,12 @@ function AdminReviewPage() {
                                       {optKey}
                                     </span>
                                     <span className="flex-1 leading-snug">
-                                      {optText}
+                                      <RichText
+                                        as="span"
+                                        text={optText}
+                                        html={mdHtml(norm?.options?.[optIdx]?.text ?? optText)}
+                                        format={isMarkdown ? "markdown" : "plain"}
+                                      />
                                       <QuestionImages
                                         images={q.images}
                                         placement="option"
@@ -809,9 +838,18 @@ function AdminReviewPage() {
                                   <span className="font-mono text-[10px] uppercase tracking-wider text-sky-400 font-bold block">
                                     Official Rationale / Explanation:
                                   </span>
-                                  <p className="leading-relaxed text-slate-300 whitespace-pre-line">
-                                    {q.explanation}
-                                  </p>
+                                  {isMarkdown ? (
+                                    <RichText
+                                      text={q.explanation}
+                                      html={mdHtml(norm?.explanation ?? q.explanation)}
+                                      format="markdown"
+                                      className="leading-relaxed text-slate-300"
+                                    />
+                                  ) : (
+                                    <p className="leading-relaxed text-slate-300 whitespace-pre-line">
+                                      {q.explanation}
+                                    </p>
+                                  )}
                                   <QuestionImages images={q.images} placement="explanation" />
                                 </div>
                               </div>

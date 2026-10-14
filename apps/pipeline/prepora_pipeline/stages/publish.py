@@ -466,11 +466,13 @@ def _link_to_existing_question(
 
     cur.execute(
         "UPDATE questions SET question_text = %s, content_hash = %s, "
-        "explanation = COALESCE(%s, explanation), updated_at = now() WHERE id = %s",
+        "explanation = COALESCE(%s, explanation), text_format = %s, updated_at = now() "
+        "WHERE id = %s",
         (
             normalized.question_text,
             content_hash(normalized.question_text),
             normalized.explanation,
+            normalized.text_format,
             question_id,
         ),
     )
@@ -543,8 +545,8 @@ def _resolve_or_create_question(
     cur.execute(
         "INSERT INTO questions "
         "(stable_content_id, content_hash, slug, question_text, question_type, explanation, "
-        "difficulty, topic_id, status) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'published') RETURNING id",
+        "text_format, difficulty, topic_id, status) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'published') RETURNING id",
         (
             stable_content_id,
             hash_,
@@ -552,6 +554,7 @@ def _resolve_or_create_question(
             normalized.question_text,
             normalized.question_type,
             normalized.explanation,
+            normalized.text_format,
             normalized.difficulty,
             topic_id,
         ),

@@ -3,6 +3,7 @@ import { questions } from "@prepora/db/schema";
 import { inArray, sql } from "drizzle-orm";
 import { numericKey } from "./numeric-answer.js";
 import { loadQuestionImages, type QuestionImage } from "./question-media.js";
+import { renderRichText } from "./rich-text.js";
 
 // docs/roadmap/engineering-roadmap.md item 24: shared catalog-traversal logic for every page that
 // lists or resolves published questions — extracted so exams.router.ts, topics.router.ts,
@@ -192,10 +193,14 @@ export interface QuestionWithAnswer {
   id: string;
   slug: string;
   questionText: string;
+  /** questionText rendered to safe HTML for the question's text format (Spec 12). */
+  textHtml: string;
+  textFormat: string;
   explanation: string | null;
+  explanationHtml: string | null;
   difficulty: string | null;
   topicName: string | null;
-  options: { id: string; key: string; text: string }[];
+  options: { id: string; key: string; text: string; html: string }[];
   /** Every correct option key, in option order — more than one for a "Choose N" question. */
   correctKeys: string[];
   /** The first of correctKeys, kept for single-answer callers. */
@@ -252,12 +257,21 @@ export async function loadQuestionsWithAnswers(
       id: row.id,
       slug: row.slug,
       questionText: row.questionText,
+      textHtml: renderRichText(row.questionText, row.textFormat),
+      textFormat: row.textFormat,
       explanation: row.explanation,
+      explanationHtml:
+        row.explanation === null ? null : renderRichText(row.explanation, row.textFormat),
       difficulty: row.difficulty,
       topicName: row.topic?.name ?? null,
       // docs/roadmap/engineering-roadmap.md item 25: `id` is included so callers can pass a real
       // selectedOptionId straight into questions.submitAnswer instead of only having the display key.
-      options: sortedOptions.map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
+      options: sortedOptions.map((o) => ({
+        id: o.id,
+        key: o.optionKey,
+        text: o.optionText,
+        html: renderRichText(o.optionText, row.textFormat),
+      })),
       correctKeys,
       correctKey: correctKeys[0] ?? null,
       questionType: row.questionType,

@@ -7,6 +7,7 @@ import { publicProcedure } from "../context.js";
 import { createPracticeSession, finalizePracticeSession, recordAttempt } from "../lib/attempts.js";
 import { findPublishedQuestionBySlug } from "../lib/catalog-questions.js";
 import { loadQuestionImages } from "../lib/question-media.js";
+import { renderRichText } from "../lib/rich-text.js";
 
 export const questionsRouter = {
   // docs/roadmap/engineering-roadmap.md item 24: the question-detail page used to render a fixed
@@ -39,6 +40,8 @@ export const questionsRouter = {
       return {
         id: q.id,
         text: q.questionText,
+        textHtml: renderRichText(q.questionText, q.textFormat),
+        textFormat: q.textFormat,
         // "numerical" questions take a typed answer, graded by submitAnswer against the key's
         // ranges — which never leave the server before an answer is submitted.
         questionType: q.questionType,
@@ -54,7 +57,12 @@ export const questionsRouter = {
         ),
         options: [...q.options]
           .sort((a, b) => a.sequence - b.sequence)
-          .map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
+          .map((o) => ({
+            id: o.id,
+            key: o.optionKey,
+            text: o.optionText,
+            html: renderRichText(o.optionText, q.textFormat),
+          })),
         topic: match.topicName,
         // Every paper it appeared in, newest first — the page's "Appeared in" list and breadcrumbs.
         appearances: match.appearances,

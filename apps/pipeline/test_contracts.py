@@ -170,7 +170,7 @@ class TestNormalizedQuestion:
             "past_paper",
             "final",
         )
-        assert q.contract_version == "5"
+        assert q.contract_version == "6"
 
     def test_numeric_ranges_round_trip(self):
         kwargs = valid_normalized_kwargs()

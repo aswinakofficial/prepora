@@ -56,6 +56,14 @@ class TestNormalizer:
         assert n.question_set_title == "GATE 2099 · CS-1"
         assert n.explanation is None and n.parser_version == "gate-1"
 
+    def test_it_is_markdown_with_prose_escaped_and_code_fences_kept(self):
+        question = _question(options={"A": "a_1 * b", "B": "Two", "C": "Three", "D": "Four"})
+        question.text = "What does *p hold?\n\n```\nint *p = &x;\n```"
+        n = to_normalized(question, _key(), PAPER)
+        assert n.text_format == "markdown"
+        assert n.question_text == "What does \\*p hold?\n\n```\nint *p = &x;\n```"
+        assert n.options[0].text == "a\\_1 \\* b"
+
     def test_msq_nat_and_mta_answers(self):
         msq = to_normalized(_question(), _key("MSQ", ("keys", ["A", "C"])), PAPER)
         assert msq.question_type == "multiple_correct" and msq.answer.correct_keys == ["A", "C"]

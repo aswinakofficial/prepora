@@ -142,6 +142,21 @@ def _row(query, params):
 
 
 class TestBasicPublish:
+    def test_text_format_is_written_on_insert_and_defaults_to_plain(self, test_exam, test_subject):
+        plain = publish_question(
+            _normalized(test_exam, test_subject, question_text=f"Plain {uuid.uuid4()}", number=1)
+        )
+        text = f"MD $x_1$ {uuid.uuid4()}"
+        md = _normalized(test_exam, test_subject, question_text=text, number=2)
+        md.text_format = "markdown"
+        marked = publish_question(md)
+
+        def fmt(question_id):
+            return _row("SELECT text_format FROM questions WHERE id = %s", (question_id,))[0]
+
+        assert fmt(plain.question_id) == "plain"
+        assert fmt(marked.question_id) == "markdown"
+
     def test_publishing_the_same_content_twice_produces_one_question_and_one_occurrence(
         self, test_exam, test_subject
     ):

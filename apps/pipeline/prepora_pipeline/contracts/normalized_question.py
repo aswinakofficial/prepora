@@ -156,6 +156,10 @@ class NormalizedQuestion(BaseModel):
     paper_kind: PaperKind = "past_paper"
     key_status: KeyStatus = "final"
     explanation: str | None = None
+    # How question_text, the options and the explanation are written
+    # (docs/specs/12-math-display.md):
+    # "markdown" is Markdown with $…$ / $$…$$ LaTeX math. MS Learn stays "plain".
+    text_format: Literal["plain", "markdown"] = "plain"
     topic_slug: str | None = None
     # Images in the stem, an option or the explanation, in display order.
     media: list[NormalizedMedia] = Field(default_factory=list)

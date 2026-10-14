@@ -18,6 +18,7 @@ import {
   id,
   publishingStatusEnum,
   questionTypeEnum,
+  textFormatEnum,
   timestamps,
   tsvector,
 } from "./shared.ts";
@@ -42,6 +43,8 @@ export const questions = pgTable(
     contentHash: text("content_hash"),
     questionType: questionTypeEnum("question_type").notNull().default("mcq"),
     explanation: text("explanation"),
+    // Applies to the question text, its options and its explanation together (Spec 12).
+    textFormat: textFormatEnum("text_format").notNull().default("plain"),
     sourceLabel: aiSourceEnum("source_label").notNull().default("verified"),
     difficulty: difficultyEnum("difficulty"),
     difficultySource: text("difficulty_source"), // 'official' | 'editorial' | 'community'
