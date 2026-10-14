@@ -767,6 +767,8 @@ async function processOneReviewItem(
       }
       if (result?.skipped) {
         skippedCount++;
+        // Skipped earlier as a duplicate: this copy won't be published either.
+        if (isNormalized) await markIntakeRejected(db, input.id, number);
         return;
       }
       publishCount++;
@@ -1262,6 +1264,7 @@ export const adminRouter = {
     .input(
       z.object({
         paperKey: z.string().min(1),
+        edition: z.string().min(1),
         status: z.enum(["ready", "held", "in_review", "published", "rejected"]).optional(),
       }),
     )

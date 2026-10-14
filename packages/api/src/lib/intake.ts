@@ -13,10 +13,11 @@ export type IntakeStatus = "ready" | "held" | "in_review" | "published" | "rejec
 // A batch of a pipeline connector holds one paper, so its id plus the question's number in that
 // paper names one intake item. That holds for questions published straight from the batch and for
 // ones a reviewer decides on later (duplicate_reviews keeps the same number).
+// Only an item still in review moves: discarding a partly-published batch must not turn its live
+// questions into rejected ones.
 function inBatch(batchId: string, number?: number) {
-  return number === undefined
-    ? eq(intakeItems.reviewBatchId, batchId)
-    : and(eq(intakeItems.reviewBatchId, batchId), eq(intakeItems.number, number));
+  const inReview = and(eq(intakeItems.reviewBatchId, batchId), eq(intakeItems.status, "in_review"));
+  return number === undefined ? inReview : and(inReview, eq(intakeItems.number, number));
 }
 
 /** A question from this batch was published (or linked to an existing one). No-op otherwise. */
@@ -63,12 +64,13 @@ export async function intakeSummary(db: ReturnType<typeof getDb>): Promise<Intak
     GROUP BY i.paper_key, i.edition, s.name, i.status
   `);
   const issueRows = await db.execute(sql`
-    SELECT i.paper_key AS "paperKey", i.edition, codes.code, COUNT(DISTINCT i.id)::int AS "count"
-    FROM intake_items i,
+    SELECT i.paper_key AS "paperKey", i.edition, s.name AS "source", codes.code,
+           COUNT(DISTINCT i.id)::int AS "count"
+    FROM intake_items i JOIN sources s ON s.id = i.source_id,
          LATERAL (SELECT DISTINCT issue->>'code' AS code
                   FROM jsonb_array_elements(i.issues) AS issue) AS codes
     WHERE i.status = 'held'
-    GROUP BY i.paper_key, i.edition, codes.code
+    GROUP BY i.paper_key, i.edition, s.name, codes.code
   `);
 
   const papers = new Map<string, IntakePaperSummary>();
@@ -79,7 +81,7 @@ export async function intakeSummary(db: ReturnType<typeof getDb>): Promise<Intak
     status: IntakeStatus;
     count: number;
   }>) {
-    const id = `${row.paperKey}\u0000${row.edition}`;
+    const id = `${row.source}\u0000${row.paperKey}\u0000${row.edition}`;
     const paper = papers.get(id) ?? {
       paperKey: row.paperKey,
       edition: row.edition,
@@ -88,18 +90,19 @@ export async function intakeSummary(db: ReturnType<typeof getDb>): Promise<Intak
       byStatus: {},
       heldByIssue: {},
     };
-    paper.byStatus[row.status] = row.count;
+    paper.byStatus[row.status] = (paper.byStatus[row.status] ?? 0) + row.count;
     paper.total += row.count;
     papers.set(id, paper);
   }
   for (const row of issueRows.rows as unknown as Array<{
     paperKey: string;
     edition: string;
+    source: string;
     code: string;
     count: number;
   }>) {
-    const paper = papers.get(`${row.paperKey}\u0000${row.edition}`);
-    if (paper) paper.heldByIssue[row.code] = row.count;
+    const paper = papers.get(`${row.source}\u0000${row.paperKey}\u0000${row.edition}`);
+    if (paper) paper.heldByIssue[row.code] = (paper.heldByIssue[row.code] ?? 0) + row.count;
   }
   return [...papers.values()].sort((a, b) => a.paperKey.localeCompare(b.paperKey));
 }
@@ -117,13 +120,13 @@ export interface IntakeItemRow {
 /** One paper's items in a status (held by default), in question order. */
 export async function listIntakeItems(
   db: ReturnType<typeof getDb>,
-  input: { paperKey: string; status?: IntakeStatus },
+  input: { paperKey: string; edition: string; status?: IntakeStatus },
 ): Promise<IntakeItemRow[]> {
   const result = await db.execute(sql`
     SELECT id, number, number_label AS "numberLabel", edition, status::text AS "status", issues,
            LEFT(COALESCE(candidate->>'question_text', ''), 200) AS "preview"
     FROM intake_items
-    WHERE paper_key = ${input.paperKey} AND status = ${input.status ?? "held"}::intake_status
+    WHERE paper_key = ${input.paperKey} AND edition = ${input.edition} AND status = ${input.status ?? "held"}::intake_status
     ORDER BY number, edition
   `);
   return result.rows as unknown as IntakeItemRow[];

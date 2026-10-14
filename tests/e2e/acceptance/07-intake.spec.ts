@@ -183,6 +183,8 @@ test.describe("Spec 7 · intake: held questions in the admin", () => {
         await expect(
           page.getByText("Figure or image: something is drawn in the question"),
         ).toBeVisible();
+        await expect(page.getByText(/^Q\.3 · e2e/)).toBeVisible();
+        await checkAccessibility(page);
       });
 
       await acceptanceStep(

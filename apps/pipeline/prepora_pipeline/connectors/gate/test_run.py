@@ -3,13 +3,13 @@ nothing is fetched, nothing real is committed."""
 import pytest
 
 from prepora_pipeline.core.intake import RecordResult, content_hash
-from prepora_pipeline.core.quality import CropRegion
+from prepora_pipeline.core.quality import CropRegion, Issue
 
 from .catalog import PaperSpec
 from .key_parser import GateKeyRow
 from .normalizer import GateNormalizeError, to_normalized
 from .paper_parser import GateQuestion
-from .run import import_paper
+from .run import _intake_item, import_paper
 from .test_parser import invented_paper, key_pdf
 
 PAPER = PaperSpec(2099, "CS", "CS-1", "https://gate.example.test/qp.pdf", "https://gate.example.test/key.pdf")
@@ -142,11 +142,17 @@ def _run(key_rows, boxes=None, intake=None):
     files = {PAPER.qp_url: invented_paper(boxes=boxes), PAPER.key_url: key_pdf(key_rows)}
     batches = []
     intake = intake or FakeIntake()
+
+    def write_batch(*batch, intake_item_ids):
+        batches.append(batch)
+        intake.mark_in_review(intake_item_ids, f"b{len(batches)}")
+        return f"b{len(batches)}"
+
     report = import_paper(
         PAPER,
         fetch=files.__getitem__,
         store=_Store(),
-        write_batch=lambda *batch: batches.append(batch) or f"b{len(batches)}",
+        write_batch=write_batch,
         intake=intake,
         register=False,
     )
@@ -198,6 +204,22 @@ class TestImport:
         assert (3, ["type_mismatch"]) in report.held
         assert intake.rows[("gate/2099/cs/CS-1", "iitg", 3)]["candidate"]["key"]["qtype"] == "MCQ"
         assert [e["normalized"]["number"] for e in batches[0][1]] == [1, 2]
+
+    def test_normalize_validation_errors_are_recorded_as_invalid(self, monkeypatch):
+        from . import run
+
+        def refuse(*_args, **_kwargs):
+            raise ValueError("question_text: String should have at least 1 character")
+
+        monkeypatch.setattr(run, "to_normalized", refuse)
+        item = _intake_item(_question(), _key(), PAPER, "gate/2099/cs/CS-1", "f" * 64, None)
+        assert [i.code for i in item.issues] == ["invalid"]
+        assert item.status == "held" and item.candidate["number"] == 11
+
+    def test_a_layout_hold_is_not_also_a_type_mismatch(self):
+        question = _question(options={}, issues=[Issue("figure", "something is drawn")])
+        item = _intake_item(question, _key(), PAPER, "gate/2099/cs/CS-1", "f" * 64, None)
+        assert [i.code for i in item.issues] == ["figure"]
 
 
 @pytest.mark.skipif(not __import__("os").environ.get("DATABASE_URL"), reason="needs DATABASE_URL")
@@ -254,3 +276,30 @@ def test_import_registers_gate_writes_intake_and_a_real_review_batch():
             conn.commit()
         finally:
             conn.close()
+
+
+class TestGateImportExit:
+    def _exit(self, monkeypatch, held):
+        import argparse
+
+        from prepora_pipeline import cli
+        from prepora_pipeline.connectors.gate import run
+
+        class Report:
+            join_gaps: list = []
+
+            def lines(self):
+                return ["report"]
+
+        report = Report()
+        report.held = held
+        monkeypatch.setattr(run, "import_paper", lambda _paper: report)
+        args = argparse.Namespace(all_pilot=True, year=None, sitting=None)
+        return cli.cmd_gate_import(args)
+
+    def test_a_layout_hold_with_a_type_mismatch_is_not_a_parser_fault(self, monkeypatch):
+        assert self._exit(monkeypatch, [(3, ["figure", "type_mismatch"])]) == 0
+
+    def test_a_bare_type_mismatch_or_invalid_question_is_a_parser_fault(self, monkeypatch):
+        assert self._exit(monkeypatch, [(3, ["type_mismatch"])]) == 1
+        assert self._exit(monkeypatch, [(3, ["invalid"])]) == 1

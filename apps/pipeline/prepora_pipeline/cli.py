@@ -139,7 +139,13 @@ def cmd_gate_import(args: argparse.Namespace) -> int:
         print("\n".join(report.lines()))
         # Layout issues are expected (held for a fix); a broken join or a question that
         # contradicts its key or fails validation means the parser needs attention.
-        broken = any({"invalid", "type_mismatch"} & set(codes) for _, codes in report.held)
+        # A type_mismatch next to a layout issue is the layout's doing (options drawn in a figure
+        # parse as none), not a parser fault.
+        layout = {"figure", "image_option", "layout"}
+        broken = any(
+            "invalid" in codes or ("type_mismatch" in codes and not layout & set(codes))
+            for _, codes in report.held
+        )
         ok = ok and not report.join_gaps and not broken
     return 0 if ok else 1
 

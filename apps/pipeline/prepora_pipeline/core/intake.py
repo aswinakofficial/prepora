@@ -170,12 +170,19 @@ class IntakeStore:
 
 
 def _previous(cur, source_id: str, items: list[IntakeItem]) -> dict[tuple, tuple[str, str]]:
-    """(content hash, status) of every item already recorded, one query per paper and edition."""
+    """(content hash, status) of every item already recorded, one query per paper and edition.
+    An `in_review` item whose batch is gone or decided is reported as `ready`: nothing holds it."""
     found: dict[tuple, tuple[str, str]] = {}
     for paper_key, edition in {(item.paper_key, item.edition) for item in items}:
         cur.execute(
-            "SELECT number, content_hash, status::text FROM intake_items WHERE source_id = %s "
-            "AND paper_key = %s AND edition = %s",
+            "SELECT i.number, i.content_hash, "
+            # In review only while its batch still exists and is pending; a batch that was
+            # deleted (review_batch_id is then NULL) or already decided no longer holds the item.
+            "CASE WHEN i.status = 'in_review' AND b.status <> 'pending' THEN 'ready' "
+            "WHEN i.status = 'in_review' AND b.id IS NULL THEN 'ready' "
+            "ELSE i.status::text END "
+            "FROM intake_items i LEFT JOIN scraped_questions b ON b.id = i.review_batch_id "
+            "WHERE i.source_id = %s AND i.paper_key = %s AND i.edition = %s",
             (source_id, paper_key, edition),
         )
         for number, digest, status in cur.fetchall():

@@ -160,3 +160,59 @@ class TestIntakeStore:
     def test_an_unregistered_source_is_a_clear_error(self):
         with pytest.raises(ValueError, match="sync-sources"):
             IntakeStore().record([_item("no-such-source", "x/1")])
+
+
+@needs_db
+class TestStaleReview:
+    def _batch(self, status="pending"):
+        return _query(
+            "INSERT INTO scraped_questions (source_url, parsed_data, status) "
+            "VALUES ('x', '{}', %s) RETURNING id",
+            (status,),
+        )[0][0]
+
+    def test_an_item_whose_batch_was_deleted_or_decided_is_not_frozen(self, paper):
+        source, key = paper
+        store = IntakeStore()
+        store.record([_item(source, key, 1), _item(source, key, 2)])
+        ids = [item_id for item_id, _ in store.ready_for_batch(source, key, "test")]
+        batch = self._batch()
+        store.mark_in_review(ids, batch)
+        try:
+            # The batch is decided: nothing holds the items any more.
+            _query("UPDATE scraped_questions SET status = 'approved' WHERE id = %s", (batch,))
+            changed = _item(source, key, 1, text="Read better?")
+            result = store.record([changed, _item(source, key, 2)])
+            assert (result.waiting, _status(key, 1), _status(key, 2)) == (0, "ready", "ready")
+            assert len(store.ready_for_batch(source, key, "test")) == 2
+
+            # Deleted: review_batch_id is set NULL by the foreign key, the item stays in_review.
+            store.mark_in_review(ids, batch)
+            _query("DELETE FROM scraped_questions WHERE id = %s", (batch,))
+            assert _status(key, 1) == "in_review"
+            store.record([_item(source, key, 1), _item(source, key, 2)])
+            assert (_status(key, 1), _status(key, 2)) == ("ready", "ready")
+        finally:
+            _query("DELETE FROM intake_items WHERE paper_key = %s", (key,))
+            _query("DELETE FROM scraped_questions WHERE id = %s", (batch,))
+
+    def test_the_batch_and_its_items_are_written_in_one_transaction(self, paper):
+        from prepora_pipeline.core.review_batches import create_review_batch
+
+        source, key = paper
+        store = IntakeStore()
+        store.record([_item(source, key)])
+        [(item_id, _)] = store.ready_for_batch(source, key, "test")
+        batch = create_review_batch("x", [], {}, intake_item_ids=[item_id])
+        try:
+            assert _query(
+                "SELECT status::text, review_batch_id FROM intake_items WHERE id = %s", (item_id,)
+            ) == [("in_review", batch)]
+            # A failing item update rolls the batch back with it.
+            before = _query("SELECT count(*) FROM scraped_questions")[0][0]
+            with pytest.raises(Exception):
+                create_review_batch("x", [], {}, intake_item_ids=[object()])
+            assert _query("SELECT count(*) FROM scraped_questions")[0][0] == before
+        finally:
+            _query("DELETE FROM intake_items WHERE paper_key = %s", (key,))
+            _query("DELETE FROM scraped_questions WHERE id = %s", (batch,))

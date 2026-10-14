@@ -92,7 +92,7 @@ function AdminIntakePage() {
               </thead>
               <tbody>
                 {papers.map((p) => {
-                  const id = `${p.paperKey} ${p.edition}`;
+                  const id = `${p.source} ${p.paperKey} ${p.edition}`;
                   const held = p.byStatus.held ?? 0;
                   return (
                     <Fragment key={id}>
@@ -120,18 +120,18 @@ function AdminIntakePage() {
                           {held > 0 && (
                             <button
                               type="button"
-                              onClick={() => setOpen(open === p.paperKey ? null : p.paperKey)}
+                              onClick={() => setOpen(open === id ? null : id)}
                               className="mt-2 font-mono text-[10px] uppercase tracking-widest text-sky-400 hover:text-white"
                             >
-                              {open === p.paperKey ? "Hide held questions" : "Show held questions"}
+                              {open === id ? "Hide held questions" : "Show held questions"}
                             </button>
                           )}
                         </td>
                       </tr>
-                      {open === p.paperKey && (
+                      {open === id && (
                         <tr className="border-b border-slate-900">
                           <td colSpan={STATUSES.length + 3} className="pb-6">
-                            <HeldItems paperKey={p.paperKey} />
+                            <HeldItems paperKey={p.paperKey} edition={p.edition} />
                           </td>
                         </tr>
                       )}
@@ -147,9 +147,9 @@ function AdminIntakePage() {
   );
 }
 
-function HeldItems({ paperKey }: { paperKey: string }) {
+function HeldItems({ paperKey, edition }: { paperKey: string; edition: string }) {
   const { data: items, isLoading } = useQuery(
-    orpc.admin.listIntakeItems.queryOptions({ input: { paperKey, status: "held" } }),
+    orpc.admin.listIntakeItems.queryOptions({ input: { paperKey, edition, status: "held" } }),
   );
   if (isLoading) return <p className="mt-3 font-mono text-xs text-slate-500">Loading…</p>;
   return (

@@ -28,6 +28,8 @@ from .paper_parser import parse_paper
 from .register import ensure_gate_registered
 
 SOURCE_SLUG = "gate"
+# Issues that say a question is drawn rather than typed: it then often fails to normalize too.
+_LAYOUT_CODES = {"figure", "image_option", "layout"}
 EDITION = "iitg"  # the official site's copy (Spec 8 adds the Drive folder's)
 
 
@@ -151,8 +153,8 @@ def import_paper(
                 "paper": paper.sitting,
                 "year": paper.year,
             },
+            intake_item_ids=[intake_item_id for intake_item_id, _ in ready],
         )
-        intake.mark_in_review([intake_item_id for intake_item_id, _ in ready], report.batch_id)
         report.in_batch = len(ready)
     return report
 
@@ -162,10 +164,15 @@ def _intake_item(question, key, paper, key_name, qp_sha, validate) -> IntakeItem
     issues = list(question.issues)
     try:
         normalized = to_normalized(question, key, paper, raw_artifact_sha256=qp_sha)
-    except GateNormalizeError as exc:
+    except (GateNormalizeError, ValueError) as exc:
         # As much of the question as was read, so a later fix (Spec 9) can rebuild it.
-        if not any(issue.code == "image_option" for issue in issues):
-            issues.append(Issue("type_mismatch", str(exc)))
+        if isinstance(exc, GateNormalizeError):
+            # A question already held for its layout (a figure, options drawn as images) often
+            # fails this way too; the layout issue is the reason, not a second one.
+            if not any(issue.code in _LAYOUT_CODES for issue in issues):
+                issues.append(Issue("type_mismatch", str(exc)))
+        else:  # a pydantic ValidationError: what was read isn't a valid question
+            issues.append(Issue("invalid", str(exc)))
         candidate = {
             "number": question.number,
             "number_label": question.label,

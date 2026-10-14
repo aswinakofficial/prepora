@@ -82,7 +82,7 @@ describe.skipIf(!DATABASE_URL)("intake", () => {
 
   it("lists a paper's held items with their issues", async () => {
     const { db, paperKey } = await seed();
-    const held = await listIntakeItems(db, { paperKey });
+    const held = await listIntakeItems(db, { paperKey, edition: "test" });
     expect(held.map((i) => [i.number, i.issues.map((x) => x.code)])).toEqual([
       [3, ["math"]],
       [4, ["figure", "image_option"]],
@@ -111,5 +111,48 @@ describe.skipIf(!DATABASE_URL)("intake", () => {
       3: "held",
       4: "held",
     });
+  });
+
+  it("discarding a partly-published batch leaves the published questions published", async () => {
+    const { db, paperKey, batchId } = await seed();
+    await markIntakePublished(db, batchId, 1, undefined);
+    await markIntakeRejected(db, batchId);
+    expect(await statusOf(db, paperKey)).toEqual({
+      1: "published",
+      2: "rejected",
+      3: "held",
+      4: "held",
+    });
+  });
+
+  it("a question skipped at approval (a repeat of an earlier skip) is rejected, not left in review", async () => {
+    const { db, paperKey, batchId } = await seed();
+    await markIntakeRejected(db, batchId, 2);
+    await markIntakePublished(db, batchId, 2, undefined); // too late: already decided
+    expect(await statusOf(db, paperKey)).toMatchObject({ 1: "in_review", 2: "rejected" });
+  });
+
+  it("the same paper in two editions or sources is listed and summed apart", async () => {
+    const { db, paperKey } = await seed();
+    const [row] = await db.select().from(intakeItems).where(eq(intakeItems.paperKey, paperKey));
+    await db.insert(intakeItems).values({
+      sourceId: row.sourceId,
+      paperKey,
+      edition: "other",
+      number: 9,
+      candidate: { number: 9, question_text: "Invented question 9?" },
+      contentHash: "h9",
+      issues: [{ code: "math", detail: "x" }],
+      parserVersion: "test-1",
+      status: "held",
+    });
+    expect(
+      (await listIntakeItems(db, { paperKey, edition: "other" })).map((i) => i.number),
+    ).toEqual([9]);
+    const rows = (await intakeSummary(db)).filter((p) => p.paperKey === paperKey);
+    expect(rows.map((p) => [p.edition, p.total]).sort()).toEqual([
+      ["other", 1],
+      ["test", 4],
+    ]);
   });
 });
