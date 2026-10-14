@@ -21,7 +21,7 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 | 4 | [M · Image storage on R2](04-media-storage.md) | #46 | — | **Done** (r2.dev for now; custom domain before real traffic) |
 | 5 | [GATE CS pilot](05-gate-pilot.md) | #27, #47, #48, #49 | 2, 3, 4 | Ready |
 | 16 | [The engineering team: spec-driven, automated from spec to production](16-engineering-team.md) | #83 | #76 | Done (#85); amended for local-first environments (#87). Pilot: `/ship-spec 12` |
-| 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | Ready (PR #75) |
+| 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | Done (#75); its migration (0019) was applied to production on 2026-10-13 |
 | 12 | [Math display: Markdown and LaTeX on every question surface](12-math-display.md) | #77 | 7 | Ready |
 | 13 | [Math recovery from the PDF](13-math-recovery.md) | #78 | 12 | Draft |
 | 14 | [Figures and image options from the PDF](14-figures.md) | #79 | 4 (**owner's R2 setup**), 12 | Draft |

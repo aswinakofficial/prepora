@@ -16,17 +16,16 @@ measured on the four pilot papers (CS-1/CS-2, 2025 and 2026, 2026-10-02):
 """
 import re
 from dataclasses import dataclass, field, replace
-from statistics import median
 
 from ...core.pdf_segment import OPTION_MARKER, Block, segment, split_options
 from ...core.pdf_text import (
-    Graphic,
     Line,
     Page,
     group_lines,
     strip_running_graphics,
     strip_running_text,
 )
+from ...core.quality import GATE_QUALITY, CropRegion, Issue, detect_issues
 
 LABEL = re.compile(r"^Q\.(\d+)$")
 LABEL_MAX_X = 90.0  # labels at x ≈ 78pt in every pilot paper
@@ -36,12 +35,7 @@ MARKS_HEADING = re.compile(
 )
 CODE_FONTS = ("courier", "consolas", "mono")
 
-# The garble detector's thresholds, in points.
-SCRIPT_LINE_GAP = 9.0  # a line this close below the previous one is a sub- or superscript row
-SCRIPT_SIZE = 0.8  # a word this much smaller than its line is an inline sub- or superscript
-WIDE_GAP = 40.0  # a gap this wide inside one stem line means a table or side-by-side layout
-# (two values spaced on one line, "X : 35C00000   Y : 34A00000", reach 36pt and read fine)
-TALL_EMPTY_BLOCK = 120.0  # a block this tall with under 5 words is mostly figure
+# Crop geometry, in points.
 CROP_PADDING = 6.0
 RUNNING_BAND = 60.0  # the running header's band; a continuation page's content starts below it
 TITLE_MAX_WORDS = 8  # a margin line longer than this isn't a section title
@@ -49,12 +43,6 @@ TITLE_MAX_WORDS = 8  # a margin line longer than this isn't a section title
 
 class GatePaperError(ValueError):
     pass
-
-
-@dataclass(frozen=True)
-class CropRegion:
-    page: int  # 0-based
-    bbox: tuple[float, float, float, float]  # (x0, top, x1, bottom)
 
 
 @dataclass
@@ -66,7 +54,12 @@ class GateQuestion:
     marks_heading: int | None  # from the paper's "Carry ONE mark Each" headings: a cross-check
     page: int  # where the label is (0-based)
     regions: list[CropRegion]  # what to crop: one per page the question is on, label page first
-    flags: list[str] = field(default_factory=list)  # "figure", "math", "layout"
+    # Why its text alone can't be trusted (core/quality.py); none means clean.
+    issues: list[Issue] = field(default_factory=list)
+
+    @property
+    def flags(self) -> list[str]:
+        return sorted({issue.code for issue in self.issues})
 
     @property
     def spans_pages(self) -> bool:
@@ -98,7 +91,9 @@ def parse_paper(pages: list[Page]) -> list[GateQuestion]:
                 marks_heading=marks_by_number.get(block.number),
                 page=block.page,
                 regions=regions,
-                flags=_flags(block, stem_lines, options, regions, page_by_number),
+                issues=detect_issues(
+                    block.lines, stem_lines, options, regions, page_by_number, GATE_QUALITY
+                ),
             )
         )
     return questions
@@ -255,68 +250,3 @@ def _regions(
             )
         )
     return regions
-
-
-def _is_figure(g: Graphic) -> bool:
-    # GATE lays every question out in a table, so hairline rectangles (cell borders) are
-    # everywhere; a figure is an image, a drawn line or curve, or a box with real area.
-    return g.kind != "rect" or (g.x1 - g.x0 > 2 and g.bottom - g.top > 2)
-
-
-def _flags(
-    block: Block,
-    stem: list[Line],
-    options: dict[str, str],
-    regions: list[CropRegion],
-    pages: dict[int, Page],
-) -> list[str]:
-    flags: set[str] = set()
-    text = " ".join(line.text for line in block.lines)
-
-    # A figure: something drawn in the question's regions, an option with no text (it's an
-    # image), or a tall block with almost no words.
-    for region in regions:
-        x0, top, x1, bottom = region.bbox
-        if any(
-            _is_figure(g) and g.x1 > x0 and g.x0 < x1 and g.bottom > top and g.top < bottom
-            for g in pages[region.page].graphics
-        ):
-            flags.add("figure")
-    if any(value == "" for value in options.values()):
-        flags.add("figure")
-    first = regions[0].bbox
-    if len(text.split()) < 5 and first[3] - first[1] > TALL_EMPTY_BLOCK:
-        flags.add("figure")
-
-    # Math that didn't survive: math alphanumerics left after NFKC, private-use glyphs, a row of
-    # sub- or superscripts just below its line, or one token alone on 3+ consecutive lines.
-    if any(0x1D400 <= ord(c) <= 0x1D7FF or 0xE000 <= ord(c) <= 0xF8FF for c in text):
-        flags.add("math")
-    # An option's "(A)" sits a few points off its own text's line, so pairs with a marker don't
-    # count as a script row.
-    lines = [line for line in block.lines if not OPTION_MARKER.match(line.words[0].text)]
-    for above, below in zip(lines, lines[1:], strict=False):
-        if below.page == above.page and 0 < below.top - above.top < SCRIPT_LINE_GAP:
-            flags.add("math")
-    # An inline sub- or superscript merged into its line ("Θ(n 2 )" for Θ(n²)): a smaller font. Not
-    # an option marker, which sits beside larger math type.
-    for line in block.lines:
-        sizes = [w.size for w in line.words if w.size]
-        if sizes and any(
-            w.size and w.size < SCRIPT_SIZE * median(sizes) and not OPTION_MARKER.match(w.text)
-            for w in line.words
-        ):
-            flags.add("math")
-    run = 0
-    for line in block.lines:
-        lone = len(line.words) == 1 and len(line.text) <= 3 and not OPTION_MARKER.match(line.text)
-        run = run + 1 if lone else 0
-        if run >= 3:
-            flags.add("math")
-
-    # A table, or code laid out side by side: wide gaps inside a stem line read as one jumbled line.
-    for line in stem:
-        gaps = [b.x0 - a.x1 for a, b in zip(line.words, line.words[1:], strict=False)]
-        if gaps and max(gaps) >= WIDE_GAP:
-            flags.add("layout")
-    return sorted(flags)

@@ -4,6 +4,7 @@ export * from "./analytics.ts";
 export * from "./catalog.ts";
 export * from "./duplicates.ts";
 export * from "./feature_flags.ts";
+export * from "./intake.ts";
 export * from "./pipeline_jobs.ts";
 export * from "./questions.ts";
 export * from "./raw_artifacts.ts";

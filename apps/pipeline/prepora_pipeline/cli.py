@@ -123,8 +123,9 @@ def cmd_import_markdown(args: argparse.Namespace) -> int:
 
 
 def cmd_gate_import(args: argparse.Namespace) -> int:
-    """Imports GATE papers into review batches (docs/specs/05-gate-pilot.md); prints a report per
-    paper. Exits 1 if any paper didn't join completely or had invalid questions."""
+    """Imports GATE papers into intake and review batches (docs/specs/05-gate-pilot.md and
+    07-intake.md); prints a report per paper. Exits 1 if any paper didn't join completely, or a
+    question was held as invalid or contradicting its key."""
     from prepora_pipeline.connectors.gate.catalog import PAPERS, find_papers
     from prepora_pipeline.connectors.gate.run import import_paper
 
@@ -136,7 +137,16 @@ def cmd_gate_import(args: argparse.Namespace) -> int:
     for paper in papers:
         report = import_paper(paper)
         print("\n".join(report.lines()))
-        ok = ok and not report.join_gaps and not report.invalid
+        # Layout issues are expected (held for a fix); a broken join or a question that
+        # contradicts its key or fails validation means the parser needs attention.
+        # A type_mismatch next to a layout issue is the layout's doing (options drawn in a figure
+        # parse as none), not a parser fault.
+        layout = {"figure", "image_option", "layout"}
+        broken = any(
+            "invalid" in codes or ("type_mismatch" in codes and not layout & set(codes))
+            for _, codes in report.held
+        )
+        ok = ok and not report.join_gaps and not broken
     return 0 if ok else 1
 
 
@@ -221,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     dedupe_audit_parser.set_defaults(func=cmd_dedupe_audit)
 
     gate_import_parser = subparsers.add_parser(
-        "gate-import", help="Import GATE papers into review batches (clean questions only)."
+        "gate-import", help="Import GATE papers into intake; ready questions go to review."
     )
     gate_import_parser.add_argument("--year", type=int)
     gate_import_parser.add_argument("--sitting", help='e.g. "CS-1"')

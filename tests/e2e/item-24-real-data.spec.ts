@@ -246,7 +246,8 @@ test.describe("question detail page — real data, anonymous reveal", () => {
         await expect(reveal).toBeEnabled({ timeout: 1000 });
       }).toPass({ timeout: 15_000 });
       await reveal.click();
-      await expect(page.getByText(/^Correct/)).toBeVisible({ timeout: 10_000 });
+      // The result reads "Correct"; exact, since the invented option itself is "Correct answer".
+      await expect(page.getByText("Correct", { exact: true })).toBeVisible({ timeout: 10_000 });
     } finally {
       // docs/roadmap/engineering-roadmap.md item 25: revealing an answer now writes a real
       // attempts row (questions.submitAnswer), which must be cleared before the question it

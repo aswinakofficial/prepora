@@ -43,6 +43,7 @@ export const WIPE_DATABASE_KEEP_TABLES = [
   "feature_flags",
 ];
 
+export { ISSUE_LABELS } from "./lib/issue-labels.js";
 export {
   formatNumericRange,
   gradeNumericAnswer,

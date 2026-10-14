@@ -6,6 +6,7 @@ import {
   CheckSquare,
   ChevronRight,
   Globe,
+  Inbox,
   LayoutDashboard,
   Settings,
   Tags,
@@ -103,7 +104,10 @@ const navSections: { label: string; items: NavItem[] }[] = [
   },
   {
     label: "Review",
-    items: [{ to: "/admin/review", label: "Scrape Review Queue", icon: CheckSquare }],
+    items: [
+      { to: "/admin/review", label: "Scrape Review Queue", icon: CheckSquare },
+      { to: "/admin/intake", label: "Held questions", icon: Inbox },
+    ],
   },
   {
     label: "Insights",
