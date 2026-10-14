@@ -4,6 +4,15 @@
 **Depends on:** Spec 10
 **Design:** [ADR-015's amendment](../adr/015-ai-assistance.md) (owner decision, 2026-10-03)
 
+## Deliverable and UI acceptance
+| # | Step | Expected |
+|---|---|---|
+| 1 | With the `ai_explanations` flag off in Admin → Settings, run `explain` | Nothing is generated |
+| 2 | Turn the flag on and run `explain --limit 20` on GATE questions without explanations | Each gets an explanation; ones passing every check are published, the rest wait in review |
+| 3 | Reveal an auto-published one | It shows, labelled "AI-generated explanation · report an error", and its answer matches the official key |
+| 4 | Run `explain` on an MS Learn question that has its own explanation | No AI call is made; the official explanation stays |
+| 5 | Open the AI explanations page in Admin | Accuracy per subject, the sampled review queue, and any subject that fell back to review-only |
+
 ## Scope (to be detailed)
 - **One global switch, `ai_explanations`,** in `FEATURE_FLAGS` (`packages/api/src/shared.ts`).
   It's off by default, toggled on the admin Settings page and written to the audit log. There are

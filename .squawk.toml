@@ -1,0 +1,24 @@
+# Squawk (https://squawkhq.com): decides whether a migration is safe to apply to production
+# automatically (docs/specs/16-engineering-team.md, decision 5). Any remaining warning makes the
+# Release workflow wait for the owner's approval.
+#
+# Excluded: rules that don't fit drizzle-generated migrations, which drizzle-kit runs inside a
+# transaction (so CONCURRENTLY can't be used) against small tables. Kept: everything that drops,
+# renames, rewrites or retypes data, or adds a column existing rows can't satisfy.
+excluded_rules = [
+  "prefer-robust-stmts",
+  "prefer-bigint-over-int",
+  "prefer-bigint-over-smallint",
+  "prefer-identity",
+  "prefer-text-field",
+  "prefer-timestamptz",
+  "require-lock-timeout",
+  "require-statement-timeout",
+  "require-concurrent-index-creation",
+  "require-concurrent-index-deletion",
+  "ban-drop-default",
+  # Foreign keys take a short lock on the referenced table; harmless at our size, and every new
+  # table has them.
+  "adding-foreign-key-constraint",
+  "constraint-missing-not-valid",
+]

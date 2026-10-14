@@ -7,7 +7,9 @@
   "scripts": {
     "bootstrap": "bash scripts/setup.sh",
     "bootstrap:check": "bash scripts/setup.sh --check",
-    "dev": "concurrently -c \"blue,green,magenta\" -n \"WEB,PYTHON,PIPELINE\" \"pnpm --filter @prepora/web dev\" \"cd apps/scraper && ./venv/bin/uvicorn main:app --reload --port 8000\" \"cd apps/pipeline && ./venv/bin/uvicorn prepora_pipeline.api:app --reload --port 8001\"",
+    "dev": "bash scripts/env.sh local pnpm dev:servers",
+    "dev:prod": "bash scripts/env.sh production pnpm dev:servers",
+    "dev:servers": "concurrently -c \"blue,green,magenta\" -n \"WEB,PYTHON,PIPELINE\" \"pnpm --filter @prepora/web dev\" \"cd apps/scraper && ./venv/bin/uvicorn main:app --reload --port 8000\" \"cd apps/pipeline && ./venv/bin/uvicorn prepora_pipeline.api:app --reload --port 8001\"",
     "dev:web": "pnpm --filter @prepora/web dev",
     "build": "pnpm content:sitemap && pnpm content:rss && pnpm --filter @prepora/web build",
     "start": "pnpm --filter @prepora/web start",
@@ -31,6 +33,7 @@
     "content:report": "tsx scripts/content-report.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@biomejs/biome": "^2.5.14",
     "@cloudflare/workers-types": "^5.20260901.1",
     "@playwright/test": "^1.49.0",

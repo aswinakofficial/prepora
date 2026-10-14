@@ -21,8 +21,8 @@ This page is the "why" and the "where next". The order work happens in is
 These decide the hard trade-offs. A change that breaks one of them needs a very good reason.
 
 1. **Sourced, reviewed, always labelled.** Every question traces back to its origin, and every
-   answer says where it came from: official key, reviewer, or AI-suggested and confirmed by a
-   person. Explanations come from the source when it has one; otherwise an AI explanation is
+   answer says where it came from: an official key, two independent sources that agree (labelled
+   as not official), a reviewer, or AI-suggested and confirmed by a person. Explanations come from the source when it has one; otherwise an AI explanation is
    checked against the official answer, labelled, and sampled for review
    ([ADR-015](adr/015-ai-assistance.md)). Nothing is published silently, and missing data is
    never filled in.
@@ -165,8 +165,9 @@ and how to measure "a good predicted paper".
 - Every answer shows its provenance. When sources disagree, the disagreement goes to a person to
   resolve, never to whichever source was collected last.
 - Community contributions (the Contribute flow) and "report an error in this question".
-- AI assistance stays optional and labelled. A person confirms AI answers and transcriptions before
-  they're published. AI explanations, used only when the source has none, are published only after
+- AI assistance stays optional and labelled. A person confirms AI answers before they're published.
+  AI transcriptions, used only where the PDF can't give the text, are checked automatically against
+  the PDF's own words and numbers, and sampled for review. AI explanations, used only when the source has none, are published only after
   automatic checks against the official answer, and a sample is reviewed by a person.
 
 ---

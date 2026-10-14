@@ -23,7 +23,7 @@ and 9 (fixing held questions) build on it.
 ## Deliverable and UI acceptance
 
 When this is done, the owner can see every imported question in the admin, including the ones not
-yet good enough to publish, and why they're held. Checked by `tests/e2e/intake.spec.ts`.
+yet good enough to publish, and why they're held. Checked by `tests/e2e/acceptance/07-intake.spec.ts`.
 
 | # | Step | Expected |
 |---|---|---|

@@ -174,6 +174,30 @@ there. Google sign-in is optional locally (see [Google sign-in](#optional-google
 | `pnpm db:seed:dev` | Re-seeds demo data (idempotent). Refuses to run against a hosted Neon database. |
 | `pnpm db:local destroy` then `pnpm bootstrap --project-db` | Start over with an empty project-local database. |
 
+### Environments (maintainer)
+
+Contributors only ever need `.env`, the local database. The maintainer has a second file:
+
+| File | Database | Used by |
+|---|---|---|
+| `.env` | local | `pnpm dev`, tests, `pnpm db:*`, pipeline commands, and every agent |
+| `.env.production` | production | `pnpm dev:prod` (the owner's real scraping, ingestion and publishing), `scripts/team/migrate-prod.sh`, and `scripts/team/prod-read.sh` (read-only) |
+
+`scripts/env.sh <local|production> <command>` runs a command against one of them. `pnpm dev` goes
+through `scripts/env.sh local`, which refuses a `.env` that points anywhere but the local database,
+and `drizzle-kit` refuses a non-local database outside production mode. Production is migrated
+before a release by `scripts/team/migrate-prod.sh <pr>`
+([Spec 16](docs/specs/16-engineering-team.md), decision 5).
+
+To move an existing production `.env` to this layout:
+
+```bash
+mv .env .env.production
+pnpm bootstrap
+```
+
+`pnpm bootstrap` then writes a new local `.env`, migrates the local database and seeds it.
+
 ### Setting it up by hand
 
 Prefer not to run scripts? This is all `pnpm bootstrap` does:
@@ -242,16 +266,23 @@ and secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env`.
    E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e
    ```
 
-   A change to something users or admins can see needs an e2e test in `tests/e2e/` for what it
-   does. A feature's spec lists the exact steps to test.
+   A change to something users or admins can see needs an acceptance test in
+   `tests/e2e/acceptance/` for what it does. A feature's spec lists the exact steps to test, and
+   `tests/e2e/helpers/evidence.ts` records a screenshot of each one.
 
    `pnpm exec biome check --write .` fixes formatting for you.
 4. **Commit** using [Conventional Commits](https://www.conventionalcommits.org):
    `feat(web): …`, `fix(api): …`, `docs: …`, `test: …`, `chore: …`. Explain *why* in the body when
    it isn't obvious.
 5. **Open a pull request** against `main`. Describe what changed and why, and fill in the
-   template's **Acceptance results**: each step you checked, its result, and the test or screenshot
-   that shows it. CI checks that section. Keep PRs focused — several small PRs review faster than one
+   template's **Acceptance results**: each step you checked, its result, the test that checked it,
+   and the `Evidence:` link to your PR's CI run (its summary shows a screenshot of every step). CI
+   checks that section.
+
+   Your PR gets the same treatment as the project's own agent team (see
+   [Spec 16](docs/specs/16-engineering-team.md)): an independent review comment, required checks
+   (including CodeQL and accessibility), and a release through the Release workflow, which merges
+   it and checks the live site. Keep PRs focused — several small PRs review faster than one
    large one. Your branch needs to be up to date with `main` before it can merge.
 
 Changed the database schema? Run `pnpm db:generate`, commit the generated migration in `drizzle/`,
@@ -279,8 +310,10 @@ and check it with `pnpm db:check`.
   reference can be used to cross-check answers, never displayed. A source's own explanations are
   used only as its licence allows; otherwise explanations come from contributors or the AI step
   ([ADR-014](docs/adr/014-multi-source-provenance.md)).
-- **AI-suggested answers and transcriptions** are optional and always confirmed by a reviewer
-  before publishing, then labelled.
+- **AI-suggested answers** are optional and always confirmed by a reviewer before publishing, then
+  labelled. **AI transcriptions** (only for what can't be rebuilt from the PDF itself) publish
+  automatically only when they match the PDF's own words and numbers and a second pass agrees.
+  They're labelled, and sampled for review.
 - **AI explanations** are written only when a question's source has none, and only when the global
   `ai_explanations` feature flag is on. Each is checked against the official answer and by an
   independent verifier, labelled "AI-generated explanation", and sampled for review

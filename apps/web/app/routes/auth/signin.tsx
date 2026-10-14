@@ -4,6 +4,8 @@ import { useState } from "react";
 import { authClient } from "../../../lib/auth-client";
 
 export const Route = createFileRoute("/auth/signin")({
+  // A page title (axe: document-title, a serious accessibility violation without one).
+  head: () => ({ meta: [{ title: "Sign in — Prepora" }] }),
   component: SignInPage,
 });
 

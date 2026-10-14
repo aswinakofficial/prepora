@@ -9,15 +9,17 @@ Closes #
 
 <!--
 Required (CI checks this section). Copy the spec's "Deliverable and UI acceptance" steps and record
-how each was checked: the e2e test that covers it (tests/e2e/…), or "by hand" with a screenshot.
-For a change with nothing to see in the UI (docs, CI, a pure backend fix), write one line instead:
-"N/A: <why>". If this PR changes what users or admins see, add the `ui-change` label: it can't merge
-until the owner has tried it and added `owner-verified`.
+how each was checked: the e2e test that covers it (tests/e2e/acceptance/…), or "by hand" with a
+screenshot. Then add the evidence link: the CI run whose "Acceptance evidence" summary shows each
+step's screenshot and video. For a change with nothing to see in the UI (docs, CI, a pure backend
+fix), write one line instead: "N/A: <why>".
 -->
 
 | # | Step | Expected | Result | Checked by |
 |---|---|---|---|---|
 | 1 |  |  |  |  |
+
+Evidence: https://github.com/aswinakofficial/prepora/actions/runs/<run id>
 
 - [ ] Every step above passed, and the e2e tests run in CI (`E2E acceptance (Playwright)`)
 

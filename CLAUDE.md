@@ -47,6 +47,39 @@ Playwright test suite, run via `pnpm test:e2e`) for durable, repeatable regressi
 4. Diagnose, fix, verify (typecheck/lint/tests as appropriate), and re-run the same UI steps to
    confirm before reporting done.
 
+# The engineering team
+
+Prepora is built **spec-driven** by a team of agents ([Spec 16](docs/specs/16-engineering-team.md)).
+The owner is the stakeholder: they approve specs and answer questions. Everything after an approved
+spec is automated, and enforced by tools rather than intentions.
+
+- **The lead** is the main session. It's the only one that talks to the owner, picks the work and
+  runs the others. It doesn't write product code.
+- **The personas** live in `.claude/agents/`:
+  - `spec-writer`, `source-researcher` and `architect` plan and design;
+  - `builder` writes product code and unit tests;
+  - `qa` writes the acceptance tests from the spec and produces the evidence;
+  - `reviewer` does independent review and never edits;
+  - `release` ships and records.
+- **Commands** (`.claude/skills/`):
+  - `/next`: what's next, and what's waiting on the owner;
+  - `/write-spec <topic>`: a spec, with the owner's questions and approval;
+  - `/research-source <source>`: a source dossier;
+  - `/ship-spec <n>`: build, test, review, evidence and release, with no owner input unless the
+    spec is silent or wrong;
+  - `/release <pr>`: ship a green PR.
+- **Guardrails** (`.claude/settings.json` and `scripts/team/hooks/guard_bash.py`, tested in CI)
+  block, for every agent:
+  - pushing to `main` and force-pushing;
+  - merging any other way than the Release workflow;
+  - anything production: `.env.production`, `scripts/env.sh production`, `pnpm dev:prod`, and
+    `migrate-prod.sh --allow-unsafe`;
+  - database writes without the local database;
+  - destructive `rm -rf`.
+
+  Read-only production questions go through `scripts/team/prod-read.sh`.
+- **Questions go to the owner in chat,** batched by the lead.
+
 # Working agreements
 
 These apply to every change, whichever model or person makes it.
@@ -70,48 +103,58 @@ These apply to every change, whichever model or person makes it.
 3. **PR:** the description says `Closes #N` for every issue it finishes (this moves cards to
    *In review*), summarises what and why, and lists how it was tested. End PR bodies with the
    attribution line from the session's instructions.
-4. **Review, test, then merge.** The implementing session does all three. It waits for the owner
-   only for a `ui-change` PR's sign-off and for production migrations (below).
-   - Run a code review of the PR's diff before merging (the `/code-review` skill at `high`, or an
-     equivalent independent review pass). Fix every real finding, re-run the checks, and add a
-     short "Review" section to the PR description (what was checked, what was fixed, anything
-     deliberately left).
-   - Fill in the PR's **Acceptance results** (see Testing below). CI fails a PR without them.
-   - **`ui-change` PRs wait for the owner.** If the PR changes what users or admins see, label it
-     `ui-change` and post the "Verify it yourself" steps. It merges only after the owner has tried
-     it and added the `owner-verified` label; CI enforces this. Backend-only, docs, test and CI
-     PRs merge once CI is green.
-   - Merge only when CI is green and the branch is up to date with `main` (branch protection
-     requires both; use `gh api -X PUT repos/aswinakofficial/prepora/pulls/N/update-branch` and
-     wait for CI). Use merge commits (`gh pr merge N --merge`).
-   - **Exception — PRs with a database migration:** merging deploys immediately, and code that
-     reads new columns breaks the live site until production is migrated. So stop and ask the
-     owner; with their go-ahead, apply the migration to production (`pnpm db:migrate`) **before**
-     merging, then merge. Migrations that only add an index or a nullable column the new code
-     doesn't require may be merged first, but still ask before migrating production.
+4. **Review, test, then release.** No owner sign-off is needed (owner, 2026-10-13):
+   - **Independent review:** the `reviewer` agent reviews every code PR (`/code-review` at
+     `high`) and posts its findings on the PR. The author fixes every real finding, and the
+     reviewer confirms. Add a short "Review" section to the PR description.
+   - **Acceptance results with evidence:** every acceptance step, its result, the test that
+     checked it, and the `Evidence:` link to the CI run whose summary shows each step's screenshot
+     and video (see Testing). CI fails a PR without them.
+   - **Release only through the Release workflow** (`/release N`, which runs
+     `scripts/team/release.sh N`). It merges only when every required check is green and the
+     branch is up to date (`gh api -X PUT repos/aswinakofficial/prepora/pulls/N/update-branch`
+     first).
+     - **Migrations first, from this machine:** if the PR adds migrations, the release agent
+       runs `scripts/team/migrate-prod.sh N` before releasing. It needs the PR green and checked
+       out, applies the migrations to the local database first, and migrates production only when
+       every new migration is additive (`scripts/team/migration_data_check.py` and Squawk). Anything
+       that drops, renames, retypes or rewrites data waits for the owner, who reruns it with
+       `--allow-unsafe`. The Release workflow refuses to merge until `/api/health` shows production
+       has the PR's migrations.
+     - **After merging:** it waits for the live site to report the merge commit and smoke-tests
+       it.
+     - Agents never merge, or migrate production, any other way (the guardrails enforce it).
+   - **Migrations only add things.** A new column comes with a default or is nullable, so the code
+     already live keeps working once production is migrated ahead of the merge.
 5. **After merge:** comment on each closed issue with a short completion note — what changed, the
    PR, how it was verified, and any follow-ups (opened as new issues). If the issue belongs to an
    epic, tick its checkbox in the epic's body. Update the spec's status in docs/specs/README.md.
 
 ## Testing (mandatory before merging)
 
-- **Every spec's acceptance steps are e2e tests.** Each step in a spec's "Deliverable and UI
-  acceptance" is checked by a Playwright test in `tests/e2e/`. A step that truly can't be automated
-  is done by hand, with a screenshot in the PR. Tests seed their own rows with invented content and
-  clean up.
+- **Every spec's acceptance steps are e2e tests,** written by `qa` from the spec in
+  `tests/e2e/acceptance/<NN>-*.spec.ts`:
+  - one `acceptanceStep(page, "<n>. <step>", …)` per acceptance step (`tests/e2e/helpers/evidence.ts`);
+  - `checkAccessibility(page)` on every page tested (`tests/e2e/helpers/a11y.ts`);
+  - each test seeds its own rows with invented content, and cleans up.
+
+  A step that truly can't be automated is done by hand, with a screenshot in the PR.
 - **The core regression suite stays green:** browsing, the question page, practice, search, the
   admin review → publish flow, and contributions. A change that breaks it doesn't merge.
-- **Run them locally** against a throwaway local database (never `.env`'s; the config refuses
-  anything that isn't local):
+- **Run them locally** against a throwaway local database (the config refuses anything that isn't
+  local):
   ```
   E2E_DATABASE_URL=$(bash scripts/dev-db.sh url) pnpm test:e2e
   ```
   It starts its own web app (port 3100) and pipeline service (port 8101), so dev servers on
   3000/8001 don't matter. CI runs the same suite on every PR (`E2E acceptance (Playwright)`), and
   that check is required.
+- **Evidence:** CI records a screenshot per acceptance step and a video per acceptance test. The
+  job summary's "Acceptance evidence" table lists them, and the files are in the run's
+  `acceptance-evidence` artifact.
 - **Record the results** in the PR's "Acceptance results" table: each step, its expected result,
-  pass or fail, and the test (or screenshot) that checked it. Add "Verify it yourself" steps the
-  owner can follow.
+  pass or fail, the test that checked it, and `Evidence: <CI run URL>`. Add "Verify it yourself"
+  steps, so the owner can spot-check whenever they like.
 
 ## Checks before every PR
 
@@ -129,11 +172,19 @@ Run DB-backed tests against the **local** database (`scripts/dev-db.sh start`; U
 
 ## Production safety
 
-- The root `.env` points at the **production** Neon database. Never run migrations, back-fills,
-  deletes, `sync-sources`, imports or publishing against it without the owner's explicit go-ahead
-  in the conversation — even if a spec says the step is needed. Read-only queries are fine.
-- Merging to `main` deploys the site (Cloudflare Pages). A schema change must be migrated on
-  production before code that depends on it is used; say so in the PR.
+- **Two environments, local first** (`scripts/env.sh`):
+  - **`.env` is the local database:** development, tests, and everything agents do. `pnpm dev` runs
+    through `scripts/env.sh local`, which refuses a `.env` that points anywhere else, and
+    `drizzle-kit` refuses a non-local database outside production mode.
+  - **`.env.production` is production.** It's used only by the owner's real scraping, ingestion and
+    publishing (`pnpm dev:prod`), by `scripts/team/migrate-prod.sh`, and, read-only, by
+    `scripts/team/prod-read.sh`.
+- **Agents never change production directly.** Production is migrated only by
+  `scripts/team/migrate-prod.sh N` (additive migrations). Back-fills, deletes, `sync-sources`,
+  imports and publishing are the owner's: they need the owner's explicit go-ahead in the
+  conversation, even if a spec says the step is needed.
+- **Merging to `main` deploys the site** (Cloudflare Pages). Production is migrated first, then the
+  Release workflow merges and checks the live site.
 - Scraping and publishing are local-only by design (`lib/local-only-services.ts`); don't weaken that.
 - Never enter, print or commit credentials (API keys, tokens, database URLs). Secrets are set by the
   owner (`gh secret set …`, Cloudflare dashboard).

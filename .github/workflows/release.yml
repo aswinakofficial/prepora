@@ -1,0 +1,164 @@
+name: Release
+
+# Ships one green PR to production (docs/specs/16-engineering-team.md, decision 5): verify the PR,
+# check production has exactly its migrations, merge, then wait for the live site to report the merge
+# commit and smoke-test it. Started by the release agent: scripts/team/release.sh <pr>.
+#
+# Production is migrated before this runs, from the owner's machine, by scripts/team/migrate-prod.sh
+# (safe migrations by the agent; anything else by the owner). This workflow holds no database secret:
+# it reads production's migration count from /api/health. It merges with the built-in token, so it
+# needs no environment or personal token either.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to release"
+        required: true
+      dry_run:
+        description: "Run every check but don't migrate or merge"
+        type: boolean
+        default: false
+      request_id:
+        description: "Set by scripts/team/release.sh, so it can find this run"
+        required: false
+        default: ""
+
+# The run's name carries the PR, the dry-run flag and the request id, so scripts/team/release.sh
+# finds exactly the run it started.
+run-name: "Release PR #${{ inputs.pr }}${{ inputs.dry_run && ' (dry run)' || '' }} ${{ inputs.request_id }}"
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  verify:
+    name: Verify the PR and its migrations
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+    steps:
+      - name: The PR is open, targets main, is up to date and its required checks passed
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          json=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json state,baseRefName,mergeStateStatus,headRefOid,isDraft)
+          echo "$json"
+          [ "$(jq -r .state <<<"$json")" = OPEN ] || { echo "::error::PR $PR isn't open"; exit 1; }
+          [ "$(jq -r .baseRefName <<<"$json")" = main ] || { echo "::error::PR $PR doesn't target main"; exit 1; }
+          [ "$(jq -r .isDraft <<<"$json")" = false ] || { echo "::error::PR $PR is a draft"; exit 1; }
+          state=$(jq -r .mergeStateStatus <<<"$json")
+          [ "$state" = CLEAN ] || { echo "::error::PR $PR isn't ready to merge (mergeStateStatus=$state): checks must pass and the branch must be up to date"; exit 1; }
+          echo "head_sha=$(jq -r .headRefOid <<<"$json")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Production has exactly this PR's migrations
+        env:
+          PR: ${{ inputs.pr }}
+        run: |
+          want=$(jq '.entries | length' drizzle/meta/_journal.json)
+          want_latest=$(jq '.entries | last | .when' drizzle/meta/_journal.json)
+          health=$(curl -fsS --max-time 15 https://prepora.xpar.in/api/health)
+          have=$(jq -r '.migrations // empty' <<<"$health")
+          have_latest=$(jq -r '.latestMigration // empty | floor' <<<"$health")
+          [ -n "$have" ] || { echo "::error::/api/health doesn't report production's migrations"; exit 1; }
+          echo "Journal: $want migrations, latest $want_latest; production: $have, latest $have_latest" >> "$GITHUB_STEP_SUMMARY"
+          # Exactly, not "at least": production can be ahead when another PR was migrated but not
+          # merged, and then this PR's own migration may not be applied.
+          if [ "$have" != "$want" ] || [ "$have_latest" != "$want_latest" ]; then
+            echo "::error::Production's migrations ($have, latest $have_latest) aren't this PR's ($want, latest $want_latest). Run scripts/team/migrate-prod.sh $PR first; if production is ahead, release the PR that migrated it first."
+            exit 1
+          fi
+
+  merge:
+    name: Merge
+    needs: verify
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      # To start the board workflow (below).
+      actions: write
+    outputs:
+      merge_sha: ${{ steps.merge.outputs.merge_sha }}
+    steps:
+      - name: Merge (only if the head hasn't moved since it was verified)
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          HEAD_SHA: ${{ needs.verify.outputs.head_sha }}
+        run: |
+          gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --merge --match-head-commit "$HEAD_SHA"
+          sha=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json mergeCommit --jq .mergeCommit.oid)
+          echo "merge_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Merged PR #$PR as $sha" >> "$GITHUB_STEP_SUMMARY"
+      - name: Move the closed issues' cards on the board
+        # A merge by the built-in token doesn't start other workflows, except a workflow_dispatch.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          issues=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json closingIssuesReferences --jq '[.closingIssuesReferences[].number] | join(" ")')
+          if [ -n "$issues" ]; then
+            gh workflow run project-status.yml -R "$GITHUB_REPOSITORY" -f issues="$issues"
+            echo "Board sync started for: $issues" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  post-deploy:
+    name: Post-deploy check
+    needs: merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for the live site to serve the merge commit (up to 15 minutes)
+        env:
+          SHA: ${{ needs.merge.outputs.merge_sha }}
+        run: |
+          [ -n "$SHA" ] || { echo "::error::The merge commit is unknown"; exit 1; }
+          for i in $(seq 1 90); do
+            live=$(curl -fsS --max-time 15 https://prepora.xpar.in/api/health | jq -r .commit || true)
+            [ "$live" = "$SHA" ] && { echo "Live on $SHA" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+            sleep 10
+          done
+          echo "::error::The live site still reports '$live', not $SHA, after 15 minutes"; exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge.outputs.merge_sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Read-only smoke test of production
+        env:
+          SMOKE_EXPECT_COMMIT: ${{ needs.merge.outputs.merge_sha }}
+        run: pnpm exec playwright test -c playwright.smoke.config.ts
+      - name: Open an incident on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Release of PR #${{ inputs.pr }}: post-deploy check failed`;
+            await github.rest.issues.create({
+              ...context.repo,
+              title,
+              labels: ["incident"],
+              body: `The post-deploy check for PR #${{ inputs.pr }} (merge ${{ needs.merge.outputs.merge_sha }}) failed. Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\nNothing was rolled back automatically. The lead agent proposes a fix to the owner.`,
+            });

@@ -11,6 +11,7 @@ import { verifyAdminFn } from "../admin";
 // work list for the fixes in Spec 9 (a better source, a crop, OCR, a transcription).
 
 export const Route = createFileRoute("/admin/intake")({
+  head: () => ({ meta: [{ title: "Held questions — Admin — Prepora" }] }),
   beforeLoad: async () => {
     const res = await verifyAdminFn();
     if (!res.ok) throw new Error("Unauthorized");

@@ -1,6 +1,6 @@
 # ADR-015: Optional AI assistance: suggested, flagged, confirmed
 
-- **Status:** Accepted; amended 2026-10-03 (explanations)
+- **Status:** Accepted; amended 2026-10-03 (explanations) and 2026-10-04 (transcriptions)
 - **Date:** 2026-10-01
 
 ## Context
@@ -83,3 +83,23 @@ Decided by the owner when planning the quality pipeline
 
 **Why:** an explanation never changes the answer, which comes from the official key, and per-item
 review can't keep up with millions of questions. The checks, label and sampling keep it honest.
+
+## Amendment (2026-10-04): transcriptions
+
+Decided by the owner while planning "Finish GATE" ([Spec 15](../specs/15-ai-transcription.md)).
+
+- **PDF first.** Math is rebuilt from the PDF's own glyph positions wherever possible, with no AI
+  ([Spec 13](../specs/13-math-recovery.md)). AI transcription is only for what that can't do,
+  such as tables and side-by-side layouts.
+- **Auto-checked against the PDF, not individually confirmed.** An AI transcription is published
+  automatically when:
+  - every word and number the PDF's own text contains for that question appears in it;
+  - an independent second pass agrees;
+  - it renders without errors.
+
+  It's labelled "Transcribed from the official paper", and 5% are sampled for review by a person.
+  A transcription that fails any check goes to the review queue.
+- **Same switch as explanations:** it runs only when the global AI feature flag is on and
+  `ANTHROPIC_API_KEY` is set.
+
+AI-suggested **answers** still always need a person's confirmation.

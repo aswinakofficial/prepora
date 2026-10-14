@@ -15,7 +15,9 @@ import {
   subjects,
 } from "@prepora/db/schema";
 import { eq, inArray, like } from "drizzle-orm";
-import { signInAsAdmin } from "./helpers/admin";
+import { checkAccessibility } from "../helpers/a11y";
+import { signInAsAdmin } from "../helpers/admin";
+import { acceptanceStep } from "../helpers/evidence";
 
 // Spec 7's UI acceptance (docs/specs/07-intake.md → Deliverable and UI acceptance, steps 1–4):
 // imported questions, ready and held, are visible in Admin → Held questions with their reasons, and
@@ -163,46 +165,59 @@ test.describe("Spec 7 · intake: held questions in the admin", () => {
     try {
       await signInAsAdmin(page);
 
-      // 1. Every paper is listed with its counts, and why its held questions are held.
-      await page.goto("/admin/intake");
-      await expect(paperRow(papers.approve)).toBeVisible({ timeout: 20_000 });
-      expect(await counts(papers.approve)).toEqual([0, 2, 0, 1, 0]);
-      await expect(paperRow(papers.approve).getByText("1 · Figure or image")).toBeVisible();
-
-      // 2. A paper's held questions show their number, text and reason.
-      await paperRow(papers.approve)
-        .getByRole("button", { name: /show held questions/i })
-        .click();
-      await expect(
-        page.getByText(`What colour is the invented comet's tail (A-1 ${u})`),
-      ).toBeVisible();
-      await expect(
-        page.getByText("Figure or image: something is drawn in the question"),
-      ).toBeVisible();
-
-      // 3. Approving a paper's batch moves its questions to Published; the held one stays held.
-      await page.goto("/admin/review");
-      await page
-        .getByTestId(`review-batch-${batches.approve}`)
-        .getByRole("button", { name: /Approve & Publish/i })
-        .click();
-      await expect(page.getByText(/2 new questions added/i)).toBeVisible({ timeout: 30_000 });
-      await page.goto("/admin/intake");
-      await expect(paperRow(papers.approve)).toBeVisible({ timeout: 20_000 });
-      expect(await counts(papers.approve)).toEqual([0, 0, 2, 1, 0]);
-
-      // 4. Rejecting a batch moves its questions to Rejected; the held one stays held.
-      await page.goto("/admin/review");
-      await page
-        .getByTestId(`review-batch-${batches.reject}`)
-        .getByRole("button", { name: /discard/i })
-        .click();
-      await expect(page.getByTestId(`review-batch-${batches.reject}`)).toBeHidden({
-        timeout: 20_000,
+      await acceptanceStep(page, "1. Open Admin → Held questions", async () => {
+        await page.goto("/admin/intake");
+        await expect(paperRow(papers.approve)).toBeVisible({ timeout: 20_000 });
+        expect(await counts(papers.approve)).toEqual([0, 2, 0, 1, 0]);
+        await expect(paperRow(papers.approve).getByText("1 · Figure or image")).toBeVisible();
+        await checkAccessibility(page);
       });
-      await page.goto("/admin/intake");
-      await expect(paperRow(papers.reject)).toBeVisible({ timeout: 20_000 });
-      expect(await counts(papers.reject)).toEqual([0, 0, 0, 1, 2]);
+
+      await acceptanceStep(page, "2. Show a paper's held questions", async () => {
+        await paperRow(papers.approve)
+          .getByRole("button", { name: /show held questions/i })
+          .click();
+        await expect(
+          page.getByText(`What colour is the invented comet's tail (A-1 ${u})`),
+        ).toBeVisible();
+        await expect(
+          page.getByText("Figure or image: something is drawn in the question"),
+        ).toBeVisible();
+      });
+
+      await acceptanceStep(
+        page,
+        "3. Approve a paper's batch, then reopen Held questions",
+        async () => {
+          await page.goto("/admin/review");
+          await page
+            .getByTestId(`review-batch-${batches.approve}`)
+            .getByRole("button", { name: /Approve & Publish/i })
+            .click();
+          await expect(page.getByText(/2 new questions added/i)).toBeVisible({ timeout: 30_000 });
+          await page.goto("/admin/intake");
+          await expect(paperRow(papers.approve)).toBeVisible({ timeout: 20_000 });
+          expect(await counts(papers.approve)).toEqual([0, 0, 2, 1, 0]);
+        },
+      );
+
+      await acceptanceStep(
+        page,
+        "4. Reject another paper's batch, then reopen Held questions",
+        async () => {
+          await page.goto("/admin/review");
+          await page
+            .getByTestId(`review-batch-${batches.reject}`)
+            .getByRole("button", { name: /discard/i })
+            .click();
+          await expect(page.getByTestId(`review-batch-${batches.reject}`)).toBeHidden({
+            timeout: 20_000,
+          });
+          await page.goto("/admin/intake");
+          await expect(paperRow(papers.reject)).toBeVisible({ timeout: 20_000 });
+          expect(await counts(papers.reject)).toEqual([0, 0, 0, 1, 2]);
+        },
+      );
     } finally {
       await db.delete(intakeItems).where(eq(intakeItems.sourceId, source.id));
       await db
