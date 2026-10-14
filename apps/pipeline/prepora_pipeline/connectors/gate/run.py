@@ -28,8 +28,6 @@ from .paper_parser import parse_paper
 from .register import ensure_gate_registered
 
 SOURCE_SLUG = "gate"
-# Issues that say a question is drawn rather than typed: it then often fails to normalize too.
-_LAYOUT_CODES = {"figure", "image_option", "layout"}
 EDITION = "iitg"  # the official site's copy (Spec 8 adds the Drive folder's)
 
 
@@ -167,9 +165,7 @@ def _intake_item(question, key, paper, key_name, qp_sha, validate) -> IntakeItem
     except (GateNormalizeError, ValueError) as exc:
         # As much of the question as was read, so a later fix (Spec 9) can rebuild it.
         if isinstance(exc, GateNormalizeError):
-            # A question already held for its layout (a figure, options drawn as images) often
-            # fails this way too; the layout issue is the reason, not a second one.
-            if not any(issue.code in _LAYOUT_CODES for issue in issues):
+            if not any(issue.code == "image_option" for issue in issues):
                 issues.append(Issue("type_mismatch", str(exc)))
         else:  # a pydantic ValidationError: what was read isn't a valid question
             issues.append(Issue("invalid", str(exc)))

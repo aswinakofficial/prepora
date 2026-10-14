@@ -216,10 +216,10 @@ class TestImport:
         assert [i.code for i in item.issues] == ["invalid"]
         assert item.status == "held" and item.candidate["number"] == 11
 
-    def test_a_layout_hold_is_not_also_a_type_mismatch(self):
+    def test_a_figure_hold_still_records_the_type_mismatch(self):
         question = _question(options={}, issues=[Issue("figure", "something is drawn")])
         item = _intake_item(question, _key(), PAPER, "gate/2099/cs/CS-1", "f" * 64, None)
-        assert [i.code for i in item.issues] == ["figure"]
+        assert [i.code for i in item.issues] == ["figure", "type_mismatch"]
 
 
 @pytest.mark.skipif(not __import__("os").environ.get("DATABASE_URL"), reason="needs DATABASE_URL")
