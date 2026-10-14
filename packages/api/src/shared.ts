@@ -50,4 +50,3 @@ export {
   type NumericKey,
   parseNumericAnswer,
 } from "./lib/numeric-answer.js";
-export { renderRichText, type TextFormat } from "./lib/rich-text.js";

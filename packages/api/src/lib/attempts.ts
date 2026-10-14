@@ -87,7 +87,10 @@ export async function recordAttempt(
     correctNumericRanges: numeric.ranges,
     numericAnswerDisplay: numeric.display,
     explanation: q.explanation,
-    explanationHtml: q.explanation === null ? null : renderRichText(q.explanation, q.textFormat),
+    explanationHtml:
+      q.textFormat === "markdown" && q.explanation !== null
+        ? renderRichText(q.explanation, q.textFormat)
+        : null,
     explanationImages: (await loadQuestionImages(db, [q.id], ["explanation"])).get(q.id) ?? [],
   };
 }

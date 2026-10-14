@@ -397,9 +397,9 @@ function QuestionPage() {
                     <li key={option.id}>
                       {option.key} ·{" "}
                       <RichText
-                        as="span"
+                        inline
                         text={option.text}
-                        html={option.html}
+                        html={option.htmlInline}
                         format={question.textFormat}
                       />
                     </li>

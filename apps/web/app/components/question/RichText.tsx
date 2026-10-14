@@ -7,23 +7,27 @@ export function RichText({
   text,
   html,
   format,
-  as: Tag = "div",
+  inline = false,
+  as: Tag = inline ? "span" : "div",
   className = "",
   plainClassName = "",
 }: {
   text: string;
   html?: string | null;
   format?: string | null;
+  /** Render `html` (from the API's inline renderer) as a span, for a line inside a link or list. */
+  inline?: boolean;
   as?: ElementType;
   className?: string;
   /** Extra classes for plain text only, e.g. whitespace-pre-line. */
   plainClassName?: string;
 }) {
   if (format === "markdown" && html != null) {
-    // Markdown output holds block elements (<p>, <pre>), so it's always a div, never a heading
-    // or paragraph the caller asked for.
+    // Block markdown output holds <p> and <pre>, so it's always a div, never a heading or
+    // paragraph the caller asked for; inline output is phrasing content only, so a span.
+    const Wrapper = inline ? "span" : "div";
     return (
-      <div
+      <Wrapper
         data-testid="rich-text"
         data-format="markdown"
         className={`rich-text ${className}`.trim()}

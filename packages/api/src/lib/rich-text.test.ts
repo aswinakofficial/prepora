@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderRichText } from "./rich-text.js";
+import { renderRichText, renderRichTextInline } from "./rich-text.js";
 
 describe("renderRichText plain", () => {
   it("escapes and keeps line breaks, leaving markdown characters literal", () => {
@@ -62,5 +62,57 @@ describe("renderRichText markdown", () => {
 
   it("renders math inside option-like short text", () => {
     expect(renderRichText("$\\Theta(n^2)$", "markdown")).toContain("Θ");
+  });
+});
+
+describe("renderRichText links and math", () => {
+  it("never renders math inside a link target, autolink or bare URL", () => {
+    for (const src of ["[a](/$x$)", "<https://a.com/$x$>", "see https://a.com/$x$ now"]) {
+      const html = renderRichText(src, "markdown");
+      expect(html).not.toContain("katex");
+      expect(html).toContain("$x$");
+      expect(html).not.toMatch(/href="[^"]*(<|class=)/);
+    }
+  });
+
+  it("still renders math in link text and beside a link", () => {
+    const html = renderRichText("[$x_1$](https://a.com) and $y$", "markdown");
+    expect(html).toContain('href="https://a.com"');
+    expect(html.match(/class="katex"/g)).toHaveLength(2);
+  });
+
+  it("renders multi-line display math without reading its lines as Markdown", () => {
+    const html = renderRichText("Before\n\n$$\n+ a_1\n- b_2\n$$\n\nAfter", "markdown");
+    expect(html).toContain("katex-display");
+    expect(html).not.toContain("<ul");
+    expect(html).not.toContain("<li");
+  });
+
+  it("rejects protocol-relative and backslash-host links, keeps safe ones", () => {
+    for (const href of ["//evil.test/x", "/\\evil.test/x", "javascript:alert(1)"]) {
+      expect(renderRichText(`[a](<${href}>)`, "markdown")).not.toContain("<a ");
+    }
+    expect(renderRichText("[a](/questions/x)", "markdown")).toContain('<a href="/questions/x"');
+    expect(renderRichText("[a](#top)", "markdown")).toContain('<a href="#top"');
+    expect(renderRichText("[a](mailto:x@y.test)", "markdown")).toContain("<a ");
+  });
+});
+
+describe("renderRichTextInline", () => {
+  it("renders math and emphasis without paragraphs, and links as plain text", () => {
+    const html = renderRichTextInline(
+      "Use $\\Theta(n^2)$ and *this* [here](https://a.com)",
+      "markdown",
+    );
+    expect(html).toContain("katex");
+    expect(html).toContain("<em>this</em>");
+    expect(html).not.toContain("<p>");
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("here");
+  });
+
+  it("escapes raw HTML and keeps plain text literal", () => {
+    expect(renderRichTextInline("<b>x</b>", "markdown")).not.toContain("<b>");
+    expect(renderRichTextInline("a *b*\nc", "plain")).toBe("a *b* c");
   });
 });

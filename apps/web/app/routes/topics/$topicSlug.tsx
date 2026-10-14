@@ -280,7 +280,12 @@ function TopicPage() {
 
                     {/* Question Content */}
                     <h3 className="text-lg text-slate-200 group-hover:text-white font-light tracking-tight mb-4 leading-relaxed transition-colors">
-                      <RichText as="span" text={q.text} html={q.textHtml} format={q.textFormat} />
+                      <RichText
+                        inline
+                        text={q.text}
+                        html={q.textHtmlInline}
+                        format={q.textFormat}
+                      />
                     </h3>
 
                     {/* Footer Row: Action Link */}

@@ -124,7 +124,7 @@ function ExamSubjectPage() {
                     {String(idx + 1).padStart(2, "0")}
                   </span>
                   <h3 className="text-lg text-slate-300 group-hover:text-white transition-colors font-light truncate">
-                    <RichText as="span" text={q.text} html={q.textHtml} format={q.textFormat} />
+                    <RichText inline text={q.text} html={q.textHtmlInline} format={q.textFormat} />
                   </h3>
                 </div>
                 <div className="font-mono text-[10px] uppercase text-slate-500 tracking-widest mt-4 md:mt-0 flex items-center gap-4 shrink-0">

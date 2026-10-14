@@ -58,10 +58,23 @@ describe.skipIf(!DATABASE_URL)("rich text in question payloads", () => {
     expect(result?.explanationHtml).toContain("katex");
   });
 
-  it("a plain question's html is the escaped text, nothing formatted", async () => {
-    const { id } = await seed("plain");
+  it("a plain question's html fields are null", async () => {
+    const { id, optionId } = await seed("plain");
     const q = (await loadQuestionsWithAnswers(getDb(), [id])).get(id);
-    expect(q?.textHtml).toBe("Let $L_1 \\cup L_2$ be *regular*.");
-    expect(q?.options[0].html).toBe("$\\Theta(n^2)$");
+    expect(q?.textHtml).toBeNull();
+    expect(q?.textHtmlInline).toBeNull();
+    expect(q?.options[0].html).toBeNull();
+    expect(q?.explanationHtml).toBeNull();
+    const result = await recordAttempt(getDb(), { questionId: id, selectedOptionId: optionId });
+    expect(result?.explanationHtml).toBeNull();
+  });
+
+  it("without `full`, only the inline text is rendered", async () => {
+    const { id } = await seed("markdown");
+    const q = (await loadQuestionsWithAnswers(getDb(), [id], { full: false })).get(id);
+    expect(q?.textHtmlInline).toContain("katex");
+    expect(q?.textHtml).toBeNull();
+    expect(q?.options[0].html).toBeNull();
+    expect(q?.explanationHtml).toBeNull();
   });
 });

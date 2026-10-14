@@ -10,14 +10,31 @@ import re
 
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # Characters that can start formatting anywhere in a line. `&` is here because Markdown decodes
-# entities such as `&lt;`; `<` needs no escape, since raw HTML is disabled and shown as text.
-_INLINE = re.compile(r"([\\`*_$\[\]~&|])")
+# entities such as `&lt;`; `<` because `<https://…>` is an autolink even with raw HTML disabled;
+# `@` because a bare email address becomes a link.
+_INLINE = re.compile(r"([\\`*_$\[\]~&|<@])")
+# Bare URLs and www. addresses become links; escaping the scheme's ":" or the "www." dot
+# keeps them text.
+_AUTOLINK = re.compile(r"\b(https?|ftp):(?=//)|\b(www)\.", re.IGNORECASE)
+# A line of only `-` or `=` under a paragraph line makes that line a heading (or `---` a rule).
+_SETEXT = re.compile(r"^\s{0,3}([-=])[-=]*\s*$")
+# Four or more spaces, or a tab, start an indented code block.
+_INDENT = re.compile(r"^(?: {4}|\t)")
 # Characters that only matter at the start of a line: headings, quotes, lists.
 _LINE_START = re.compile(r"^(\s*)(#{1,6}(?=\s|$)|>|[-+](?=\s)|\d+[.)](?=\s))")
 
 
 def _escape_line(line: str) -> str:
+    setext = _SETEXT.match(line)
+    if setext:
+        i = line.index(setext.group(1))
+        return f"{line[:i]}\\{line[i:]}"
+    indented = _INDENT.match(line)
     line = _INLINE.sub(r"\\\1", line)
+    line = _AUTOLINK.sub(lambda m: f"{m.group(1)}\\:" if m.group(1) else f"{m.group(2)}\\.", line)
+    if indented:
+        # An entity isn't indentation, so the line stays text instead of becoming a code block.
+        line = "&#32;" + line[1:]
 
     def lead(match: re.Match) -> str:
         marker = match.group(2)

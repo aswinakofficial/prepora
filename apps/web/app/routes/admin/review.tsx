@@ -1,4 +1,4 @@
-import { renderRichText } from "@prepora/api/src/shared";
+import { renderRichText } from "@prepora/api/src/lib/rich-text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -415,6 +415,7 @@ function AdminReviewPage() {
         <div className="flex items-center gap-4">
           <Link
             to="/admin"
+            aria-label="Back to admin"
             className="p-2.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -810,7 +811,11 @@ function AdminReviewPage() {
                                       <RichText
                                         as="span"
                                         text={optText}
-                                        html={mdHtml(norm?.options?.[optIdx]?.text ?? optText)}
+                                        html={
+                                          isMarkdown
+                                            ? mdHtml(norm?.options?.[optIdx]?.text ?? optText)
+                                            : null
+                                        }
                                         format={isMarkdown ? "markdown" : "plain"}
                                       />
                                       <QuestionImages

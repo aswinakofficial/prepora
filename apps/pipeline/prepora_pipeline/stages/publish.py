@@ -33,6 +33,7 @@ from prepora_pipeline.contracts import (
 )
 
 from ..core.db import get_db_connection
+from ..core.markdown import escape_markdown
 from ..core.media_store import FilesystemMediaStore, MediaStore, media_store_from_env
 from ..dedupe import (
     NEEDS_DECISION,
@@ -423,11 +424,14 @@ def _link_to_existing_question(
     explanation and option text — updated in place, so its id, slug (URL), occurrences and the
     option ids practice attempts point to are all unchanged — and the old wording is remembered.
     """
-    cur.execute("SELECT question_text FROM questions WHERE id = %s", (question_id,))
+    cur.execute(
+        "SELECT question_text, text_format, explanation FROM questions WHERE id = %s",
+        (question_id,),
+    )
     row = cur.fetchone()
     if row is None:
         raise PublishError(f"Can't link to question {question_id}: it no longer exists.")
-    old_text = row[0]
+    old_text, old_format, old_explanation = row
     same_wording = normalize_question_text(old_text) == normalize_question_text(
         normalized.question_text
     )
@@ -464,6 +468,15 @@ def _link_to_existing_question(
     cur.execute("DELETE FROM question_answers WHERE question_id = %s", (question_id,))
     _insert_answers(cur, question_id, normalized, option_id_by_key)
 
+    # The explanation is kept when the new version has none, but its format must follow the
+    # question's: an old plain explanation under "markdown" would render its `*` and `$` as
+    # formatting, so it's escaped to stay literal.
+    explanation = normalized.explanation
+    if explanation is None and old_explanation and (old_format, normalized.text_format) == (
+        "plain",
+        "markdown",
+    ):
+        explanation = escape_markdown(old_explanation)
     cur.execute(
         "UPDATE questions SET question_text = %s, content_hash = %s, "
         "explanation = COALESCE(%s, explanation), text_format = %s, updated_at = now() "
@@ -471,7 +484,7 @@ def _link_to_existing_question(
         (
             normalized.question_text,
             content_hash(normalized.question_text),
-            normalized.explanation,
+            explanation,
             normalized.text_format,
             question_id,
         ),

@@ -30,3 +30,19 @@ def test_an_unclosed_fence_leaves_the_rest_alone():
 
 def test_plain_text_is_unchanged():
     assert escape_markdown("What is the value of x?") == "What is the value of x?"
+
+
+def test_setext_underlines_do_not_turn_a_line_into_a_heading_or_rule():
+    assert escape_markdown("Title\n---\nOther\n===") == "Title\n\\---\nOther\n\\==="
+
+
+def test_indentation_of_four_spaces_does_not_start_a_code_block():
+    assert escape_markdown("Text:\n\n    indented") == "Text:\n\n&#32;   indented"
+    assert escape_markdown("a\n  two spaces") == "a\n  two spaces"
+
+
+def test_autolinks_bare_urls_and_emails_stay_text():
+    assert escape_markdown("see <https://a.com/x> or https://b.org and www.c.io") == (
+        "see \\<https\\://a.com/x> or https\\://b.org and www\\.c.io"
+    )
+    assert escape_markdown("mail a@b.com") == "mail a\\@b.com"

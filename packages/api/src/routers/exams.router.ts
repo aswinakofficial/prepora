@@ -143,6 +143,7 @@ export const examsRouter = {
             id: q.id,
             text: q.questionText,
             textHtml: q.textHtml,
+            textHtmlInline: q.textHtmlInline,
             textFormat: q.textFormat,
             options: q.options,
             correctKey: q.correctKey,

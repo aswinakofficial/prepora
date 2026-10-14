@@ -48,6 +48,7 @@ export const topicsRouter = {
       const questionsById = await loadQuestionsWithAnswers(
         db,
         occurrences.map((o) => o.questionId),
+        { full: false },
       );
 
       const questionsList = occurrences
@@ -57,10 +58,9 @@ export const topicsRouter = {
           return {
             id: q.id,
             text: q.questionText,
-            textHtml: q.textHtml,
+            textHtmlInline: q.textHtmlInline,
             textFormat: q.textFormat,
             explanation: q.explanation,
-            explanationHtml: q.explanationHtml,
             images: q.images,
             difficulty: q.difficulty,
             examSlug: occ.examSlug,

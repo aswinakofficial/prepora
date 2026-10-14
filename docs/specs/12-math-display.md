@@ -69,14 +69,17 @@ page, and nothing about existing MS Learn questions changes. Checked by
    - The admin review page renders on the client with the same function, since admins are on
      desktops and batches are previewed before they're published.
 4. **One renderer, shared:** `packages/api/src/lib/rich-text.ts` exports
-   `renderRichText(text, format) → html`. It imports only `marked` and `katex`, so the web app can
-   use it through `@prepora/api/src/shared`.
+   `renderRichText(text, format) → html`. It imports only `marked` and `katex`. It is **not** re-exported
+   from `@prepora/api/src/shared`: that module is imported by pages in the main client chunk, and
+   re-exporting pulled KaTeX into it (539 to 840 KB). The admin review page imports it directly
+   from `@prepora/api/src/lib/rich-text`, so KaTeX loads only with that route (the main chunk
+   stays 539 KB). `renderRichTextInline` renders one line with links as plain text, for list rows
+   that are links themselves and for the correct-answer line.
    - **Plain:** escape the text, and turn newlines into `<br>`.
-   - **Markdown:**
-     - math spans are protected before Markdown parsing, so `_` and `*` inside math aren't read
-       as emphasis;
-     - then Markdown, with HTML escaped;
-     - then KaTeX renders the protected spans.
+   - **Markdown:** math is part of the Markdown grammar (marked inline and block extensions that
+     render through KaTeX), so `_` and `*` inside math aren't read as emphasis, and a `$` in a link
+     target, autolink, bare URL or code span is never math. HTML is escaped, images are shown as
+     their alt text, and links keep only http(s), mailto, same-site paths and fragments.
 5. **The connector decides the format.**
    - GATE emits `markdown`. Its prose is escaped for Markdown (`*`, `_`, `` ` ``, `$`, `#` at a
      line start, `[`), so only intended formatting renders.

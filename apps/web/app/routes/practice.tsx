@@ -61,10 +61,10 @@ interface Question {
   id: string;
   text: string;
   /** Server-rendered HTML for a markdown question (Spec 12). */
-  textHtml?: string;
+  textHtml?: string | null;
   textFormat?: string;
   explanationHtml?: string | null;
-  options: { id: string; key: string; text: string; html?: string }[];
+  options: { id: string; key: string; text: string; html?: string | null }[];
   correctKey: string;
   /** Every correct option — more than one for a "Choose N" question. */
   correctKeys?: string[];

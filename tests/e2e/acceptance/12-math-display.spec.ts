@@ -276,9 +276,9 @@ test.describe("Spec 12 · math display", () => {
           const text = await code.evaluate((el) => (el as HTMLElement).innerText);
           expect(text).toContain("int main() {");
           expect(text).toContain("    int zed = 3;");
-          expect(await code.evaluate((el) => getComputedStyle(el).fontFamily.toLowerCase())).toMatch(
-            /mono|courier|consolas|menlo/,
-          );
+          expect(
+            await code.evaluate((el) => getComputedStyle(el).fontFamily.toLowerCase()),
+          ).toMatch(/mono|courier|consolas|menlo/);
           expect(await body.innerText()).not.toContain("```");
         },
       );
