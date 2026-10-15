@@ -4,7 +4,7 @@
 **Milestone:** Finish GATE
 **Depends on:** Spec 7
 **Production database:** yes. One additive migration (a `text_format` column with a default).
-**Status:** Ready
+**Status:** Done (#94, released 2026-10-15)
 
 ## Context
 
