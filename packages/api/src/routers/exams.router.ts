@@ -142,6 +142,9 @@ export const examsRouter = {
           return {
             id: q.id,
             text: q.questionText,
+            textHtml: q.textHtml,
+            textHtmlInline: q.textHtmlInline,
+            textFormat: q.textFormat,
             options: q.options,
             correctKey: q.correctKey,
             correctKeys: q.correctKeys,
@@ -155,6 +158,7 @@ export const examsRouter = {
             marks: occ.marks,
             negativeMarks: occ.negativeMarks,
             explanation: q.explanation,
+            explanationHtml: q.explanationHtml,
             images: q.images,
             topic: q.topicName || occ.subjectName || exam.name,
             examSlug: occ.examSlug,

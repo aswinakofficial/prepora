@@ -3,6 +3,7 @@ import { questions } from "@prepora/db/schema";
 import { inArray, sql } from "drizzle-orm";
 import { numericKey } from "./numeric-answer.js";
 import { loadQuestionImages, type QuestionImage } from "./question-media.js";
+import { renderRichText, renderRichTextInline } from "./rich-text.js";
 
 // docs/roadmap/engineering-roadmap.md item 24: shared catalog-traversal logic for every page that
 // lists or resolves published questions — extracted so exams.router.ts, topics.router.ts,
@@ -192,10 +193,20 @@ export interface QuestionWithAnswer {
   id: string;
   slug: string;
   questionText: string;
+  /**
+   * questionText, rendered to safe HTML (Spec 12). Null for a plain question, whose text the page
+   * shows as it always did, and when loaded without `full`.
+   */
+  textHtml: string | null;
+  /** The same as one inline line, for rows that are links themselves. Null for plain. */
+  textHtmlInline: string | null;
+  textFormat: string;
   explanation: string | null;
+  explanationHtml: string | null;
   difficulty: string | null;
   topicName: string | null;
-  options: { id: string; key: string; text: string }[];
+  /** `html` is null for a plain question, and when loaded without `full`. */
+  options: { id: string; key: string; text: string; html: string | null }[];
   /** Every correct option key, in option order — more than one for a "Choose N" question. */
   correctKeys: string[];
   /** The first of correctKeys, kept for single-answer callers. */
@@ -221,6 +232,9 @@ export interface QuestionWithAnswer {
 export async function loadQuestionsWithAnswers(
   db: ReturnType<typeof getDb>,
   questionIds: string[],
+  // `full`: also render the block text, options and explanation (practice). Lists that show
+  // only a row of text don't pay for rendering what they never send.
+  { full = true }: { full?: boolean } = {},
 ): Promise<Map<string, QuestionWithAnswer>> {
   if (questionIds.length === 0) return new Map();
 
@@ -248,16 +262,29 @@ export async function loadQuestionsWithAnswers(
     const correctKeys = sortedOptions.filter((o) => correctIds.has(o.id)).map((o) => o.optionKey);
     const numeric = numericKey(row.answers);
 
+    const markdown = row.textFormat === "markdown";
     byId.set(row.id, {
       id: row.id,
       slug: row.slug,
       questionText: row.questionText,
+      textHtml: markdown && full ? renderRichText(row.questionText, row.textFormat) : null,
+      textHtmlInline: markdown ? renderRichTextInline(row.questionText, row.textFormat) : null,
+      textFormat: row.textFormat,
       explanation: row.explanation,
+      explanationHtml:
+        markdown && full && row.explanation !== null
+          ? renderRichText(row.explanation, row.textFormat)
+          : null,
       difficulty: row.difficulty,
       topicName: row.topic?.name ?? null,
       // docs/roadmap/engineering-roadmap.md item 25: `id` is included so callers can pass a real
       // selectedOptionId straight into questions.submitAnswer instead of only having the display key.
-      options: sortedOptions.map((o) => ({ id: o.id, key: o.optionKey, text: o.optionText })),
+      options: sortedOptions.map((o) => ({
+        id: o.id,
+        key: o.optionKey,
+        text: o.optionText,
+        html: markdown && full ? renderRichText(o.optionText, row.textFormat) : null,
+      })),
       correctKeys,
       correctKey: correctKeys[0] ?? null,
       questionType: row.questionType,

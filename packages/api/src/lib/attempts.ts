@@ -3,6 +3,7 @@ import { attempts, practiceSessions, questions } from "@prepora/db/schema";
 import { eq } from "drizzle-orm";
 import { gradeNumericAnswer, numericKey } from "./numeric-answer.js";
 import { loadQuestionImages, type QuestionImage } from "./question-media.js";
+import { renderRichText } from "./rich-text.js";
 
 /**
  * The logic behind questions.router.ts's `submitAnswer` procedure, extracted so it's directly
@@ -39,6 +40,8 @@ export async function recordAttempt(
   /** A numerical question's answer as the key prints it, e.g. "4.24 to 4.26". */
   numericAnswerDisplay: string | null;
   explanation: string | null;
+  /** The explanation rendered to safe HTML for the question's text format (Spec 12). */
+  explanationHtml: string | null;
   explanationImages: QuestionImage[];
 } | null> {
   const q = await db.query.questions.findFirst({
@@ -84,6 +87,10 @@ export async function recordAttempt(
     correctNumericRanges: numeric.ranges,
     numericAnswerDisplay: numeric.display,
     explanation: q.explanation,
+    explanationHtml:
+      q.textFormat === "markdown" && q.explanation !== null
+        ? renderRichText(q.explanation, q.textFormat)
+        : null,
     explanationImages: (await loadQuestionImages(db, [q.id], ["explanation"])).get(q.id) ?? [],
   };
 }

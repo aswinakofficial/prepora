@@ -30,6 +30,9 @@ export const publishingStatusEnum = pgEnum("publishing_status", [
   "rejected",
 ]);
 
+// docs/specs/12-math-display.md: how a question's text, options and explanation are written.
+export const textFormatEnum = pgEnum("text_format", ["plain", "markdown"]);
+
 export const questionTypeEnum = pgEnum("question_type", [
   "mcq",
   "multiple_correct",

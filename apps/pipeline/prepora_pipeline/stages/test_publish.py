@@ -142,6 +142,38 @@ def _row(query, params):
 
 
 class TestBasicPublish:
+    def test_new_wording_in_markdown_escapes_the_old_plain_explanation_it_keeps(
+        self, test_exam, test_subject
+    ):
+        text = f"Which is bigger {uuid.uuid4()}?"
+        old = _normalized(test_exam, test_subject, question_text=text, number=1)
+        old.explanation = "Use 2 * 3 and $5, not my_var."
+        first = publish_question(old)
+        new = _normalized(test_exam, test_subject, question_text=text + " ", number=2)
+        new.text_format = "markdown"
+        publish_question(new, link_to_question_id=first.question_id, use_new_wording=True)
+
+        explanation, fmt = _row(
+            "SELECT explanation, text_format FROM questions WHERE id = %s", (first.question_id,)
+        )
+        assert fmt == "markdown"
+        assert explanation == "Use 2 \\* 3 and \\$5, not my\\_var."
+
+    def test_text_format_is_written_on_insert_and_defaults_to_plain(self, test_exam, test_subject):
+        plain = publish_question(
+            _normalized(test_exam, test_subject, question_text=f"Plain {uuid.uuid4()}", number=1)
+        )
+        text = f"MD $x_1$ {uuid.uuid4()}"
+        md = _normalized(test_exam, test_subject, question_text=text, number=2)
+        md.text_format = "markdown"
+        marked = publish_question(md)
+
+        def fmt(question_id):
+            return _row("SELECT text_format FROM questions WHERE id = %s", (question_id,))[0]
+
+        assert fmt(plain.question_id) == "plain"
+        assert fmt(marked.question_id) == "markdown"
+
     def test_publishing_the_same_content_twice_produces_one_question_and_one_occurrence(
         self, test_exam, test_subject
     ):

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { breadcrumbListJsonLd, canonicalLink, titleCase } from "../../../../../lib/json-ld";
 import { orpc } from "../../../../../lib/orpc";
+import { RichText } from "../../../../components/question/RichText";
 import { SkeletonListRows } from "../../../../components/ui/Skeleton";
 
 export const Route = createFileRoute("/exams/$examSlug/subjects/$subjectSlug")({
@@ -123,7 +124,7 @@ function ExamSubjectPage() {
                     {String(idx + 1).padStart(2, "0")}
                   </span>
                   <h3 className="text-lg text-slate-300 group-hover:text-white transition-colors font-light truncate">
-                    {q.text}
+                    <RichText inline text={q.text} html={q.textHtmlInline} format={q.textFormat} />
                   </h3>
                 </div>
                 <div className="font-mono text-[10px] uppercase text-slate-500 tracking-widest mt-4 md:mt-0 flex items-center gap-4 shrink-0">

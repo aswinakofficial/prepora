@@ -17,6 +17,7 @@ an ExtractedQuestion; there is no repo-wide "the" parser version.
 """
 
 # 2: .question_set_title; 3: .media; 4: .identity; 5: marks, section, answer status and
-# provenance, paper kind, key status, numeric ranges (docs/specs/03-paper-structure-min.md)
-CONTRACT_VERSION = "5"
+# provenance, paper kind, key status, numeric ranges (docs/specs/03-paper-structure-min.md);
+# 6: .text_format (docs/specs/12-math-display.md)
+CONTRACT_VERSION = "6"
 PIPELINE_VERSION = "1"

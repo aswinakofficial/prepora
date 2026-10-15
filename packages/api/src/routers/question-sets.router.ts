@@ -42,6 +42,7 @@ export const questionSetsRouter = {
       const questionsById = await loadQuestionsWithAnswers(
         db,
         occurrences.map((o) => o.questionId),
+        { full: false },
       );
 
       const questionsList = occurrences
@@ -51,6 +52,8 @@ export const questionSetsRouter = {
           return {
             number: occ.originalQuestionNumber ?? idx + 1,
             text: q.questionText,
+            textHtmlInline: q.textHtmlInline,
+            textFormat: q.textFormat,
             slug: q.slug,
             topic: q.topicName || occ.subjectName || "General",
             difficulty: q.difficulty,
