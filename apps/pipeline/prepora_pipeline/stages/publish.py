@@ -44,12 +44,24 @@ from ..dedupe import (
     find_same_question,
     normalize_question_text,
 )
+from ..dedupe.fingerprint import numbers_in, shape_of, shape_of_published
+from ..dedupe.profile import profile_for
+from ..dedupe.similarity import similarity
 from .stable_id import derive_question_set_slug, derive_stable_content_id
 from .validate import validate_question
 
 
 class PublishError(Exception):
     pass
+
+
+class _PositionTaken(Exception):
+    """With on_near_duplicate="hold": this paper's question N is already published, under other
+    content (stable_content_id is position identity). Carries the question holding the position."""
+
+    def __init__(self, question_id: str):
+        super().__init__(question_id)
+        self.question_id = question_id
 
 
 @dataclass
@@ -192,6 +204,11 @@ def publish_question(
                         else None
                     ),
                     force_new=publish_as_new,
+                    # Only when dedupe found nothing: a re-parse whose wording moved far enough
+                    # from the published one not to be a near duplicate (Spec 13, Decision 4).
+                    hold_if_position_taken=(
+                        on_near_duplicate == "hold" and dedupe_decision.outcome == "unique"
+                    ),
                 )
 
             occurrence_created = _resolve_or_create_occurrence(
@@ -206,6 +223,9 @@ def publish_question(
             _record_media(cur, question_id, validated.media)
 
             conn.commit()
+    except _PositionTaken as taken:
+        conn.rollback()
+        return HeldResult(decision=_position_decision(validated, taken.question_id))
     except Exception:
         conn.rollback()
         raise
@@ -219,6 +239,40 @@ def publish_question(
         question_created=question_created,
         occurrence_created=occurrence_created,
         dedupe_outcome=dedupe_decision.outcome,
+    )
+
+
+def _position_decision(normalized: NormalizedQuestion, existing_id: str) -> DedupeDecision:
+    """The possible-duplicate decision for a re-parse that took another question's position,
+    complete the way dedupe/check.py's decide() builds a near duplicate, so the reviewer can use
+    "same question, use the new wording" on the existing possible-duplicate screen."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT question_text FROM questions WHERE id = %s", (existing_id,))
+            existing_text = cur.fetchone()[0]
+            shape = shape_of(normalized)
+            existing_shape = shape_of_published(cur, existing_id)
+    finally:
+        conn.close()
+    profile = profile_for(normalized)
+    score = similarity(
+        profile.comparison_text(normalized.question_text),
+        profile.comparison_text(existing_text),
+    )
+    numbers_match = numbers_in(normalized.question_text) == numbers_in(existing_text)
+    return DedupeDecision(
+        outcome="near_duplicate",
+        reason=(
+            "This paper's question is already published with other wording (a re-parse); "
+            f"{score:.0%} similar"
+        ),
+        existing_question_id=existing_id,
+        similarity_score=score,
+        existing_question_text=existing_text,
+        options_match=shape.options_match(existing_shape),
+        answer_match=shape.answer_match(existing_shape),
+        suggestion="same" if shape.matches(existing_shape) and numbers_match else "different",
     )
 
 
@@ -508,6 +562,7 @@ def _resolve_or_create_question(
     *,
     existing_question_id: str | None = None,
     force_new: bool = False,
+    hold_if_position_taken: bool = False,
 ) -> tuple[str, bool, str]:
     """(question id, created?, stable_content_id) for the question to publish.
 
@@ -534,9 +589,12 @@ def _resolve_or_create_question(
         # position identity, this paper's question N is already published with other content.
         # Reusing it would drop this question silently — the old behaviour — so it fails, naming
         # why. An edit of the same question is caught earlier, as a near duplicate for review.
-        if _select_id(
+        taken_by = _select_id(
             cur, "SELECT id FROM questions WHERE stable_content_id = %s", (stable_content_id,)
-        ):
+        )
+        if taken_by:
+            if hold_if_position_taken:
+                raise _PositionTaken(taken_by)
             raise PublishError(
                 f"{stable_content_id} is already published as a different question (other "
                 "wording, options or answer). Check the question's number, or publish it as a "

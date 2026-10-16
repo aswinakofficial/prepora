@@ -422,10 +422,9 @@ def _attach(
                 continue
             if other.script and p not in parent:
                 continue  # a script with nothing under it can't hold another
-            edge = reach[p] if other.script else other.word.x1
-            gap = e.word.x0 - edge
             relation = "script"
             limit = profile.attach_gap
+            edge = other.word.x1
             # A script's centre sits inside its base's box (a little under it for a row of
             # subscripts); a word on the next line is never its base.
             slack = 0.3 * other.h
@@ -437,12 +436,13 @@ def _attach(
                     e.size >= profile.script_size * other.size
                     and other.size >= profile.script_size * e.size
                 )
-                if similar:  # the next word of the same script
-                    relation, limit = "cont", profile.glue_gap
+                if similar:  # the next word of the same script, past any nested script
+                    relation, limit, edge = "cont", profile.glue_gap, reach[p]
                     if abs(e.cy - other.cy) > 0.35 * other.size:
                         continue
                 elif e.size >= other.size:
                     continue  # only a smaller script nests
+            gap = e.word.x0 - edge
             if not -profile.attach_gap <= gap <= limit:
                 continue
             score = abs(gap) + 0.05 * vertical

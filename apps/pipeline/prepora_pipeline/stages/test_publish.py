@@ -18,7 +18,7 @@ from prepora_pipeline.contracts import (
 )
 from prepora_pipeline.core.db import get_db_connection
 
-from .publish import PublishError, publish_question
+from .publish import HeldResult, PublishError, publish_question
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -691,3 +691,99 @@ def test_a_sets_key_status_only_moves_forward(test_exam, test_subject):
     assert status() == ("past_paper", "final")
     publish(4, "revised")
     assert status() == ("past_paper", "revised")
+
+
+class TestRetypesetPublishedQuestion:
+    """Spec 13, Decision 4: a published question re-parsed with wording far from the old (a heavy
+    re-typeset) keeps its position identity, but isn't a near duplicate. With
+    on_near_duplicate="hold" it becomes a complete possible duplicate of itself."""
+
+    OLD = "Let the invented set L have n elements and the invented map f send L to itself."
+    NEW = "Let $L_{1}$ be a set; every $f$ maps it by $\\Theta(n^{2})$ with $\\mathbb{R}$ steps."
+
+    def _published(self, test_exam, test_subject):
+        old = _normalized(test_exam, test_subject, question_text=self.OLD, number=7)
+        return publish_question(old)
+
+    def test_it_is_held_as_a_complete_possible_duplicate_of_itself(self, test_exam, test_subject):
+        first = self._published(test_exam, test_subject)
+        new = _normalized(test_exam, test_subject, question_text=self.NEW, number=7)
+        new.text_format = "markdown"
+
+        result = publish_question(new, on_near_duplicate="hold")
+
+        assert isinstance(result, HeldResult)
+        d = result.decision
+        assert d.outcome == "near_duplicate"
+        assert d.existing_question_id == first.question_id
+        assert d.existing_question_text == self.OLD
+        assert d.similarity_score is not None and d.similarity_score < 0.9
+        assert isinstance(d.options_match, bool) and isinstance(d.answer_match, bool)
+        assert d.suggestion in ("same", "different")
+        assert "re-parse" in d.reason
+        # Nothing was written for the held question.
+        assert _row("SELECT count(*) FROM questions WHERE id = %s", (first.question_id,)) == (1,)
+
+    def test_the_decision_fits_the_duplicate_reviews_insert(self, test_exam, test_subject):
+        first = self._published(test_exam, test_subject)
+        new = _normalized(test_exam, test_subject, question_text=self.NEW, number=7)
+        d = publish_question(new, on_near_duplicate="hold").decision
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO scraped_questions (source_url, status) "
+                    "VALUES ('https://test.example/batch', 'pending') RETURNING id"
+                )
+                batch_id = cur.fetchone()[0]
+                # The insert admin.router.ts's holdPossibleDuplicate makes.
+                cur.execute(
+                    "INSERT INTO duplicate_reviews (scraped_question_id, question_number, "
+                    "candidate, existing_question_id, similarity, options_match, answer_match, "
+                    "suggestion) VALUES (%s, 1, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    (
+                        batch_id,
+                        new.model_dump_json(),
+                        d.existing_question_id,
+                        d.similarity_score,
+                        d.options_match,
+                        d.answer_match,
+                        d.suggestion,
+                    ),
+                )
+                assert cur.fetchone() is not None
+                cur.execute("DELETE FROM scraped_questions WHERE id = %s", (batch_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        assert d.existing_question_id == first.question_id
+
+    def test_same_question_use_the_new_wording_updates_it_and_keeps_the_old_as_a_variant(
+        self, test_exam, test_subject
+    ):
+        first = self._published(test_exam, test_subject)
+        new = _normalized(test_exam, test_subject, question_text=self.NEW, number=7)
+        new.text_format = "markdown"
+        publish_question(
+            new, link_to_question_id=first.question_id, use_new_wording=True
+        )
+        assert _row(
+            "SELECT question_text, text_format FROM questions WHERE id = %s", (first.question_id,)
+        ) == (self.NEW, "markdown")
+        assert _row(
+            "SELECT count(*) FROM question_variants WHERE question_id = %s AND question_text = %s",
+            (first.question_id, self.OLD),
+        ) == (1,)
+
+    def test_identical_content_is_reused_not_held(self, test_exam, test_subject):
+        first = self._published(test_exam, test_subject)
+        again = _normalized(test_exam, test_subject, question_text=self.OLD, number=7)
+        result = publish_question(again, on_near_duplicate="hold")
+        assert not isinstance(result, HeldResult)
+        assert result.question_id == first.question_id
+
+    def test_the_default_refuses_as_before(self, test_exam, test_subject):
+        self._published(test_exam, test_subject)
+        new = _normalized(test_exam, test_subject, question_text=self.NEW, number=7)
+        with pytest.raises(PublishError, match="different question"):
+            publish_question(new)
