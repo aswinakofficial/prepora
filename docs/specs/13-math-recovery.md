@@ -9,7 +9,7 @@ this spec): rebuilding text from the source's own PDF is parsing, not a revision
 read-only check during #94's review). Rebuilt questions reach production only when the owner re-runs
 `gate-import` against production and approves the batches (the owner's go-ahead, as for every
 import).
-**Status:** Ready (approved by the owner, 2026-10-16)
+**Status:** Done (#100, released 2026-10-17; approved by the owner 2026-10-16)
 **Owner decision (2026-10-04):** PDF first, AI only for the rest; AI transcription is Spec 15
 ([ADR-015](../adr/015-ai-assistance.md), 2026-10-04 amendment).
 
