@@ -205,7 +205,10 @@ questions              + explanationProvenance
      2026-10-04 amendment);
   5. a reviewer edit.
 
-  Each fix is a revision, and a resolver writes the chosen one to `questions`.
+  A fix that adds content from another origin (OCR, AI, a reviewer) is a revision, and a resolver
+  writes the chosen one to `questions`. A better parse of the same document (math rebuilt from glyph
+  positions, a page crop) isn't a revision: it re-processes the intake item in place, under a new
+  `parser_version` (rule 3, [ADR-016](../adr/016-deterministic-rebuilds-are-parsing.md)).
 - **Explanations, source first** (Specs 10–11):
   - A question's own source explanation (an official rationale like MS Learn's, or a licensed
     source's) is always used when one exists.
