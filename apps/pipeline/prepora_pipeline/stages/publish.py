@@ -44,7 +44,7 @@ from ..dedupe import (
     find_same_question,
     normalize_question_text,
 )
-from ..dedupe.fingerprint import numbers_in, shape_of, shape_of_published
+from ..dedupe.fingerprint import shape_of, shape_of_published
 from ..dedupe.profile import profile_for
 from ..dedupe.similarity import similarity
 from .stable_id import derive_question_set_slug, derive_stable_content_id
@@ -245,13 +245,23 @@ def publish_question(
 def _position_decision(normalized: NormalizedQuestion, existing_id: str) -> DedupeDecision:
     """The possible-duplicate decision for a re-parse that took another question's position,
     complete the way dedupe/check.py's decide() builds a near duplicate, so the reviewer can use
-    "same question, use the new wording" on the existing possible-duplicate screen."""
+    "same question, use the new wording" on the existing possible-duplicate screen.
+
+    The paper position is the same, so this is the same question re-parsed (Spec 13, Decision 4):
+    the suggestion is always "same_new" (same question, keep the new wording), and the options and the answer are compared by option key and
+    official key (or by the numeric ranges), never by option text, which a re-typeset rewrites."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT question_text FROM questions WHERE id = %s", (existing_id,))
             existing_text = cur.fetchone()[0]
-            shape = shape_of(normalized)
+            cur.execute(
+                "SELECT o.option_key, EXISTS (SELECT 1 FROM question_answers a "
+                "WHERE a.correct_option_id = o.id) FROM question_options o "
+                "WHERE o.question_id = %s",
+                (existing_id,),
+            )
+            published = cur.fetchall()
             existing_shape = shape_of_published(cur, existing_id)
     finally:
         conn.close()
@@ -260,7 +270,21 @@ def _position_decision(normalized: NormalizedQuestion, existing_id: str) -> Dedu
         profile.comparison_text(normalized.question_text),
         profile.comparison_text(existing_text),
     )
-    numbers_match = numbers_in(normalized.question_text) == numbers_in(existing_text)
+    shape = shape_of(normalized)
+    new_keys = {o.key for o in normalized.options}
+    old_keys = {key for key, _ in published}
+    options_match = new_keys == old_keys
+    if new_keys or old_keys:
+        answer = normalized.answer
+        if isinstance(answer, McqAnswer):
+            new_correct = {answer.correct_key}
+        elif isinstance(answer, MultipleCorrectAnswer):
+            new_correct = set(answer.correct_keys)
+        else:
+            new_correct = set()
+        answer_match = new_correct == {key for key, correct in published if correct}
+    else:
+        answer_match = shape.answer_match(existing_shape)
     return DedupeDecision(
         outcome="near_duplicate",
         reason=(
@@ -270,9 +294,9 @@ def _position_decision(normalized: NormalizedQuestion, existing_id: str) -> Dedu
         existing_question_id=existing_id,
         similarity_score=score,
         existing_question_text=existing_text,
-        options_match=shape.options_match(existing_shape),
-        answer_match=shape.answer_match(existing_shape),
-        suggestion="same" if shape.matches(existing_shape) and numbers_match else "different",
+        options_match=options_match,
+        answer_match=answer_match,
+        suggestion="same_new",
     )
 
 

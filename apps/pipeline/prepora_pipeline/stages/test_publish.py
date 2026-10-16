@@ -719,10 +719,38 @@ class TestRetypesetPublishedQuestion:
         assert d.existing_question_text == self.OLD
         assert d.similarity_score is not None and d.similarity_score < 0.9
         assert isinstance(d.options_match, bool) and isinstance(d.answer_match, bool)
-        assert d.suggestion in ("same", "different")
+        assert d.suggestion == "same_new"
         assert "re-parse" in d.reason
         # Nothing was written for the held question.
         assert _row("SELECT count(*) FROM questions WHERE id = %s", (first.question_id,)) == (1,)
+
+    def test_a_retypeset_with_rewritten_options_still_suggests_the_same_question(
+        self, test_exam, test_subject
+    ):
+        self._published(test_exam, test_subject)
+        new = _normalized(test_exam, test_subject, question_text=self.NEW, number=7)
+        new.text_format = "markdown"
+        new.options = [
+            NormalizedOption(key="A", text="$\\varPi_{P}(R \\bowtie S)$"),
+            NormalizedOption(key="B", text="$\\varPi_{P}(S \\bowtie R)$"),
+        ]
+        d = publish_question(new, on_near_duplicate="hold").decision
+        # The published options read "first option" / "second option": the text differs entirely,
+        # but the keys and the official key (B) are the same.
+        assert d.options_match is True and d.answer_match is True and d.suggestion == "same_new"
+
+    def test_a_different_official_key_or_option_set_reads_as_differing(
+        self, test_exam, test_subject
+    ):
+        self._published(test_exam, test_subject)
+        new = _normalized(test_exam, test_subject, question_text=self.NEW, number=7)
+        new.answer = McqAnswer(correct_key="A")
+        d = publish_question(new, on_near_duplicate="hold").decision
+        assert d.answer_match is False and d.options_match is True and d.suggestion == "same_new"
+        third = _normalized(test_exam, test_subject, question_text=self.NEW + " x", number=7)
+        third.options = [*third.options, NormalizedOption(key="C", text="third option")]
+        d = publish_question(third, on_near_duplicate="hold").decision
+        assert d.options_match is False
 
     def test_the_decision_fits_the_duplicate_reviews_insert(self, test_exam, test_subject):
         first = self._published(test_exam, test_subject)
