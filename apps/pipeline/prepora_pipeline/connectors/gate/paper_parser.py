@@ -13,15 +13,22 @@ measured on the four pilot papers (CS-1/CS-2, 2025 and 2026, 2026-10-02):
   stacked fractions come out as separate short lines, and tables or side-by-side code merge into
   lines with wide gaps. Figures are embedded images or vector drawings, which text extraction
   never sees. Any of these flags the question, and the importer attaches a crop of it.
+- Math is rebuilt from the PDF's own glyphs (core/math_rebuild.py, Spec 13): sub- and superscripts,
+  Symbol-font glyphs and every math-font run in every question become LaTeX. All or nothing per
+  question: what the rebuild can't fully explain keeps its extracted text, and a question held for
+  math stays held with the reason.
 """
 import re
 from dataclasses import dataclass, field, replace
 
+from ...core.math_rebuild import DETECTOR_REASONS, GATE_MATH, REBUILD_REASONS, rebuild_math
 from ...core.pdf_segment import OPTION_MARKER, Block, segment, split_options
 from ...core.pdf_text import (
+    CODE_FONTS,
     Line,
     Page,
     group_lines,
+    is_code_line,
     strip_running_graphics,
     strip_running_text,
 )
@@ -33,7 +40,6 @@ MARGIN_X = 75.0  # section and marks headings at x ≈ 72pt, left of the labels
 MARKS_HEADING = re.compile(
     r"^Q\.(\d+)\s*[–—-]\s*Q\.(\d+)\s+Carry\s+(ONE|TWO)\s+marks?\s+Each", re.IGNORECASE
 )
-CODE_FONTS = ("courier", "consolas", "mono")
 
 # Crop geometry, in points.
 CROP_PADDING = 6.0
@@ -56,6 +62,23 @@ class GateQuestion:
     regions: list[CropRegion]  # what to crop: one per page the question is on, label page first
     # Why its text alone can't be trusted (core/quality.py); none means clean.
     issues: list[Issue] = field(default_factory=list)
+    # The text and options as extracted (parser `gate-1`), before the math rebuild. `text` and
+    # `options` above are the rebuilt ones when the rebuild was accepted, and these otherwise.
+    original_text: str | None = None
+    original_options: dict[str, str] | None = None
+    # How the math rebuild went (Decision 2): recovered, still_held, retypeset, kept, or none. It
+    # exists only during a run; none of these four fields is stored.
+    math_outcome: str = "none"
+    math_reasons: list[str] = field(default_factory=list)
+    detector_math: list[str] = field(default_factory=list)  # the first detector run's math details
+    first_codes: list[str] = field(default_factory=list)  # every issue code of the first run
+    formulas: int = 0  # how many formulas the rebuild wrote
+
+    def __post_init__(self):
+        if self.original_text is None:
+            self.original_text = self.text
+        if self.original_options is None:
+            self.original_options = dict(self.options)
 
     @property
     def flags(self) -> list[str]:
@@ -78,25 +101,87 @@ def parse_paper(pages: list[Page]) -> list[GateQuestion]:
 
     questions = []
     for block in blocks:
-        _, options = split_options(block)
-        stem_lines = _stem_lines(block) if options else block.lines
-        stem_lines = [line for line in stem_lines if not _is_answer_blank(line, bool(options))]
         regions = _regions(block, page_by_number, tops_by_page)
-        questions.append(
-            GateQuestion(
-                number=block.number,
-                label=block.label,
-                text=_text(stem_lines),
-                options=options,
-                marks_heading=marks_by_number.get(block.number),
-                page=block.page,
-                regions=regions,
-                issues=detect_issues(
-                    block.lines, stem_lines, options, regions, page_by_number, GATE_QUALITY
-                ),
-            )
+        text, options, stem_lines = _read(block)
+        issues = detect_issues(block.lines, stem_lines, options, regions, page_by_number, GATE_QUALITY)
+        graphics = [
+            g
+            for region in regions
+            for g in page_by_number[region.page].graphics
+            if _inside(g, region)
+        ]
+        question = GateQuestion(
+            number=block.number,
+            label=block.label,
+            text=text,
+            options=options,
+            marks_heading=marks_by_number.get(block.number),
+            page=block.page,
+            regions=regions,
+            issues=issues,
         )
+        _rebuild(question, block, graphics, regions, page_by_number)
+        questions.append(question)
     return questions
+
+
+def _read(block: Block) -> tuple[str, dict[str, str], list[Line]]:
+    """A block's text, options and stem lines."""
+    _, options = split_options(block)
+    stem_lines = _stem_lines(block) if options else block.lines
+    stem_lines = [line for line in stem_lines if not _is_answer_blank(line, bool(options))]
+    return _text(stem_lines), options, stem_lines
+
+
+def _inside(g, region: CropRegion) -> bool:
+    x0, top, x1, bottom = region.bbox
+    return g.x1 > x0 and g.x0 < x1 and g.bottom > top and g.top < bottom
+
+
+def _rebuild(
+    question: GateQuestion,
+    block: Block,
+    graphics: list,
+    regions: list[CropRegion],
+    pages: dict[int, Page],
+) -> None:
+    """Rebuilds the question's math (core/math_rebuild.py) and applies Decision 2 of Spec 13: the
+    rebuilt text only when the rebuild has no reason and the detector finds no math issue in it."""
+    first = list(question.issues)
+    math_first = [i for i in first if i.code == "math"]
+    question.detector_math = [i.detail for i in math_first]
+    question.first_codes = sorted({i.code for i in first})
+    result = rebuild_math(block.lines, graphics, GATE_MATH)
+    rebuilt = replace(block, lines=result.lines)
+    text, options, stem_lines = _read(rebuilt)
+    second = detect_issues(rebuilt.lines, stem_lines, options, regions, pages, GATE_QUALITY)
+    reasons = list(result.reasons)
+    for issue in second:
+        if issue.code == "math":
+            reason = DETECTOR_REASONS.get(issue.detail, "unknown_symbol")
+            if reason not in reasons:
+                reasons.append(reason)
+    question.math_reasons = reasons
+    question.formulas = result.formulas
+    if not reasons:
+        # Accepted. A rebuild never clears a non-math issue.
+        kept = [i for i in first if i.code != "math"]
+        merged = {(i.code, i.detail): i for i in [*kept, *second]}
+        question.issues = list(merged.values())
+        question.text, question.options = text, options
+        if math_first:
+            question.math_outcome = "recovered"
+        elif result.formulas:
+            question.math_outcome = "retypeset"
+        return
+    if math_first:
+        question.math_outcome = "still_held"
+        question.issues = [
+            *first,
+            *(Issue("math", f"{REBUILD_REASONS[r]}") for r in reasons),
+        ]
+    else:
+        question.math_outcome = "kept"
 
 
 def _join_split_labels(page: Page) -> Page:
@@ -159,11 +244,6 @@ def _is_answer_blank(line: Line, has_options: bool) -> bool:
     )
 
 
-def _is_code(line: Line) -> bool:
-    fonts = [(w.fontname or "").lower() for w in line.words]
-    return sum(any(c in f for c in CODE_FONTS) for f in fonts) * 2 > len(fonts)
-
-
 def _text(lines: list[Line]) -> str:
     """Prose lines joined into paragraphs; monospace lines kept as fenced code, indented."""
     parts: list[str] = []
@@ -187,7 +267,7 @@ def _text(lines: list[Line]) -> str:
             code.clear()
 
     for line in lines:
-        if _is_code(line):
+        if is_code_line(line, CODE_FONTS):
             flush_paragraph()
             code.append(line)
         else:

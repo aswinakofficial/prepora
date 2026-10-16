@@ -31,6 +31,11 @@ class Word:
     page: int  # 0-based
     size: float | None = None  # font size, when the PDF says
     fontname: str | None = None  # e.g. "Courier", for telling code apart from prose
+    # The text before NFKC, which erases math italics (𝑛 → n) and letterlike symbols (ℝ → R). Only
+    # core/math_rebuild.py reads it; None means `text` is all there is.
+    raw_text: str | None = None
+    # A formula the math rebuild wrote: `text` holds LaTeX between MATH_OPEN and MATH_CLOSE.
+    math: bool = False
 
 
 @dataclass(frozen=True)
@@ -74,6 +79,23 @@ def normalize_text(text: str) -> str:
     return unicodedata.normalize("NFKC", text)
 
 
+def font_family(fontname: str | None) -> str:
+    """A font's name without its subset prefix ("BCDGEE+"), lowercased, spaces removed:
+    "BCDGEE+Cambria Math" and "CambriaMath" are both "cambriamath"."""
+    name = (fontname or "").split("+", 1)[-1]
+    return name.replace(" ", "").lower()
+
+
+# Monospace fonts of the pilot papers (Courier New, Consolas); matched as substrings of the family.
+CODE_FONTS = ("courier", "consolas", "mono")
+
+
+def is_code_line(line: "Line", code_fonts: tuple[str, ...] = CODE_FONTS) -> bool:
+    """A line set mostly in a monospace font."""
+    fonts = [font_family(w.fontname) for w in line.words]
+    return sum(any(c in f for c in code_fonts) for f in fonts) * 2 > len(fonts)
+
+
 def extract_pages(pdf_bytes: bytes) -> list[Page]:
     pages = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -81,6 +103,7 @@ def extract_pages(pdf_bytes: bytes) -> list[Page]:
             words = [
                 Word(
                     text=normalize_text(w["text"]),
+                    raw_text=w["text"],
                     x0=float(w["x0"]),
                     x1=float(w["x1"]),
                     top=float(w["top"]),
