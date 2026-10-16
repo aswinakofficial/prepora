@@ -71,7 +71,8 @@ DETECTOR_REASONS: dict[str, str] = {
 class MathProfile:
     """A source's rebuild thresholds, in points, measured on its real papers."""
 
-    script_size: float  # a word under this × its neighbours' size is a script (and a nested one)
+    script_size: float  # a word under this × the size it hangs off (or the body) is a script
+    stretched_size: float  # a lone bracket or dot this much larger than the body is stretched
     script_shift: float  # a script's centre this far (× its base's size) off its base's is placed
     attach_gap: float  # a script starts within this of its base's right edge (or overlaps by it)
     glue_gap: float  # words closer than this are written together; a space is wider
@@ -84,6 +85,7 @@ class MathProfile:
 # Measured on the four GATE CS pilot papers (2025-2026), 2026-10-16, docs/specs/13-math-recovery.md.
 GATE_MATH = MathProfile(
     script_size=0.8,  # as GATE_QUALITY; Word's scripts are 8.5pt in 12pt type (0.71)
+    stretched_size=1.3,  # a bracket around a formula is 18pt in 12pt type (1.5)
     script_shift=0.12,  # Cambria Math raises/lowers a script's centre by 0.25-0.30 of the base
     attach_gap=2.5,
     glue_gap=1.2,
@@ -112,8 +114,10 @@ _SYMBOL_LATIN: dict[str, str] = _TABLE["symbol_latin"]
 _OVERBAR_MARKS = {"̅", "̄", "¯"}  # combining overline, combining macron, macron
 _PRIMES = {"′", "″", "'", "’"}
 # A glued word made only of these is part of a formula in any font (brackets, operators, digits).
-_MATH_SAFE = set("0123456789()[]+-=<>*/|,.;:!?'−")
+# (A hyphen in a prose font stays prose, "B+-tree"; a minus in a math font is U+2212.)
+_MATH_SAFE = set("0123456789()[]+=<>*/|,.;:!?'\u2212")
 _PUNCTUATION = set(",.;:!?")
+_STRETCHABLE = set("()[]{}|.,;:'\u2032")
 _ASCII_LETTER = re.compile(r"[A-Za-z]+")
 _COMMAND_END = re.compile(r"\\[A-Za-z]+$")
 
@@ -290,6 +294,17 @@ def rebuild_math(
     body = median(sizes)
     for e in eligible:
         e.script = bool(e.size) and e.size < profile.script_size * body
+    # A script is small against what it hangs off, which in a formula set larger than the body
+    # (display-sized, 16pt in 12pt text) isn't small against the body.
+    for e in eligible:
+        if not e.script and any(_hangs_off(e, p, profile) for p in eligible if not p.script):
+            e.script = True
+
+    for e in eligible:
+        # A lone bracket or dot in much larger type is a stretched bracket (a big "(" around a
+        # formula) or an operator (the dot of a Boolean AND): reading order can't put it back.
+        if e.size >= profile.stretched_size * body and set(e.word.text) <= _STRETCHABLE:
+            ctx.fail("unknown_symbol")
 
     parent, groups, group_of = _attach(eligible, profile, ctx)
     consumed = {m for g in groups for m in g.members}
@@ -400,6 +415,19 @@ def _unsplit(words: list[Word], splits: dict[int, tuple[Word, Word]]) -> list[Wo
         out.append(w)
         i += 1
     return out
+
+
+def _hangs_off(e: _E, p: _E, profile: MathProfile) -> bool:
+    """Is `e` a script-sized word placed as a script of `p`: smaller by `script_size`, starting at
+    its right edge, with its centre inside p's box?"""
+    if p is e or p.word.page != e.word.page or not e.size or not p.size:
+        return False
+    if e.size >= profile.script_size * p.size or e.word.x0 < p.word.x0:
+        return False
+    if not -profile.attach_gap <= e.word.x0 - p.word.x1 <= profile.attach_gap:
+        return False
+    slack = 0.3 * p.h
+    return p.word.top - slack <= e.cy <= p.word.bottom + slack and abs(e.cy - p.cy) > 0.05 * p.h
 
 
 def _attach(
@@ -743,16 +771,31 @@ def _find_stacked_fractions(
         for lj, other in units_by_line.items():
             if lj == li or any(id(w) in fixed for w in work[lj]):
                 continue
-            if len(other) > 2 or not all(u.math for u in other):
+            if not all(u.math for u in other):
                 continue
             if work[lj][0].page != page:
                 continue
-            x0 = min(u.x0 for u in other)
-            x1 = max(u.x1 for u in other)
-            overlap = min(box[2], x1) - max(box[0], x0)
-            if overlap < 0.6 * (x1 - x0):
-                continue
             cy_other = sum((u.box[1] + u.box[3]) / 2 for u in other) / len(other)
             offset = abs(cy_other - (box[1] + box[3]) / 2)
-            if 0.4 * height < offset < 2.2 * height:
-                ctx.fail("fraction")
+            if not 0.4 * height < offset < 2.2 * height:
+                continue
+            if len(other) <= 2:
+                x0 = min(u.x0 for u in other)
+                x1 = max(u.x1 for u in other)
+                overlap = min(box[2], x1) - max(box[0], x0)
+                if overlap >= 0.6 * (x1 - x0):
+                    ctx.fail("fraction")
+            elif _inside_brackets(units_by_line[li], other):
+                ctx.fail("stacked")  # the other rows of a matrix: they sit inside its brackets
+
+
+def _inside_brackets(row: list[_Unit], other: list[_Unit]) -> bool:
+    """Do two or more words of `other` sit between a "[" and a "]" of `row`? That's how a matrix's
+    rows land in separate lines."""
+    opens = [u for u in row if "[" in u.e.word.text]
+    closes = [u for u in row if "]" in u.e.word.text]
+    if not opens or not closes:
+        return False
+    left, right = min(u.x1 for u in opens), max(u.x0 for u in closes)
+    inside = [u for u in other if left <= (u.x0 + u.x1) / 2 <= right]
+    return right > left and len(inside) >= 2

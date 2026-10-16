@@ -438,3 +438,47 @@ class TestFonts:
         for name in CASES:
             for line in built(name)[0]:
                 assert MATH_OPEN not in line.text and MATH_CLOSE not in line.text
+
+
+class TestFoundOnTheRealPapers:
+    """Shapes the four pilot papers showed (invented words, real geometry)."""
+
+    def test_a_stretched_bracket_is_an_unknown_symbol(self):
+        words = [W("(", 100, size=18, font=TIMES), W("x", 125, raw="\U0001d465")]
+        assert rebuilt(hand(words), []).reasons == ["unknown_symbol"]
+
+    def test_scripts_of_a_formula_set_larger_than_the_body_are_found(self):
+        # Display-sized math (16pt in 12pt text) has scripts (11.5pt) that are bigger than 0.8 of
+        # the body, but small against what they hang off.
+        base = W("\U0001d6f1", 100, size=16, raw="\U0001d6f1", width=11)
+        script = W("P", 110, top=106, size=11.5, raw="\U0001d443")
+        result = rebuilt(hand([base, script]), [])
+        assert result.reasons == [] and formulas(result) == ["\\varPi_{P}"]
+
+    def test_a_matrix_split_into_rows_is_stacked(self):
+        rows = [
+            [W("1", 130, top=100), W("0", 150, top=100), W("0", 170, top=100)],
+            [
+                W("L", 100, top=115, raw="\U0001d43f"),
+                W("=", 112, top=115),
+                W("[", 124, top=115),
+                W("l", 130, top=115, raw="\U0001d459"),
+                W("1", 150, top=115),
+                W("0", 170, top=115),
+                W("]", 182, top=115),
+            ],
+            [W("l", 130, top=130, raw="\U0001d459"), W("1", 150, top=130), W("1", 170, top=130)],
+        ]
+        assert "stacked" in rebuilt(hand(*rows), []).reasons
+
+    def test_aligned_equations_are_not_a_matrix(self):
+        rows = [
+            [W("S", 100, top=100, raw="\U0001d446"), W("=", 112, top=100), W("a", 124, top=100)],
+            [W("A", 100, top=115, raw="\U0001d434"), W("=", 112, top=115), W("b", 124, top=115)],
+        ]
+        assert rebuilt(hand(*rows), []).reasons == []
+
+    def test_a_prose_hyphen_stays_prose(self):
+        words = [W("B", 100, font=TIMES), W("+", 108, top=96, size=8.5, font=TIMES),
+                 W("-", 113, font=TIMES), W("tree", 120, font=TIMES)]
+        assert marked(rebuilt(hand(words), [])) == "$\\text{B}^{+}$- tree"
