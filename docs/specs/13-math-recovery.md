@@ -312,6 +312,7 @@ for people:
 | `no_base` | the rebuild found a sub- or superscript with nothing beside it | step 3 |
 | `unclear_level` | the rebuild found a script it couldn't place as clearly raised or lowered | step 4 |
 | `too_deep` | the rebuild found scripts nested more than two levels | step 5 |
+| `options_changed` | the rebuild changed which options the question has | the parser's check after the rebuild: a formula swallowed an option's marker |
 | `overbar` | the rebuild found an overbar, which it doesn't rebuild | step 7 |
 | `fraction` | the rebuild found a fraction, which it doesn't rebuild | step 7 |
 | `unknown_symbol` | the rebuild found a symbol outside its table | step 8, and a private-use glyph left after the rebuild |
@@ -454,13 +455,18 @@ just inside either `$`, on one line, and **not followed by a digit**. So the reb
   - For an intake item, that question is the item's `question_id`. A test approves a heavily
     re-typeset published question this way.
   - The default `on_near_duplicate="refuse"` still raises, as today.
-  - **Correction, during build (lead, 2026-10-17):** a position-taken hold of a re-parsed question
-    always suggests "same question, use the new wording" (stored as the new value `same_new`, which the panel maps to "keep the new version"; the column is text, so no migration); option and answer matches are compared on
-    plain text (here, by option key and official key, since a re-typeset rewrites every option's
-    text). The "computed as `decide()` does" rule above would have suggested "keep both" or "keep
-    the old version" for exactly the questions this hold exists for. The possible-duplicate panel
-    also renders a Markdown side as it will publish (`DuplicateDecisions.tsx`, with the same
-    `renderRichText` as the batch preview), and `listDuplicateReviews` returns each side's `format`.
+  - **Correction, during build (lead, 2026-10-17; refined after review):** a position-taken hold
+    of a re-parsed question suggests "same question, use the new wording" (stored as the new value
+    `same_new`, which the panel maps to "keep the new version"; the column is text, so no
+    migration), but only when the option keys and the official key both match. Otherwise it
+    suggests "different", because position identity is shared by every source, and a different key
+    at a taken position is a numbering slip or a segmentation bug, not a re-parse. Options and
+    answer are compared by option key and official key (numeric ranges for NAT), since a
+    re-typeset rewrites every option's text. The "computed as `decide()` does" rule above would
+    have suggested "keep both" or "keep the old version" for exactly the questions this hold exists
+    for. The panel labels the comparison "same option keys" for these holds, and renders a Markdown
+    side as it will publish (`DuplicateDecisions.tsx`, with the same `renderRichText` as the batch
+    preview); `listDuplicateReviews` returns each side's `format`.
 - **MS Learn's plain questions** aren't a PDF source and don't change.
 - **Today that's only local.** Production has no published GATE questions, so only the owner's
   local pilot batches go back to review.

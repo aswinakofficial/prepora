@@ -237,7 +237,9 @@ export function DuplicateDecisions({
                   : `${Math.round(d.similarity * 100)}% similar wording`}
               </span>
               <span className={d.optionsMatch ? "text-emerald-400" : "text-amber-300"}>
-                · options {d.optionsMatch ? "identical" : "differ"}
+                {d.suggestion === "same_new"
+                  ? "· same option keys"
+                  : `· options ${d.optionsMatch ? "identical" : "differ"}`}
               </span>
               <span className={d.answerMatch ? "text-emerald-400" : "text-amber-300"}>
                 · correct answer {d.answerMatch ? "identical" : "differs"}

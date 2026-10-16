@@ -746,11 +746,11 @@ class TestRetypesetPublishedQuestion:
         new = _normalized(test_exam, test_subject, question_text=self.NEW, number=7)
         new.answer = McqAnswer(correct_key="A")
         d = publish_question(new, on_near_duplicate="hold").decision
-        assert d.answer_match is False and d.options_match is True and d.suggestion == "same_new"
+        assert d.answer_match is False and d.options_match is True and d.suggestion == "different"
         third = _normalized(test_exam, test_subject, question_text=self.NEW + " x", number=7)
         third.options = [*third.options, NormalizedOption(key="C", text="third option")]
         d = publish_question(third, on_near_duplicate="hold").decision
-        assert d.options_match is False
+        assert d.options_match is False and d.suggestion == "different"
 
     def test_the_decision_fits_the_duplicate_reviews_insert(self, test_exam, test_subject):
         first = self._published(test_exam, test_subject)

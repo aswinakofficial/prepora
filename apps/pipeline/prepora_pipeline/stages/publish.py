@@ -248,9 +248,9 @@ def _position_decision(normalized: NormalizedQuestion, existing_id: str) -> Dedu
     "same question, use the new wording" on the existing possible-duplicate screen.
 
     The paper position is the same, so this is the same question re-parsed (Spec 13, Decision 4):
-    the suggestion is always "same_new" (same question, keep the new wording), and the options and
-    the answer are compared by option key and official key (or by the numeric ranges), never by
-    option text, which a re-typeset rewrites."""
+    the suggestion is "same_new" (same question, keep the new wording) when the options and
+    the answer match, compared by option key and official key (or by the numeric ranges), never by
+    option text, which a re-typeset rewrites; otherwise "different"."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -297,7 +297,9 @@ def _position_decision(normalized: NormalizedQuestion, existing_id: str) -> Dedu
         existing_question_text=existing_text,
         options_match=options_match,
         answer_match=answer_match,
-        suggestion="same_new",
+        # Same keys and key: a re-parse. Anything else at a taken position (a numbering slip, a
+        # segmentation bug) must not be overwritten in place by "Use suggestions".
+        suggestion="same_new" if options_match and answer_match else "different",
     )
 
 
