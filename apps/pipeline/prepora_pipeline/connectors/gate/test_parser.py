@@ -3,57 +3,17 @@ Contract tests for the GATE connector (docs/specs/05-gate-pilot.md). Every PDF i
 with reportlab, laid out like GATE's real files (the same columns and header spellings, measured on
 the 2025 and 2026 CS keys), with invented content. No real paper or key is committed.
 """
-import io
-
 import pytest
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 
 from prepora_pipeline.core.pdf_text import extract_pages
 
 from .catalog import PAPERS, find_papers
 from .key_parser import GateKeyError, parse_answer_key, parse_answer_value
 from .paper_parser import GatePaperError, parse_paper
-
-WIDTH, HEIGHT = A4
-
-
-def make_pdf(pages: list[list[tuple]], size: int = 10, boxes=None) -> bytes:
-    """Each page is a list of (x, top, text) or (x, top, text, font, size), `top` in points from
-    the top edge. `boxes` maps a page index to filled (x, top, width, height) boxes: a figure."""
-    out = io.BytesIO()
-    c = canvas.Canvas(out, pagesize=A4)
-    for index, items in enumerate(pages):
-        for item in items:
-            x, top, text = item[:3]
-            font, font_size = (item[3], item[4]) if len(item) == 5 else ("Helvetica", size)
-            c.setFont(font, font_size)
-            c.drawString(x, HEIGHT - top - font_size, text)
-        for x, top, w, h in (boxes or {}).get(index, []):
-            c.rect(x, HEIGHT - top - h, w, h, fill=1)
-        c.showPage()
-    c.save()
-    return out.getvalue()
-
+from .testing import key_pdf, make_pdf, paper_page
 
 # Column x positions like GATE 2026's key, with the Key/Range column wide enough for an "OR" range;
 # 2025's header says "Q. Type" instead.
-COLUMNS = (110, 170, 240, 320, 370, 540)
-
-
-def key_pdf(rows, *, qtype_header="Question Type", rows_per_page=40) -> bytes:
-    header = ["Q. No.", "Session", qtype_header, "Section", "Key/Range", "Marks"]
-    pages = []
-    for start in range(0, len(rows), rows_per_page):
-        items = [(88, 100, "Answer Key for an Invented Paper (XX-1)")]
-        items += [(x, 130, text) for x, text in zip(COLUMNS, header, strict=True)]
-        for i, row in enumerate(rows[start : start + rows_per_page]):
-            items += [(x, 150 + 16 * i, text) for x, text in zip(COLUMNS, row, strict=True)]
-        items.append((474, 800, f"Page {len(pages) + 1}"))
-        pages.append(items)
-    return make_pdf(pages)
-
-
 ROWS = [
     ("1", "3", "MCQ", "GA", "B", "1"),
     ("2", "3", "MSQ", "CS-1", "A;C;D", "1"),
@@ -128,14 +88,6 @@ def test_the_catalog_lists_the_four_pilot_papers():
 
 # ─── Question papers (#47). GATE's layout: labels at x=78, the section and marks headings in the
 # margin at x=72, text at x=120, options at x=78, a running header and footer.
-
-
-def paper_page(number: int, total: int, items: list[tuple]) -> list[tuple]:
-    return [
-        (295, 26, "Invented Science & Technology (XX1)"),
-        *items,
-        (72, 807, f"Organizing Institute: Invented Institute Page {number} of {total}"),
-    ]
 
 
 def invented_paper(boxes=None) -> bytes:
@@ -289,3 +241,110 @@ class TestGarbleDetector:
     def test_a_tall_block_with_almost_no_words_is_a_figure(self):
         q = self._one([(120, 120, "Invented figure:"), (78, 300, "(A) One")])
         assert q.flags == ["figure"]
+
+
+# ─── Spec 13: the math rebuild in the parser (Decision 2). The invented paper is the e2e fixture's.
+
+
+@pytest.fixture(scope="module")
+def questions():
+    from .e2e_math_paper import paper_pdf
+
+    return {q.number: q for q in parse_paper(extract_pages(paper_pdf()))}
+
+
+class TestMathRebuild:
+    def test_a_question_held_for_math_is_recovered(self, questions):
+        q1 = questions[1]
+        assert q1.math_outcome == "recovered" and q1.flags == []
+        assert "﷐Z_{1}﷑" in q1.text
+        assert q1.original_text != q1.text and "Z" in q1.original_text
+        assert q1.detector_math == ["a row of sub- or superscripts"]
+
+    def test_a_recovered_question_keeps_its_figure_hold(self):
+        from .testing import make_pdf
+
+        items = [
+            (78, 120, "Q.1", "Helvetica", 10),
+            (120, 120, "Let ", "Helvetica", 10),
+            (145, 120, "Z", "Helvetica-Oblique", 10),
+            (152.5, 125, "1", "Helvetica-Oblique", 7),
+            (160, 120, "be drawn in the invented figure below.", "Helvetica", 10),
+        ]
+        [q] = parse_paper(extract_pages(make_pdf([items], boxes={0: [(150, 160, 60, 40)]})))
+        assert q.math_outcome == "recovered" and q.flags == ["figure"]
+
+    def test_a_question_that_needs_a_fraction_stays_held_with_the_original_text(self, questions):
+        q4 = questions[4]
+        assert q4.math_outcome == "still_held" and q4.math_reasons == ["fraction"]
+        assert "﷐" not in q4.text and q4.text == q4.original_text
+        details = [i.detail for i in q4.issues if i.code == "math"]
+        assert "the rebuild found a fraction, which it doesn't rebuild" in details
+        assert "a row of sub- or superscripts" in details  # the first run's, too
+
+    def test_a_question_with_math_runs_is_retypeset(self, questions):
+        for n in (2, 6):
+            assert questions[n].math_outcome == "retypeset" and questions[n].flags == []
+        assert questions[6].text.count("﷐") == 1
+        assert questions[2].options["A"] == "﷐2^{17}﷑"
+
+    def test_an_unmapped_symbol_keeps_the_question_as_it_was(self, questions):
+        q7 = questions[7]
+        assert q7.math_outcome == "kept" and q7.math_reasons == ["unknown_symbol"]
+        assert q7.text == q7.original_text and q7.options == q7.original_options
+        assert q7.flags == []
+
+    def test_a_thin_drawn_overbar_keeps_the_question_as_it_was(self):
+        from .testing import make_pdf
+
+        items = [
+            (78, 120, "Q.1", "Helvetica", 10),
+            (120, 120, "Is the invented event ", "Helvetica", 10),
+            (210, 120, "α", "Symbol", 10),
+            (222, 120, "possible?", "Helvetica", 10),
+        ]
+        pdf = make_pdf([items], boxes={0: [(209, 119, 7, 0.8)]})
+        [q] = parse_paper(extract_pages(pdf))
+        assert q.math_outcome == "kept" and "overbar" in q.math_reasons
+        assert q.text == q.original_text and q.flags == []
+
+    def test_a_question_without_math_is_byte_identical(self, questions):
+        q5 = questions[5]
+        assert q5.math_outcome == "none" and q5.text == q5.original_text
+        assert q5.options == q5.original_options
+
+    def test_an_unaccepted_rebuild_always_names_a_reason(self, questions):
+        for q in questions.values():
+            if q.math_outcome in ("still_held", "kept"):
+                assert q.math_reasons
+            else:
+                assert q.math_reasons == []
+
+    def test_a_split_label_keeps_raw_text_consistent(self):
+        from ...core.pdf_text import Page, Word
+        from .paper_parser import _join_split_labels
+
+        a = Word("Q.", 78, 84, 100, 110, 0, 10, "Helvetica", raw_text="Q.")
+        b = Word("4", 85, 90, 100, 110, 0, 10, "Helvetica", raw_text="4")
+        [joined] = _join_split_labels(Page(0, 600, 800, [a, b])).words
+        assert (joined.text, joined.raw_text) == ("Q.4", "Q.4")
+
+
+class TestRebuildChangingOptions:
+    def test_a_rebuild_that_changes_the_option_keys_is_rejected(self, monkeypatch):
+        from . import paper_parser
+        from .e2e_math_paper import paper_pdf
+
+        real = paper_parser._read
+
+        def dropping(block):
+            text, options, stem = real(block)
+            if any(w.math for line in block.lines for w in line.words):
+                options = {k: v for k, v in options.items() if k != "B"}
+            return text, options, stem
+
+        monkeypatch.setattr(paper_parser, "_read", dropping)
+        questions = {q.number: q for q in parse_paper(extract_pages(paper_pdf()))}
+        q2 = questions[2]  # options with superscripts: re-typeset when all is well
+        assert q2.math_outcome == "kept" and q2.math_reasons == ["options_changed"]
+        assert q2.options == q2.original_options and set(q2.options) == set("ABCD")

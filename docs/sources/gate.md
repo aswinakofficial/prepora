@@ -162,6 +162,12 @@ Sample checked: CS1 2026, a Word 2016 PDF of 46 pages.
   - Q.18: fractions and superscripts break apart (`Θ(𝑛log4 5)` is n^{log₄5}).
   - Q.32: a piecewise function scatters.
   - Math italic code points need NFKC normalization.
+- **Math, rebuilt (Spec 13, parser `gate-2`):** sub- and superscripts (nested, multi-token, both on
+  one base), Symbol-font glyphs and every Cambria Math run (italic variables, ℝ, upright names)
+  become LaTeX from the PDF's own glyph positions and fonts. Overbars, fractions, case splits,
+  matrices, roots and stretched brackets aren't rebuilt: such a question keeps its extracted text,
+  and one held for math stays held with a named reason. Counts per paper:
+  [reports/gate](reports/gate/README.md).
 - **Figures:** the Q.42 control-flow graph is **vector** and leaves empty text, so it needs a
   page-region crop rather than image extraction.
 
@@ -247,7 +253,8 @@ Sample checked: CS1 2026, a Word 2016 PDF of 46 pages.
 
 - Republishing rights ("All Rights Reserved"), and whether GATE Overflow will give permission.
 - Link rot as hosts move each year.
-- Math fidelity.
+- Math fidelity: rebuilt from the PDF (§4) and hand-checked against every page for the pilot;
+  fractions, overbars, matrices and case splits stay held (Spec 15).
 - Whether shared GA questions across a session really are identical.
 - ~~What the Drive folder contains.~~ Answered for CS (§3, 2026-10-03). Other papers are likely
   similar, but unchecked.

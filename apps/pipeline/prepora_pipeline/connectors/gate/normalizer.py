@@ -12,13 +12,13 @@ from prepora_pipeline.contracts import (
     NormalizedQuestion,
     NumericalAnswer,
 )
-from prepora_pipeline.core.markdown import escape_markdown
+from prepora_pipeline.core.markdown import escape_markdown_with_math
 
 from .catalog import PaperSpec
 from .key_parser import GateKeyRow
 from .paper_parser import GateQuestion
 
-PARSER_VERSION = "gate-1"
+PARSER_VERSION = "gate-2"  # gate-2: math rebuilt from the PDF (Spec 13)
 SUBJECTS = {"CS": ("computer-science", "Computer Science and Information Technology")}
 QUESTION_TYPES = {"MCQ": "mcq", "MSQ": "multiple_correct", "NAT": "numerical"}
 
@@ -76,12 +76,13 @@ def to_normalized(
         # Dossier §4: a wrong MCQ answer costs a third of its marks; MSQ and NAT cost nothing.
         negative_marks=key.marks / 3 if key.qtype == "MCQ" else 0.0,
         # Markdown (docs/specs/12-math-display.md): prose is escaped so only the intended
-        # formatting renders; the parser's code fences stay as they are.
-        question_text=escape_markdown(question.text),
+        # formatting renders; the parser's code fences stay as they are, and the formulas the math
+        # rebuild wrote (docs/specs/13-math-recovery.md) come out as `$…$`.
+        question_text=escape_markdown_with_math(question.text),
         text_format="markdown",
         question_type=QUESTION_TYPES[key.qtype],
         options=[
-            NormalizedOption(key=k, text=escape_markdown(t))
+            NormalizedOption(key=k, text=escape_markdown_with_math(t))
             for k, t in sorted(question.options.items())
         ],
         answer=answer,

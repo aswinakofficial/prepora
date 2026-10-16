@@ -44,12 +44,24 @@ from ..dedupe import (
     find_same_question,
     normalize_question_text,
 )
+from ..dedupe.fingerprint import shape_of, shape_of_published
+from ..dedupe.profile import profile_for
+from ..dedupe.similarity import similarity
 from .stable_id import derive_question_set_slug, derive_stable_content_id
 from .validate import validate_question
 
 
 class PublishError(Exception):
     pass
+
+
+class _PositionTaken(Exception):
+    """With on_near_duplicate="hold": this paper's question N is already published, under other
+    content (stable_content_id is position identity). Carries the question holding the position."""
+
+    def __init__(self, question_id: str):
+        super().__init__(question_id)
+        self.question_id = question_id
 
 
 @dataclass
@@ -192,6 +204,11 @@ def publish_question(
                         else None
                     ),
                     force_new=publish_as_new,
+                    # Only when dedupe found nothing: a re-parse whose wording moved far enough
+                    # from the published one not to be a near duplicate (Spec 13, Decision 4).
+                    hold_if_position_taken=(
+                        on_near_duplicate == "hold" and dedupe_decision.outcome == "unique"
+                    ),
                 )
 
             occurrence_created = _resolve_or_create_occurrence(
@@ -206,6 +223,9 @@ def publish_question(
             _record_media(cur, question_id, validated.media)
 
             conn.commit()
+    except _PositionTaken as taken:
+        conn.rollback()
+        return HeldResult(decision=_position_decision(validated, taken.question_id))
     except Exception:
         conn.rollback()
         raise
@@ -219,6 +239,67 @@ def publish_question(
         question_created=question_created,
         occurrence_created=occurrence_created,
         dedupe_outcome=dedupe_decision.outcome,
+    )
+
+
+def _position_decision(normalized: NormalizedQuestion, existing_id: str) -> DedupeDecision:
+    """The possible-duplicate decision for a re-parse that took another question's position,
+    complete the way dedupe/check.py's decide() builds a near duplicate, so the reviewer can use
+    "same question, use the new wording" on the existing possible-duplicate screen.
+
+    The paper position is the same, so this is the same question re-parsed (Spec 13, Decision 4):
+    the suggestion is "same_new" (same question, keep the new wording) when the options and
+    the answer match, compared by option key and official key (or by the numeric ranges), never by
+    option text, which a re-typeset rewrites; otherwise "different"."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT question_text FROM questions WHERE id = %s", (existing_id,))
+            existing_text = cur.fetchone()[0]
+            cur.execute(
+                "SELECT o.option_key, EXISTS (SELECT 1 FROM question_answers a "
+                "WHERE a.correct_option_id = o.id) FROM question_options o "
+                "WHERE o.question_id = %s",
+                (existing_id,),
+            )
+            published = cur.fetchall()
+            existing_shape = shape_of_published(cur, existing_id)
+    finally:
+        conn.close()
+    profile = profile_for(normalized)
+    score = similarity(
+        profile.comparison_text(normalized.question_text),
+        profile.comparison_text(existing_text),
+    )
+    shape = shape_of(normalized)
+    new_keys = {o.key for o in normalized.options}
+    old_keys = {key for key, _ in published}
+    options_match = new_keys == old_keys
+    if new_keys or old_keys:
+        answer = normalized.answer
+        if isinstance(answer, McqAnswer):
+            new_correct = {answer.correct_key}
+        elif isinstance(answer, MultipleCorrectAnswer):
+            new_correct = set(answer.correct_keys)
+        else:
+            new_correct = set()
+        answer_match = new_correct == {key for key, correct in published if correct}
+    else:
+        answer_match = shape.answer_match(existing_shape)
+    return DedupeDecision(
+        outcome="near_duplicate",
+        reason=(
+            "This paper's question is already published with other wording (a re-parse); "
+            f"{score:.0%} similar"
+        ),
+        existing_question_id=existing_id,
+        similarity_score=score,
+        existing_question_text=existing_text,
+        options_match=options_match,
+        answer_match=answer_match,
+        # Same keys and key: a re-parse. Anything else at a taken position (a numbering slip, a
+        # segmentation bug) must not be overwritten in place by "Use suggestions".
+        suggestion="same_new" if options_match and answer_match else "different",
     )
 
 
@@ -508,6 +589,7 @@ def _resolve_or_create_question(
     *,
     existing_question_id: str | None = None,
     force_new: bool = False,
+    hold_if_position_taken: bool = False,
 ) -> tuple[str, bool, str]:
     """(question id, created?, stable_content_id) for the question to publish.
 
@@ -534,9 +616,12 @@ def _resolve_or_create_question(
         # position identity, this paper's question N is already published with other content.
         # Reusing it would drop this question silently — the old behaviour — so it fails, naming
         # why. An edit of the same question is caught earlier, as a near duplicate for review.
-        if _select_id(
+        taken_by = _select_id(
             cur, "SELECT id FROM questions WHERE stable_content_id = %s", (stable_content_id,)
-        ):
+        )
+        if taken_by:
+            if hold_if_position_taken:
+                raise _PositionTaken(taken_by)
             raise PublishError(
                 f"{stable_content_id} is already published as a different question (other "
                 "wording, options or answer). Check the question's number, or publish it as a "

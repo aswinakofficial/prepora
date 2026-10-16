@@ -450,7 +450,7 @@ interface DuplicateDecisionPayload {
   similarity_score: number;
   options_match: boolean;
   answer_match: boolean;
-  suggestion: "same" | "different";
+  suggestion: "same" | "different" | "same_new";
 }
 
 type PipelinePublishResponse =
@@ -1308,7 +1308,7 @@ export const adminRouter = {
 
       const existingIds = [...new Set(rows.map((r) => r.existingQuestionId))];
       const existing = await db.execute(sql`
-        SELECT q.id, q.question_text AS "text",
+        SELECT q.id, q.question_text AS "text", q.text_format::text AS "format",
           (SELECT json_agg(json_build_object('key', o.option_key, 'text', o.option_text,
                     'correct', EXISTS (SELECT 1 FROM question_answers a WHERE a.correct_option_id = o.id))
                   ORDER BY o.sequence)
@@ -1330,6 +1330,7 @@ export const adminRouter = {
           existing.rows as unknown as {
             id: string;
             text: string;
+            format: string;
             options: { key: string; text: string; correct: boolean }[] | null;
             appearsIn: string[] | null;
           }[]
@@ -1339,6 +1340,7 @@ export const adminRouter = {
       return rows.map((row) => {
         const candidate = row.candidate as {
           question_text: string;
+          text_format?: string;
           options: { key: string; text: string }[];
           answer: { correct_key?: string; correct_keys?: string[] };
         };
@@ -1353,15 +1355,17 @@ export const adminRouter = {
           similarity: row.similarity,
           optionsMatch: row.optionsMatch,
           answerMatch: row.answerMatch,
-          suggestion: row.suggestion as "same" | "different",
+          suggestion: row.suggestion as "same" | "different" | "same_new",
           status: row.status as "pending" | "same" | "same_new" | "different" | "skipped",
           candidate: {
             text: candidate.question_text,
+            format: candidate.text_format ?? "plain",
             options: candidate.options.map((o) => ({ ...o, correct: correctKeys.has(o.key) })),
           },
           existing: {
             id: row.existingQuestionId,
             text: match?.text ?? "(question no longer exists)",
+            format: match?.format ?? "plain",
             options: match?.options ?? [],
             appearsIn: match?.appearsIn ?? [],
           },

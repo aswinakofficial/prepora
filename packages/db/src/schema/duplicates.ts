@@ -42,7 +42,7 @@ export const duplicateReviews = pgTable(
     similarity: real("similarity").notNull(),
     optionsMatch: boolean("options_match").notNull(),
     answerMatch: boolean("answer_match").notNull(),
-    suggestion: text("suggestion").notNull(), // "same" | "different"
+    suggestion: text("suggestion").notNull(), // "same" | "different" | "same_new" (a re-parse: keep the new wording)
     // "pending" | "same" (kept the published version) | "same_new" (kept this batch's version) |
     // "different" | "skipped"
     status: text("status").notNull().default("pending"),

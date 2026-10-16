@@ -1,0 +1,40 @@
+{
+  "edition": "iitg",
+  "held": 17,
+  "held_by_issues": {
+    "figure": 7,
+    "figure+layout": 1,
+    "layout": 4,
+    "layout+math": 1,
+    "math": 4
+  },
+  "math": {
+    "by_detector_rule": {
+      "a row of sub- or superscripts": 11,
+      "an inline sub- or superscript": 19,
+      "math or private-use glyphs": 1
+    },
+    "flagged": 26,
+    "flagged_math_only": 22,
+    "recovered": 21,
+    "recovered_now_ready": 18,
+    "still_held": 5,
+    "still_held_by_reason": {
+      "fraction": 3,
+      "not_script": 4,
+      "unknown_symbol": 3
+    }
+  },
+  "paper_key": "gate/2026/cs/CS-2",
+  "parser_version": "gate-2",
+  "questions": 65,
+  "ready": 48,
+  "retypeset": {
+    "clean_with_math_runs": 16,
+    "kept": 1,
+    "kept_by_reason": {
+      "fraction": 1
+    },
+    "retypeset": 15
+  }
+}

@@ -1,8 +1,10 @@
+import { renderRichText } from "@prepora/api/src/lib/rich-text";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle, GitCompare, Loader2, Sparkles } from "lucide-react";
 import type React from "react";
 import { orpc } from "../../../lib/orpc";
 import { type DiffToken, diffWords } from "../../../lib/word-diff";
+import { RichText } from "../question/RichText";
 
 // Possible duplicates held while approving a batch (packages/api's listDuplicateReviews): each new
 // question side by side with the published question it resembles. The admin chooses per question —
@@ -37,7 +39,35 @@ function Diffed({ tokens, tone }: { tokens: DiffToken[]; tone: "removed" | "adde
   );
 }
 
-function OptionList({ options }: { options: { key: string; text: string; correct: boolean }[] }) {
+// Spec 13: a side whose text is Markdown (a re-typeset question) is shown rendered, as it will
+// publish, with the same renderer the batch preview uses. Plain text stays an escaped child.
+function Rich({
+  text,
+  format,
+  inline = false,
+}: {
+  text: string;
+  format: string;
+  inline?: boolean;
+}) {
+  return (
+    <RichText
+      text={text}
+      format={format}
+      html={format === "markdown" ? renderRichText(text, "markdown") : null}
+      inline={inline}
+      as={inline ? "span" : "p"}
+    />
+  );
+}
+
+function OptionList({
+  options,
+  format,
+}: {
+  options: { key: string; text: string; correct: boolean }[];
+  format: string;
+}) {
   return (
     <ul className="mt-3 space-y-1.5">
       {options.map((o) => (
@@ -50,7 +80,9 @@ function OptionList({ options }: { options: { key: string; text: string; correct
           }`}
         >
           <span className="font-mono font-bold">{o.key}</span>
-          <span className="flex-1">{o.text}</span>
+          <span className="flex-1">
+            <Rich text={o.text} format={format} inline />
+          </span>
           {o.correct && <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />}
         </li>
       ))}
@@ -105,8 +137,8 @@ function panelClass(selected: boolean): string {
   }`;
 }
 
-const suggestedChoice = (suggestion: "same" | "different"): DuplicateChoice =>
-  suggestion === "same" ? "keep_existing" : "keep_both";
+const suggestedChoice = (suggestion: "same" | "different" | "same_new"): DuplicateChoice =>
+  suggestion === "same_new" ? "keep_new" : suggestion === "same" ? "keep_existing" : "keep_both";
 
 export function DuplicateDecisions({
   batchId,
@@ -175,6 +207,9 @@ export function DuplicateDecisions({
 
       {open.map((d) => {
         const diff = diffWords(d.existing.text, d.candidate.text);
+        // A rendered side has no word marks (they'd sit inside the LaTeX): a markdown question on
+        // either side is shown as it will publish, and the two are compared by eye.
+        const rendered = d.existing.format === "markdown" || d.candidate.format === "markdown";
         const choice = choices[d.id];
         const suggestion = suggestedChoice(d.suggestion);
         const radio = (value: DuplicateChoice, label: React.ReactNode) => (
@@ -202,7 +237,9 @@ export function DuplicateDecisions({
                   : `${Math.round(d.similarity * 100)}% similar wording`}
               </span>
               <span className={d.optionsMatch ? "text-emerald-400" : "text-amber-300"}>
-                · options {d.optionsMatch ? "identical" : "differ"}
+                {d.suggestion === "same_new"
+                  ? "· same option keys"
+                  : `· options ${d.optionsMatch ? "identical" : "differ"}`}
               </span>
               <span className={d.answerMatch ? "text-emerald-400" : "text-amber-300"}>
                 · correct answer {d.answerMatch ? "identical" : "differs"}
@@ -221,20 +258,28 @@ export function DuplicateDecisions({
                     </span>
                   )}
                 </p>
-                <p className="text-sm leading-relaxed text-slate-200">
-                  <Diffed tokens={diff.existing} tone="removed" />
-                </p>
-                <OptionList options={d.existing.options} />
+                <div className="text-sm leading-relaxed text-slate-200">
+                  {rendered ? (
+                    <Rich text={d.existing.text} format={d.existing.format} />
+                  ) : (
+                    <Diffed tokens={diff.existing} tone="removed" />
+                  )}
+                </div>
+                <OptionList options={d.existing.options} format={d.existing.format} />
               </div>
               <div className={panelClass(choice === "keep_new")}>
                 <div className="mb-2">{radio("keep_new", "Keep this version")}</div>
                 <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">
                   New in this batch
                 </p>
-                <p className="text-sm leading-relaxed text-slate-200">
-                  <Diffed tokens={diff.candidate} tone="added" />
-                </p>
-                <OptionList options={d.candidate.options} />
+                <div className="text-sm leading-relaxed text-slate-200">
+                  {rendered ? (
+                    <Rich text={d.candidate.text} format={d.candidate.format} />
+                  ) : (
+                    <Diffed tokens={diff.candidate} tone="added" />
+                  )}
+                </div>
+                <OptionList options={d.candidate.options} format={d.candidate.format} />
               </div>
             </div>
 

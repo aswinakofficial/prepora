@@ -127,15 +127,17 @@ def cmd_gate_import(args: argparse.Namespace) -> int:
     07-intake.md); prints a report per paper. Exits 1 if any paper didn't join completely, or a
     question was held as invalid or contradicting its key."""
     from prepora_pipeline.connectors.gate.catalog import PAPERS, find_papers
-    from prepora_pipeline.connectors.gate.run import import_paper
+    from prepora_pipeline.connectors.gate.run import import_paper, write_report
 
     papers = PAPERS if args.all_pilot else find_papers(year=args.year, sitting=args.sitting)
     if not papers or not (args.all_pilot or args.year or args.sitting):
         print("Choose papers with --year/--sitting, or --all-pilot.", file=sys.stderr)
         return 1
     ok = True
+    reports = []
     for paper in papers:
         report = import_paper(paper)
+        reports.append(report)
         print("\n".join(report.lines()))
         # Layout issues are expected (held for a fix); a broken join or a question that
         # contradicts its key or fails validation means the parser needs attention.
@@ -147,6 +149,9 @@ def cmd_gate_import(args: argparse.Namespace) -> int:
             for _, codes in report.held
         )
         ok = ok and not report.join_gaps and not broken
+    if args.report_dir:
+        for path in write_report(reports, args.report_dir):
+            print(f"report: {path}")
     return 0 if ok else 1
 
 
@@ -237,6 +242,10 @@ def main(argv: list[str] | None = None) -> int:
     gate_import_parser.add_argument("--sitting", help='e.g. "CS-1"')
     gate_import_parser.add_argument(
         "--all-pilot", action="store_true", help="The four pilot papers (2025-2026, CS-1/CS-2)."
+    )
+    gate_import_parser.add_argument(
+        "--report-dir",
+        help="Also write the counts-only report of each paper (JSON) and a README here.",
     )
     gate_import_parser.set_defaults(func=cmd_gate_import)
 

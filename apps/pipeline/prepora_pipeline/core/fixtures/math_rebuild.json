@@ -1,0 +1,99 @@
+{
+  "cases": [
+    {
+      "name": "digit_after_formula",
+      "markdown": "$n^{2}5$th",
+      "formulas": ["n^{2}5"]
+    },
+    {
+      "name": "emphasis_isnt_math",
+      "markdown": "this matters",
+      "formulas": []
+    },
+    {
+      "name": "glued_option_marker",
+      "markdown": "(A) $2^{17}$",
+      "formulas": ["2^{17}"]
+    },
+    {
+      "name": "glued_prose_bit",
+      "markdown": "$2^{32}$-bit",
+      "formulas": ["2^{32}"]
+    },
+    {
+      "name": "greek_and_operators",
+      "markdown": "$\\Theta(n) \\le \\alpha$",
+      "formulas": ["\\Theta(n) \\le \\alpha"]
+    },
+    {
+      "name": "inline_superscript",
+      "markdown": "The invented cost is $n^{2}$ per item.",
+      "formulas": ["n^{2}"]
+    },
+    {
+      "name": "letterlike_double_struck",
+      "markdown": "$\\mathbb{R}^{n}$",
+      "formulas": ["\\mathbb{R}^{n}"]
+    },
+    {
+      "name": "math_italic_run",
+      "markdown": "Let $n > 1.$",
+      "formulas": ["n > 1."]
+    },
+    {
+      "name": "multi_token_script",
+      "markdown": "$d_{k+1}$",
+      "formulas": ["d_{k+1}"]
+    },
+    {
+      "name": "nested_script",
+      "markdown": "$n^{\\log_{4} 5}$",
+      "formulas": ["n^{\\log_{4} 5}"]
+    },
+    {
+      "name": "private_use_prime_after_a_letter",
+      "markdown": "$f'(x) '$",
+      "formulas": ["f'(x) '"]
+    },
+    {
+      "name": "prose_font_script",
+      "markdown": "$\\text{R}_{\\text{X}}$",
+      "formulas": ["\\text{R}_{\\text{X}}"]
+    },
+    {
+      "name": "space_only_next_to_text",
+      "markdown": "$x = y$",
+      "formulas": ["x = y"]
+    },
+    {
+      "name": "special_characters_are_escaped",
+      "markdown": "$a\\_\\{b\\}\\%$",
+      "formulas": ["a\\_\\{b\\}\\%"]
+    },
+    {
+      "name": "sub_and_super_on_one_base",
+      "markdown": "$x_{i}^{2}$ here",
+      "formulas": ["x_{i}^{2}"]
+    },
+    {
+      "name": "subscript_row_below",
+      "markdown": "Let $L_{1}$ and $L_{2}$ be languages.",
+      "formulas": ["L_{1}", "L_{2}"]
+    },
+    {
+      "name": "symbol_private_use_glyph",
+      "markdown": "$\\to x$",
+      "formulas": ["\\to x"]
+    },
+    {
+      "name": "trailing_run_of_a_prose_word",
+      "markdown": "1M=$2^{20}$",
+      "formulas": ["2^{20}"]
+    },
+    {
+      "name": "upright_names",
+      "markdown": "$\\log n\\ \\text{matrix}\\ M$",
+      "formulas": ["\\log n\\ \\text{matrix}\\ M"]
+    }
+  ]
+}

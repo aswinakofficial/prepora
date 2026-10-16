@@ -312,6 +312,7 @@ for people:
 | `no_base` | the rebuild found a sub- or superscript with nothing beside it | step 3 |
 | `unclear_level` | the rebuild found a script it couldn't place as clearly raised or lowered | step 4 |
 | `too_deep` | the rebuild found scripts nested more than two levels | step 5 |
+| `options_changed` | the rebuild changed which options the question has | the parser's check after the rebuild: a formula swallowed an option's marker |
 | `overbar` | the rebuild found an overbar, which it doesn't rebuild | step 7 |
 | `fraction` | the rebuild found a fraction, which it doesn't rebuild | step 7 |
 | `unknown_symbol` | the rebuild found a symbol outside its table | step 8, and a private-use glyph left after the rebuild |
@@ -445,8 +446,8 @@ just inside either `$`, on one line, and **not followed by a digit**. So the reb
     | `existing_question_id` | the question holding the position |
     | `existing_question_text` | that question's text |
     | `similarity_score` | `dedupe/similarity.py` `similarity()` of the new text against that text (it may be under 0.9) |
-    | `options_match`, `answer_match` | `shape_of(normalized)` against `shape_of_published(cur, <that question>)` |
-    | `suggestion` | computed as `decide()` does: `"same"` when the shapes match and `numbers_in` agrees, otherwise `"different"` |
+    | `options_match`, `answer_match` | compared by option key and official key (or numeric ranges), not by option text, which a re-typeset rewrites (correction below) |
+    | `suggestion` | always `"same_new"` (correction below) |
     | `reason` | "This paper's question is already published with other wording (a re-parse); N% similar" |
   - **The result:** the reviewer sees it on the existing possible-duplicate screen, and "same
     question, use the new wording" updates the question in place, keeping the old wording as a
@@ -454,6 +455,18 @@ just inside either `$`, on one line, and **not followed by a digit**. So the reb
   - For an intake item, that question is the item's `question_id`. A test approves a heavily
     re-typeset published question this way.
   - The default `on_near_duplicate="refuse"` still raises, as today.
+  - **Correction, during build (lead, 2026-10-17; refined after review):** a position-taken hold
+    of a re-parsed question suggests "same question, use the new wording" (stored as the new value
+    `same_new`, which the panel maps to "keep the new version"; the column is text, so no
+    migration), but only when the option keys and the official key both match. Otherwise it
+    suggests "different", because position identity is shared by every source, and a different key
+    at a taken position is a numbering slip or a segmentation bug, not a re-parse. Options and
+    answer are compared by option key and official key (numeric ranges for NAT), since a
+    re-typeset rewrites every option's text. The "computed as `decide()` does" rule above would
+    have suggested "keep both" or "keep the old version" for exactly the questions this hold exists
+    for. The panel labels the comparison "same option keys" for these holds, and renders a Markdown
+    side as it will publish (`DuplicateDecisions.tsx`, with the same `renderRichText` as the batch
+    preview); `listDuplicateReviews` returns each side's `format`.
 - **MS Learn's plain questions** aren't a PDF source and don't change.
 - **Today that's only local.** Production has no published GATE questions, so only the owner's
   local pilot batches go back to review.
@@ -557,13 +570,13 @@ That's the directory Spec 8 plans to compare in CI. Each file has:
   (the same relative-path pattern as `packages/content/src/normalize.test.ts`). It renders every
   table entry and every fixture output with KaTeX `throwOnError: true` and `strict: "error"`, and
   `renderRichText` on the fixture outputs.
-- No change to API code. The new `HeldResult` arrives through `/publish?on_near_duplicate=hold`
+- `listDuplicateReviews` returns `format` on `candidate` and `existing` (correction in Decision 4). Otherwise no change to API code. The new `HeldResult` arrives through `/publish?on_near_duplicate=hold`
   like any near duplicate, and `holdPossibleDuplicate` (`src/routers/admin.router.ts`) stores it as
   it is. That works because its `DedupeDecision` fills every NOT NULL `duplicate_reviews` column
   (Decision 4).
 
 ### Web (`apps/web`)
-- No change.
+- `components/review/DuplicateDecisions.tsx` shows a Markdown side rendered (correction in Decision 4).
 
 ### Tests (`tests/e2e`, and the fixture under `apps/pipeline`)
 - **New `tests/e2e/acceptance/13-math-recovery.spec.ts`:** steps 1–10, one `acceptanceStep` each,

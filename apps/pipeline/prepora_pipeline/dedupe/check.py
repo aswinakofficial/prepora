@@ -61,7 +61,9 @@ class DedupeDecision:
     existing_question_text: str | None = None
     options_match: bool | None = None
     answer_match: bool | None = None
-    suggestion: Literal["same", "different"] | None = None
+    # "same_new": a re-parse of the question at this paper position (Spec 13, Decision 4): the same
+    # question, and the new wording is the one to keep.
+    suggestion: Literal["same", "different", "same_new"] | None = None
 
 
 def check_duplicate(normalized: NormalizedQuestion) -> DedupeDecision:

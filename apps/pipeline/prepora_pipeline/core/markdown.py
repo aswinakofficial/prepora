@@ -5,6 +5,7 @@ Markdown escaping for connectors that publish `text_format = "markdown"`
 A connector's prose is plain text that merely contains characters Markdown would read as formatting
 (a C pointer's `*`, a variable named `my_var`, a price's `$`). escape_markdown backslash-escapes
 them, so only the formatting the connector adds itself (fenced code blocks, `$…$` math) renders.
+escape_markdown_with_math is the same for text that holds formulas a connector rebuilt.
 """
 import re
 
@@ -62,3 +63,47 @@ def escape_markdown(text: str) -> str:
             if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence):
                 fence = None
     return "\n".join(out)
+
+
+# Spec 13: a connector that rebuilds formulas from a PDF (core/math_rebuild.py) wraps each one in
+# these two Unicode noncharacters, which never occur in extracted text. They exist only between the
+# parser and the normalizer, and neither goes into a stored candidate.
+MATH_OPEN = "﷐"
+MATH_CLOSE = "﷑"
+_PLACEHOLDER = "﷒"  # stands in for a formula while the prose around it is escaped
+_SPAN = re.compile(f"{MATH_OPEN}([^{MATH_OPEN}{MATH_CLOSE}]*){MATH_CLOSE}")
+
+
+def escape_markdown_with_math(text: str) -> str:
+    """
+    escape_markdown for text holding rebuilt formulas: the prose is escaped exactly as
+    escape_markdown escapes it, and each wrapped formula comes out verbatim as `$…$`. Raises on a
+    marker that isn't balanced, and on a formula inside a fenced code block, rather than emit
+    Markdown that would render wrong.
+    """
+    if MATH_OPEN not in text and MATH_CLOSE not in text:
+        return escape_markdown(text)
+    formulas: list[str] = []
+
+    def hold(match: re.Match) -> str:
+        formulas.append(match.group(1))
+        return _PLACEHOLDER
+
+    protected = _SPAN.sub(hold, text)
+    if MATH_OPEN in protected or MATH_CLOSE in protected:
+        raise ValueError("A formula marker isn't balanced.")
+    fence: str | None = None
+    for line in protected.split("\n"):
+        match = _FENCE.match(line)
+        if fence is None:
+            if match:
+                fence = match.group(1)
+                if _PLACEHOLDER in line:
+                    raise ValueError("A formula marker is inside a fenced code block.")
+        else:
+            if _PLACEHOLDER in line:
+                raise ValueError("A formula marker is inside a fenced code block.")
+            if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence):
+                fence = None
+    escaped = iter(formulas)
+    return re.sub(_PLACEHOLDER, lambda _: f"${next(escaped)}$", escape_markdown(protected))

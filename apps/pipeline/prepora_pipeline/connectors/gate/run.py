@@ -9,14 +9,18 @@ docs/specs/05-gate-pilot.md); held ones wait for a fix, never published as wrong
 again records what changed and batches only ready items not already in review. A paper whose key
 and questions don't join completely writes nothing.
 """
+import json
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ...core.answer_keys import join_by_number
 from ...core.artifact_store import ArtifactStore, FilesystemArtifactStore
 from ...core.db import get_db_connection
 from ...core.http_client import fetch as http_fetch
 from ...core.intake import IntakeItem, IntakeStore, RecordResult
+from ...core.markdown import MATH_CLOSE, MATH_OPEN
 from ...core.pdf_text import extract_pages
 from ...core.quality import Issue
 from ...core.review_batches import NORMALIZED_FORMAT, create_review_batch
@@ -36,14 +40,31 @@ def paper_key(paper: PaperSpec) -> str:
 
 
 @dataclass
+class QuestionMath:
+    """What the math rebuild did to one question (Spec 13). Lives for the run; not stored."""
+
+    number: int
+    outcome: str  # recovered, still_held, retypeset, kept or none
+    reasons: list[str]
+    detector_math: list[str]  # the first detector run's math details (the rules that held it)
+    first_codes: list[str]  # every issue code of the first run
+    issues_after: list[str]  # issue codes of the item as recorded
+    math_runs: bool = False  # the original lines had a math word or a script-sized word
+
+
+@dataclass
 class ImportReport:
     paper: str  # "GATE 2026 CS-1"
+    key: str = ""  # "gate/2026/cs/CS-1"
+    edition: str = EDITION
     parsed: int = 0
     joined: int = 0
     mta: int = 0
     clean: int = 0  # questions with no issues
     held: list[tuple[int, list[str]]] = field(default_factory=list)  # (number, issue codes)
     join_gaps: list[str] = field(default_factory=list)
+    maths: list[QuestionMath] = field(default_factory=list)
+    held_by_issues: Counter = field(default_factory=Counter)  # "figure+layout" -> questions
     recorded: RecordResult | None = None
     in_batch: int = 0  # ready items sent to review by this run
     batch_id: str | None = None
@@ -66,11 +87,123 @@ class ImportReport:
             )
         out += [f"  join gap: {gap}" for gap in self.join_gaps]
         out += [f"  held Q.{n}: {', '.join(codes)}" for n, codes in self.held]
+        out += self._math_lines()
         if self.batch_id:
             out.append(f"  review batch: {self.batch_id} ({self.in_batch} questions)")
         elif self.recorded:
             out.append("  no new review batch: nothing ready that isn't already in review")
         return out
+
+    def _math_lines(self) -> list[str]:
+        if not self.maths:
+            return []
+        flagged = [m for m in self.maths if m.detector_math]
+        recovered = [m for m in flagged if m.outcome == "recovered"]
+        still = [m for m in flagged if m.outcome == "still_held"]
+        typeset = [m for m in self.maths if m.outcome == "retypeset"]
+        kept = [m for m in self.maths if m.outcome == "kept"]
+        out = [
+            f"  math: {len(flagged)} held for math before the rebuild; {len(recovered)} recovered, "
+            f"{len(still)} still held",
+            f"  re-typeset: {len(typeset)} questions; {len(kept)} kept as they were",
+        ]
+        out += [f"  Q.{m.number} still held for math: {', '.join(m.reasons)}" for m in still]
+        out += [f"  Q.{m.number} kept as is: {', '.join(m.reasons)}" for m in kept]
+        return out
+
+    def counts(self) -> dict:
+        """The counts-only report of this paper (Decision 6); no question numbers or text."""
+        flagged = [m for m in self.maths if m.detector_math]
+        recovered = [m for m in flagged if m.outcome == "recovered"]
+        still = [m for m in flagged if m.outcome == "still_held"]
+        typeset = [m for m in self.maths if m.outcome == "retypeset"]
+        kept = [m for m in self.maths if m.outcome == "kept"]
+        data = {
+            "paper_key": self.key,
+            "edition": self.edition,
+            "parser_version": PARSER_VERSION,
+            "questions": self.parsed,
+            "ready": self.clean,
+            "held": len(self.held),
+            "held_by_issues": dict(sorted(self.held_by_issues.items())),
+            "math": {
+                "flagged": len(flagged),
+                "flagged_math_only": sum(1 for m in flagged if m.first_codes == ["math"]),
+                "by_detector_rule": dict(
+                    sorted(Counter(d for m in flagged for d in set(m.detector_math)).items())
+                ),
+                "recovered": len(recovered),
+                "recovered_now_ready": sum(1 for m in recovered if not m.issues_after),
+                "still_held": len(still),
+                "still_held_by_reason": dict(
+                    sorted(Counter(r for m in still for r in set(m.reasons)).items())
+                ),
+            },
+            "retypeset": {
+                # Counted from the original lines, not from what the rebuild did with them.
+                "clean_with_math_runs": sum(
+                    1 for m in self.maths if m.math_runs and not m.detector_math
+                ),
+                "retypeset": len(typeset),
+                "kept": len(kept),
+                "kept_by_reason": dict(
+                    sorted(Counter(r for m in kept for r in set(m.reasons)).items())
+                ),
+            },
+        }
+        if any(m.outcome not in ("recovered", "still_held") for m in flagged):
+            raise ValueError("A question held for math has an outcome other than the two.")
+        if data["math"]["recovered"] + data["math"]["still_held"] != data["math"]["flagged"]:
+            raise ValueError("The math counts don't add up: recovered + still_held != flagged.")
+        r = data["retypeset"]
+        if r["retypeset"] + r["kept"] != r["clean_with_math_runs"]:
+            raise ValueError("The re-typeset counts don't add up.")
+        return data
+
+
+def write_report(reports: list[ImportReport], directory: str | Path) -> list[Path]:
+    """One counts-only JSON file per paper and edition, and a README summing them. Keys are sorted
+    and the output stable, so a re-run with nothing changed produces no diff."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    written = []
+    for report in reports:
+        if report.join_gaps or not report.key:
+            continue  # an incomplete join has nothing to count
+        data = report.counts()
+        _, year, _, sitting = report.key.split("/")
+        path = directory / f"{year}-{sitting}.{report.edition}.json"
+        path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        written.append(path)
+    # The README sums every report in the directory, not only this run's.
+    rows = [
+        (path.name, json.loads(path.read_text(encoding="utf-8")))
+        for path in sorted(directory.glob("*.json"))
+    ]
+    lines = [
+        "# GATE math-recovery reports",
+        "",
+        "Counts only, written by `gate-import --report-dir` "
+        "([Spec 13](../../../specs/13-math-recovery.md), Decision 6). No question numbers, text or "
+        "symbols are committed.",
+        "",
+        "| Paper | Questions | Ready | Held | Held for math before | Recovered | Still held "
+        "| Re-typeset | Kept as is |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    totals = Counter()
+    for name, d in rows:
+        cells = (
+            d["questions"], d["ready"], d["held"], d["math"]["flagged"], d["math"]["recovered"],
+            d["math"]["still_held"], d["retypeset"]["retypeset"], d["retypeset"]["kept"],
+        )
+        totals.update(dict(enumerate(cells)))
+        lines.append(f"| [{name[: -len('.json')]}]({name}) | " + " | ".join(map(str, cells)) + " |")
+    if rows:
+        lines.append("| **All** | " + " | ".join(f"**{totals[i]}**" for i in range(8)) + " |")
+    lines.append("")
+    (directory / "README.md").write_text("\n".join(lines), encoding="utf-8")
+    return written
 
 
 def _fetch_pdf(url: str) -> bytes:
@@ -90,7 +223,9 @@ def import_paper(
 ) -> ImportReport:
     store = store or FilesystemArtifactStore()
     intake = intake or IntakeStore()
-    report = ImportReport(paper=f"GATE {paper.year} {paper.sitting}")
+    report = ImportReport(
+        paper=f"GATE {paper.year} {paper.sitting}", key=paper_key(paper), edition=EDITION
+    )
 
     qp_bytes, key_bytes = fetch(paper.qp_url), fetch(paper.key_url)
     qp = store.store(
@@ -128,9 +263,23 @@ def import_paper(
     items = []
     for question, key in join.matched:
         items.append(_intake_item(question, key, paper, key_name, qp.sha256, validate_question))
+    for (question, _), item in zip(join.matched, items, strict=True):
+        report.maths.append(
+            QuestionMath(
+                number=item.number,
+                outcome=question.math_outcome,
+                reasons=question.math_reasons,
+                detector_math=question.detector_math,
+                first_codes=question.first_codes,
+                issues_after=sorted({issue.code for issue in item.issues}),
+                math_runs=question.math_runs,
+            )
+        )
     for item in items:
         if item.issues:
-            report.held.append((item.number, sorted({issue.code for issue in item.issues})))
+            codes = sorted({issue.code for issue in item.issues})
+            report.held.append((item.number, codes))
+            report.held_by_issues["+".join(codes)] += 1
         else:
             report.clean += 1
             if item.candidate.get("answer_status") == "marks_to_all":
@@ -172,8 +321,9 @@ def _intake_item(question, key, paper, key_name, qp_sha, validate) -> IntakeItem
         candidate = {
             "number": question.number,
             "number_label": question.label,
-            "question_text": question.text,
-            "options": question.options,
+            # The text as extracted: the rebuilt formulas' markers never leave the parser.
+            "question_text": question.original_text,
+            "options": question.original_options,
             "key": {"qtype": key.qtype, "raw": key.raw_key, "marks": key.marks},
             "section": key.section,
         }
@@ -185,6 +335,9 @@ def _intake_item(question, key, paper, key_name, qp_sha, validate) -> IntakeItem
                 for i in validate(normalized).issues
                 if i.severity == "error"
             ]
+    dumped = json.dumps(candidate, ensure_ascii=False)
+    if MATH_OPEN in dumped or MATH_CLOSE in dumped:
+        raise ValueError(f"Q.{question.number}: a formula marker reached the candidate.")
     return IntakeItem(
         source=SOURCE_SLUG,
         paper_key=key_name,
