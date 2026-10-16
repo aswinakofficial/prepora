@@ -4,9 +4,9 @@ that turns the positioned words of one question (core/pdf_text.py) into words in
 formula is LaTeX, deterministically and with no AI.
 
 Text extraction flattens notation: a subscript comes out as a separate smaller word on a line of its
-own ("L 1" for L1), and NFKC erases the difference between an italic variable and a plain letter. The
-PDF still has what's needed to put it back, because pdfplumber splits a word wherever the font or
-its size changes, and gives every word its box:
+own ("L 1" for L1), and NFKC erases the difference between an italic variable and a plain
+letter. The PDF still has what's needed to put it back, because pdfplumber splits a word wherever
+the font or its size changes, and gives every word its box:
 
 - a script is a word smaller than its line, raised or lowered against the glyph it follows;
 - a math run is a word in a math font, or one whose text before NFKC holds a math italic letter, a
@@ -105,6 +105,9 @@ _TABLE = json.loads((Path(__file__).parent / "latex_symbols.json").read_text(enc
 _CHARS: dict[str, str] = _TABLE["chars"]
 _OPERATORS: dict[str, str] = _TABLE["operators"]
 _SYMBOL_PUA: dict[str, str] = _TABLE["symbol_pua"]
+# A Symbol font without a ToUnicode map extracts its codes as Adobe Standard encoding characters
+# ("a" for alpha, a dieresis for the union sign); in a Symbol-font word they mean the Symbol glyph.
+_SYMBOL_LATIN: dict[str, str] = _TABLE["symbol_latin"]
 
 _OVERBAR_MARKS = {"̅", "̄", "¯"}  # combining overline, combining macron, macron
 _PRIMES = {"′", "″", "'", "’"}
@@ -154,9 +157,14 @@ class _Context:
     def convert(self, raw: str, family: str, math_font: bool) -> _Piece:
         """A word's characters as LaTeX, from its text before NFKC."""
         italic_font = "italic" in family or "oblique" in family
+        symbol_font = family.startswith("symbol")
         parts: list[tuple[str, bool]] = []
         i = 0
         while i < len(raw):
+            if symbol_font and raw[i] in _SYMBOL_LATIN:
+                parts.append((_SYMBOL_LATIN[raw[i]], False))
+                i += 1
+                continue
             letters = _ASCII_LETTER.match(raw, i)
             if letters:
                 run = letters.group(0)
@@ -235,7 +243,7 @@ class _Unit:
     e: _E
     idx: int  # into the eligible words
     piece: _Piece | None  # None for plain prose
-    prefix: str = ""  # prose in the same word, before the formula (a prose-font base's leading text)
+    prefix: str = ""  # prose in the same word before the formula (a prose-font base's leading text)
     math: bool = False
     safe: bool = False  # the whole word is brackets, operators, digits or punctuation
     box: tuple[float, float, float, float] = (0, 0, 0, 0)  # the word and its scripts
@@ -641,7 +649,10 @@ def _formulas(units: list[_Unit], profile: MathProfile, ctx: _Context):
         latex: _Piece | None = None
         previous: _Unit | None = None
         for v, piece in pieces:
-            latex = piece if latex is None else _join(latex, piece, v.x0 - previous.x1, profile.glue_gap)
+            if latex is None:
+                latex = piece
+            else:
+                latex = _join(latex, piece, v.x0 - previous.x1, profile.glue_gap)
             previous = v
         assert latex is not None
         body = latex.latex.strip()

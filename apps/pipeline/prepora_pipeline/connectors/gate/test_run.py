@@ -54,7 +54,7 @@ class TestNormalizer:
             "official",
         )
         assert n.question_set_title == "GATE 2099 · CS-1"
-        assert n.explanation is None and n.parser_version == "gate-1"
+        assert n.explanation is None and n.parser_version == "gate-2"
 
     def test_it_is_markdown_with_prose_escaped_and_code_fences_kept(self):
         question = _question(options={"A": "a_1 * b", "B": "Two", "C": "Three", "D": "Four"})
@@ -302,7 +302,7 @@ class TestGateImportExit:
         report = Report()
         report.held = held
         monkeypatch.setattr(run, "import_paper", lambda _paper: report)
-        args = argparse.Namespace(all_pilot=True, year=None, sitting=None)
+        args = argparse.Namespace(all_pilot=True, year=None, sitting=None, report_dir=None)
         return cli.cmd_gate_import(args)
 
     def test_a_layout_hold_with_a_type_mismatch_is_not_a_parser_fault(self, monkeypatch):

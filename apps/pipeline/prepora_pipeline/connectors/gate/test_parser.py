@@ -3,57 +3,17 @@ Contract tests for the GATE connector (docs/specs/05-gate-pilot.md). Every PDF i
 with reportlab, laid out like GATE's real files (the same columns and header spellings, measured on
 the 2025 and 2026 CS keys), with invented content. No real paper or key is committed.
 """
-import io
-
 import pytest
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 
 from prepora_pipeline.core.pdf_text import extract_pages
 
 from .catalog import PAPERS, find_papers
 from .key_parser import GateKeyError, parse_answer_key, parse_answer_value
 from .paper_parser import GatePaperError, parse_paper
-
-WIDTH, HEIGHT = A4
-
-
-def make_pdf(pages: list[list[tuple]], size: int = 10, boxes=None) -> bytes:
-    """Each page is a list of (x, top, text) or (x, top, text, font, size), `top` in points from
-    the top edge. `boxes` maps a page index to filled (x, top, width, height) boxes: a figure."""
-    out = io.BytesIO()
-    c = canvas.Canvas(out, pagesize=A4)
-    for index, items in enumerate(pages):
-        for item in items:
-            x, top, text = item[:3]
-            font, font_size = (item[3], item[4]) if len(item) == 5 else ("Helvetica", size)
-            c.setFont(font, font_size)
-            c.drawString(x, HEIGHT - top - font_size, text)
-        for x, top, w, h in (boxes or {}).get(index, []):
-            c.rect(x, HEIGHT - top - h, w, h, fill=1)
-        c.showPage()
-    c.save()
-    return out.getvalue()
-
+from .testing import key_pdf, make_pdf, paper_page
 
 # Column x positions like GATE 2026's key, with the Key/Range column wide enough for an "OR" range;
 # 2025's header says "Q. Type" instead.
-COLUMNS = (110, 170, 240, 320, 370, 540)
-
-
-def key_pdf(rows, *, qtype_header="Question Type", rows_per_page=40) -> bytes:
-    header = ["Q. No.", "Session", qtype_header, "Section", "Key/Range", "Marks"]
-    pages = []
-    for start in range(0, len(rows), rows_per_page):
-        items = [(88, 100, "Answer Key for an Invented Paper (XX-1)")]
-        items += [(x, 130, text) for x, text in zip(COLUMNS, header, strict=True)]
-        for i, row in enumerate(rows[start : start + rows_per_page]):
-            items += [(x, 150 + 16 * i, text) for x, text in zip(COLUMNS, row, strict=True)]
-        items.append((474, 800, f"Page {len(pages) + 1}"))
-        pages.append(items)
-    return make_pdf(pages)
-
-
 ROWS = [
     ("1", "3", "MCQ", "GA", "B", "1"),
     ("2", "3", "MSQ", "CS-1", "A;C;D", "1"),
@@ -128,14 +88,6 @@ def test_the_catalog_lists_the_four_pilot_papers():
 
 # ─── Question papers (#47). GATE's layout: labels at x=78, the section and marks headings in the
 # margin at x=72, text at x=120, options at x=78, a running header and footer.
-
-
-def paper_page(number: int, total: int, items: list[tuple]) -> list[tuple]:
-    return [
-        (295, 26, "Invented Science & Technology (XX1)"),
-        *items,
-        (72, 807, f"Organizing Institute: Invented Institute Page {number} of {total}"),
-    ]
 
 
 def invented_paper(boxes=None) -> bytes:

@@ -93,7 +93,6 @@ class ImportReport:
             out.append("  no new review batch: nothing ready that isn't already in review")
         return out
 
-
     def _math_lines(self) -> list[str]:
         if not self.maths:
             return []

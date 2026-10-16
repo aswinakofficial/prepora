@@ -72,6 +72,7 @@ class GateQuestion:
     math_reasons: list[str] = field(default_factory=list)
     detector_math: list[str] = field(default_factory=list)  # the first detector run's math details
     first_codes: list[str] = field(default_factory=list)  # every issue code of the first run
+    first_codes: list[str] = field(default_factory=list)  # every issue code of the first run
     formulas: int = 0  # how many formulas the rebuild wrote
 
     def __post_init__(self):
@@ -103,7 +104,9 @@ def parse_paper(pages: list[Page]) -> list[GateQuestion]:
     for block in blocks:
         regions = _regions(block, page_by_number, tops_by_page)
         text, options, stem_lines = _read(block)
-        issues = detect_issues(block.lines, stem_lines, options, regions, page_by_number, GATE_QUALITY)
+        issues = detect_issues(
+            block.lines, stem_lines, options, regions, page_by_number, GATE_QUALITY
+        )
         graphics = [
             g
             for region in regions
@@ -150,6 +153,7 @@ def _rebuild(
     first = list(question.issues)
     math_first = [i for i in first if i.code == "math"]
     question.detector_math = [i.detail for i in math_first]
+    question.first_codes = sorted({i.code for i in first})
     question.first_codes = sorted({i.code for i in first})
     result = rebuild_math(block.lines, graphics, GATE_MATH)
     rebuilt = replace(block, lines=result.lines)

@@ -12,6 +12,7 @@ const table = JSON.parse(readFileSync(new URL("latex_symbols.json", core), "utf8
   chars: Record<string, string>;
   operators: Record<string, string>;
   symbol_pua: Record<string, string>;
+  symbol_latin: Record<string, string>;
 };
 const fixture = JSON.parse(readFileSync(new URL("fixtures/math_rebuild.json", core), "utf8")) as {
   cases: { name: string; markdown: string; formulas: string[] }[];
@@ -26,6 +27,7 @@ describe("the rebuild's symbol table renders", () => {
     ...Object.entries(table.chars),
     ...Object.entries(table.operators),
     ...Object.entries(table.symbol_pua),
+    ...Object.entries(table.symbol_latin),
   ];
 
   it("has entries", () => {
