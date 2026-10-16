@@ -91,7 +91,11 @@ CODE_FONTS = ("courier", "consolas", "mono")
 
 
 def is_code_line(line: "Line", code_fonts: tuple[str, ...] = CODE_FONTS) -> bool:
-    """A line set mostly in a monospace font."""
+    """A line set mostly in a monospace font. A line the math rebuild wrote a formula into never is:
+    the rebuild leaves code lines alone, so it was prose before, and folding words into a formula
+    must not change that."""
+    if any(w.math for w in line.words):
+        return False
     fonts = [font_family(w.fontname) for w in line.words]
     return sum(any(c in f for c in code_fonts) for f in fonts) * 2 > len(fonts)
 

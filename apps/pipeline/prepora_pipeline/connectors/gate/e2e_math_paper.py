@@ -219,7 +219,15 @@ def cleanup() -> dict:
                 "SELECT id FROM scraped_questions WHERE source_url LIKE %s", (f"{BASE_URL}/%",)
             )
             batches |= {r[0] for r in cur.fetchall()}
-            questions, batches = list(questions), list(batches)
+            # A question that also occurs in another set isn't the fixture's alone: it stays, and
+            # only its 2099 occurrence goes (with the set).
+            cur.execute(
+                "SELECT DISTINCT question_id FROM question_occurrences "
+                "WHERE question_id = ANY(%s) AND question_set_id <> ALL(%s)",
+                (list(questions), sets),
+            )
+            shared = {r[0] for r in cur.fetchall()}
+            questions, batches = list(questions - shared), list(batches)
 
             cur.execute("DELETE FROM attempts WHERE question_id = ANY(%s)", (questions,))
             cur.execute(

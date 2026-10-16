@@ -51,6 +51,11 @@
       "formulas": ["n^{\\log_{4} 5}"]
     },
     {
+      "name": "private_use_prime_after_a_letter",
+      "markdown": "$f'(x) '$",
+      "formulas": ["f'(x) '"]
+    },
+    {
       "name": "prose_font_script",
       "markdown": "$\\text{R}_{\\text{X}}$",
       "formulas": ["\\text{R}_{\\text{X}}"]

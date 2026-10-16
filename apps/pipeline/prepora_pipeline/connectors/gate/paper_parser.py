@@ -21,7 +21,13 @@ measured on the four pilot papers (CS-1/CS-2, 2025 and 2026, 2026-10-02):
 import re
 from dataclasses import dataclass, field, replace
 
-from ...core.math_rebuild import DETECTOR_REASONS, GATE_MATH, REBUILD_REASONS, rebuild_math
+from ...core.math_rebuild import (
+    DETECTOR_REASONS,
+    GATE_MATH,
+    REBUILD_REASONS,
+    has_math_runs,
+    rebuild_math,
+)
 from ...core.pdf_segment import OPTION_MARKER, Block, segment, split_options
 from ...core.pdf_text import (
     CODE_FONTS,
@@ -72,8 +78,8 @@ class GateQuestion:
     math_reasons: list[str] = field(default_factory=list)
     detector_math: list[str] = field(default_factory=list)  # the first detector run's math details
     first_codes: list[str] = field(default_factory=list)  # every issue code of the first run
-    first_codes: list[str] = field(default_factory=list)  # every issue code of the first run
     formulas: int = 0  # how many formulas the rebuild wrote
+    math_runs: bool = False  # the original lines had a math word or a script-sized word
 
     def __post_init__(self):
         if self.original_text is None:
@@ -154,12 +160,14 @@ def _rebuild(
     math_first = [i for i in first if i.code == "math"]
     question.detector_math = [i.detail for i in math_first]
     question.first_codes = sorted({i.code for i in first})
-    question.first_codes = sorted({i.code for i in first})
+    question.math_runs = has_math_runs(block.lines, GATE_MATH)
     result = rebuild_math(block.lines, graphics, GATE_MATH)
     rebuilt = replace(block, lines=result.lines)
     text, options, stem_lines = _read(rebuilt)
     second = detect_issues(rebuilt.lines, stem_lines, options, regions, pages, GATE_QUALITY)
     reasons = list(result.reasons)
+    if list(options) != list(question.options):
+        reasons.append("options_changed")  # a formula swallowed an option's marker
     for issue in second:
         if issue.code == "math":
             reason = DETECTOR_REASONS.get(issue.detail, "unknown_symbol")

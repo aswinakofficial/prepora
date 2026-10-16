@@ -11,6 +11,8 @@ import os
 import re
 from pathlib import Path
 
+import pytest
+
 from prepora_pipeline.connectors.gate.testing import make_pdf
 from prepora_pipeline.core.markdown import escape_markdown_with_math
 from prepora_pipeline.core.math_rebuild import (
@@ -212,6 +214,19 @@ def case_greek_and_operators():
     return hand([W("Θ(n)", 100, raw="Θ(\U0001d45b)"), W("≤", 130), W("α", 142)])
 
 
+def case_private_use_prime_after_a_letter():
+    return hand(
+        [
+            W("f", 100, raw="\U0001d453"),
+            W("\uf0a2", 107, font=SYMBOL, raw="\uf0a2"),
+            W("(", 112),
+            W("x", 118, raw="\U0001d465"),
+            W(")", 125),
+            W("\u00a2", 140, font=SYMBOL),
+        ]
+    )
+
+
 def case_special_characters_are_escaped():
     return hand([W("a_{b}%", 100, raw="\U0001d44e_{\U0001d44f}%")])
 
@@ -401,7 +416,7 @@ class TestReasons:
     def test_the_detector_rules_each_map_to_a_reason(self):
         assert set(DETECTOR_REASONS.values()) | {
             "no_base", "unclear_level", "too_deep", "overbar", "fraction", "unknown_symbol",
-            "stacked",
+            "stacked", "options_changed",
         } == set(REBUILD_REASONS)
         assert set(DETECTOR_REASONS) == {
             "math or private-use glyphs",
@@ -482,3 +497,104 @@ class TestFoundOnTheRealPapers:
         words = [W("B", 100, font=TIMES), W("+", 108, top=96, size=8.5, font=TIMES),
                  W("-", 113, font=TIMES), W("tree", 120, font=TIMES)]
         assert marked(rebuilt(hand(words), [])) == "$\\text{B}^{+}$- tree"
+
+
+class TestReviewFindings:
+    """The independent review of PR #100 (docs/specs/13-math-recovery.md)."""
+
+    def test_options_set_side_by_side_stay_four_options(self):
+        row = [
+            W("(A)", 78, font=TIMES),
+            W("α", 110),
+            W("(B)", 200, font=TIMES),
+            W("β", 232),
+            W("(C)", 320, font=TIMES),
+            W("γ", 352),
+        ]
+        result = rebuilt(hand(row), [])
+        assert result.reasons == []
+        assert formulas(result) == ["\\alpha", "\\beta", "\\gamma"]
+        assert [w.text for w in result.lines[0].words if w.text.startswith("(")] == [
+            "(A)", "(B)", "(C)",
+        ]
+
+    def test_a_column_gap_ends_a_formula_even_without_a_marker(self):
+        row = [W("α", 100), W("β", 140)]
+        assert formulas(rebuilt(hand(row), [])) == ["\\alpha", "\\beta"]
+
+    @pytest.mark.parametrize(
+        "prime",
+        [
+            W("", 113, font=SYMBOL, raw=""),  # a Symbol prime in the private-use area
+            W("¢", 113, font=SYMBOL),  # the same glyph as a Standard-encoding code
+            W("′", 120),  # a prime set a space after the script
+            W("′", 113.5),  # a glued prime
+        ],
+    )
+    def test_a_prime_after_a_superscript_is_refused_whatever_its_gap_or_font(self, prime):
+        words = [W("x", 100, raw="\U0001d465"), W("2", 107, top=96, size=8.5), prime]
+        result = rebuilt(hand(words), [])
+        assert "unclear_level" in result.reasons
+
+    def test_a_prime_without_a_superscript_is_fine(self):
+        words = [W("x", 100, raw="\U0001d465"), W("", 107, font=SYMBOL, raw="")]
+        result = rebuilt(hand(words), [])
+        assert result.reasons == [] and formulas(result) == ["x'"]
+
+    def test_a_bar_over_a_script_is_seen(self):
+        words = [W("x", 100, raw="\U0001d465"), W("y", 107, top=96, size=8.5, raw="\U0001d466")]
+        bar = Graphic("rect", 107.0, 94.5, 113.0, 95.3, 0)
+        assert rebuilt(hand(words), [bar]).reasons == ["overbar"]
+
+    def test_a_bar_over_a_digit_folded_into_a_formula_is_seen(self):
+        words = [W("A", 100, raw="\U0001d434"), W("+1", 107.5, font=TIMES, width=12)]
+        bar = Graphic("rect", 107.0, 98.0, 120.0, 98.8, 0)
+        assert rebuilt(hand(words), [bar]).reasons == ["overbar"]
+
+    def test_a_table_border_of_sixty_points_is_no_overbar(self):
+        border = Graphic("rect", 90.0, 98.0, 150.0, 98.6, 0)
+        result = rebuilt(hand([W("x", 100, top=100, raw="\U0001d465")]), [border])
+        assert result.reasons == []
+
+    def test_a_formula_never_turns_a_prose_line_into_code(self):
+        from prepora_pipeline.connectors.gate.paper_parser import _text
+        from prepora_pipeline.core.pdf_text import is_code_line
+
+        courier = "ABC+CourierNew"
+        row = [
+            W("int", 100, font=courier),
+            W("n;", 125, font=courier),
+            W("x", 160, raw="\U0001d465"),
+            W("+", 170),
+            W("y", 180, raw="\U0001d466"),
+        ]
+        [line] = hand(row)[1:]
+        assert not is_code_line(line, GATE_MATH.code_fonts)
+        result = rebuilt(hand(row), [])
+        assert result.formulas == 1 and not is_code_line(result.lines[0], GATE_MATH.code_fonts)
+        text = _text(result.lines)
+        assert "```" not in text
+        escape_markdown_with_math(text)  # raises if a formula landed in a fence
+
+    def test_display_size_math_followed_by_glued_punctuation_or_prose(self):
+        for tail in (
+            W(",", 111, top=104, size=12, font=TIMES, width=3),
+            W("and", 111, top=104, size=12, font=TIMES),
+        ):
+            base = W("X", 100, top=98, size=16, raw="\U0001d44b", width=11)
+            result = rebuilt(hand([base, tail]), [])
+            assert "_{" not in text_of(result) and "^{" not in text_of(result)
+
+    def test_two_rows_that_each_state_a_relation_are_a_system_not_a_fraction(self):
+        rows = [
+            [W("x+y=3", 100, top=100, raw="\U0001d465+\U0001d466=3", width=33)],
+            [W("x\u2212y=1", 100, top=114, raw="\U0001d465\u2212\U0001d466=1", width=33)],
+        ]
+        assert rebuilt(hand(*rows), []).reasons == ["stacked"]
+
+    def test_a_double_script_detector_reads_the_latex(self):
+        from prepora_pipeline.core.math_rebuild import _double_script
+
+        assert _double_script("x^{2}'") and _double_script("x^{2} ^{3}")
+        assert _double_script("x^{a^{b}}'")
+        assert not _double_script("x'^{2}") and not _double_script("x^{2} y")

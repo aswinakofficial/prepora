@@ -328,3 +328,23 @@ class TestMathRebuild:
         b = Word("4", 85, 90, 100, 110, 0, 10, "Helvetica", raw_text="4")
         [joined] = _join_split_labels(Page(0, 600, 800, [a, b])).words
         assert (joined.text, joined.raw_text) == ("Q.4", "Q.4")
+
+
+class TestRebuildChangingOptions:
+    def test_a_rebuild_that_changes_the_option_keys_is_rejected(self, monkeypatch):
+        from . import paper_parser
+        from .e2e_math_paper import paper_pdf
+
+        real = paper_parser._read
+
+        def dropping(block):
+            text, options, stem = real(block)
+            if any(w.math for line in block.lines for w in line.words):
+                options = {k: v for k, v in options.items() if k != "B"}
+            return text, options, stem
+
+        monkeypatch.setattr(paper_parser, "_read", dropping)
+        questions = {q.number: q for q in parse_paper(extract_pages(paper_pdf()))}
+        q2 = questions[2]  # options with superscripts: re-typeset when all is well
+        assert q2.math_outcome == "kept" and q2.math_reasons == ["options_changed"]
+        assert q2.options == q2.original_options and set(q2.options) == set("ABCD")

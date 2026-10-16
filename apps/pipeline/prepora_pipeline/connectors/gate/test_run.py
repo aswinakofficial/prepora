@@ -463,3 +463,110 @@ class TestUpgradeAgainstTheDatabase:
             assert third.batch_id is None and third.recorded.inserted == 0  # idempotent
         finally:
             cleanup()
+
+
+class TestReportFindings:
+    def _math(self, number, outcome, detector=(), runs=True):
+        from .run import QuestionMath
+
+        return QuestionMath(
+            number=number, outcome=outcome, reasons=[], detector_math=list(detector),
+            first_codes=["math"] if detector else [], issues_after=[], math_runs=runs,
+        )
+
+    def _report(self, key, maths):
+        from .run import ImportReport
+
+        report = ImportReport(paper="GATE", key=key, parsed=len(maths), clean=len(maths))
+        report.maths = maths
+        return report
+
+    def test_the_readme_sums_every_report_in_the_directory(self, tmp_path):
+        from .run import write_report
+
+        ok = [self._math(1, "retypeset"), self._math(2, "recovered", ["a row"])]
+        write_report([self._report("gate/2026/cs/CS-1", ok)], tmp_path)
+        write_report([self._report("gate/2025/cs/CS-1", ok)], tmp_path)  # a later, partial run
+        readme = (tmp_path / "README.md").read_text()
+        assert "2025-CS-1.iitg" in readme and "2026-CS-1.iitg" in readme
+        assert "| **All** | **4** |" in readme
+
+    def test_the_arithmetic_can_fail(self):
+        # A question with math runs that came out as neither re-typeset nor kept is a miscount.
+        report = self._report("gate/2026/cs/CS-1", [self._math(1, "none")])
+        with pytest.raises(ValueError, match="re-typeset"):
+            report.counts()
+        # A question held for math whose outcome is neither recovered nor still held too.
+        report = self._report("gate/2026/cs/CS-1", [self._math(1, "kept", ["a row"])])
+        with pytest.raises(ValueError, match="other than"):
+            report.counts()
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("DATABASE_URL"), reason="needs DATABASE_URL")
+def test_cleanup_keeps_a_question_that_also_occurs_in_another_set():
+    import uuid
+
+    from prepora_pipeline.contracts import NormalizedQuestion
+    from prepora_pipeline.core.db import get_db_connection
+    from prepora_pipeline.core.intake import IntakeStore  # noqa: F401
+    from prepora_pipeline.stages.publish import publish_question
+
+    from . import e2e_math_paper
+    from .e2e_math_paper import cleanup
+
+    sitting = f"E2E-{uuid.uuid4().hex[:6]}"
+    result = e2e_math_paper.run_import(sitting)
+    conn = get_db_connection()
+    shared_id = other_session = None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT candidate FROM intake_items WHERE paper_key = %s AND number IN (5, 2) "
+                "ORDER BY number", (result["paper_key"],)
+            )
+            candidates = [NormalizedQuestion.model_validate(r[0]) for r in cur.fetchall()]
+        conn.commit()
+        mine, shared = (publish_question(c) for c in candidates)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT s.exam_variant_id FROM exam_sessions s WHERE s.id = "
+                "(SELECT exam_session_id FROM question_sets WHERE exam_session_id IN "
+                "(SELECT id FROM exam_sessions WHERE year = 2099) LIMIT 1)"
+            )
+            variant = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO exam_sessions (exam_variant_id, label, year) "
+                "VALUES (%s, 'other', 2098) RETURNING id", (variant,)
+            )
+            other_session = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO question_sets (exam_variant_id, title, slug, exam_session_id, "
+                "paper_kind, key_status) SELECT exam_variant_id, 'other', %s, %s, paper_kind, "
+                "key_status FROM question_sets WHERE exam_session_id IN "
+                "(SELECT id FROM exam_sessions WHERE year = 2099) LIMIT 1 RETURNING id",
+                (f"other-{sitting}", other_session),
+            )
+            other_set = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO question_occurrences (question_id, question_set_id) VALUES (%s, %s)",
+                (shared.question_id, other_set),
+            )
+        conn.commit()
+        shared_id = shared.question_id
+        cleanup()
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM questions WHERE id = %s", (shared_id,))
+            assert cur.fetchone()[0] == 1  # kept: it occurs elsewhere too
+            cur.execute("SELECT count(*) FROM questions WHERE id = %s", (mine.question_id,))
+            assert cur.fetchone()[0] == 0  # the fixture's own question is gone
+        conn.commit()
+    finally:
+        with conn.cursor() as cur:
+            if shared_id:
+                cur.execute("DELETE FROM questions WHERE id = %s", (shared_id,))
+            cur.execute("DELETE FROM question_sets WHERE slug LIKE %s", (f"other-{sitting}",))
+            if other_session:
+                cur.execute("DELETE FROM exam_sessions WHERE id = %s", (other_session,))
+        conn.commit()
+        conn.close()
+        cleanup()

@@ -49,6 +49,7 @@ class QuestionMath:
     detector_math: list[str]  # the first detector run's math details (the rules that held it)
     first_codes: list[str]  # every issue code of the first run
     issues_after: list[str]  # issue codes of the item as recorded
+    math_runs: bool = False  # the original lines had a math word or a script-sized word
 
 
 @dataclass
@@ -139,7 +140,10 @@ class ImportReport:
                 ),
             },
             "retypeset": {
-                "clean_with_math_runs": len(typeset) + len(kept),
+                # Counted from the original lines, not from what the rebuild did with them.
+                "clean_with_math_runs": sum(
+                    1 for m in self.maths if m.math_runs and not m.detector_math
+                ),
                 "retypeset": len(typeset),
                 "kept": len(kept),
                 "kept_by_reason": dict(
@@ -147,6 +151,8 @@ class ImportReport:
                 ),
             },
         }
+        if any(m.outcome not in ("recovered", "still_held") for m in flagged):
+            raise ValueError("A question held for math has an outcome other than the two.")
         if data["math"]["recovered"] + data["math"]["still_held"] != data["math"]["flagged"]:
             raise ValueError("The math counts don't add up: recovered + still_held != flagged.")
         r = data["retypeset"]
@@ -160,7 +166,7 @@ def write_report(reports: list[ImportReport], directory: str | Path) -> list[Pat
     and the output stable, so a re-run with nothing changed produces no diff."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    written, rows = [], []
+    written = []
     for report in reports:
         if report.join_gaps or not report.key:
             continue  # an incomplete join has nothing to count
@@ -169,7 +175,11 @@ def write_report(reports: list[ImportReport], directory: str | Path) -> list[Pat
         path = directory / f"{year}-{sitting}.{report.edition}.json"
         path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         written.append(path)
-        rows.append((path.name, data))
+    # The README sums every report in the directory, not only this run's.
+    rows = [
+        (path.name, json.loads(path.read_text(encoding="utf-8")))
+        for path in sorted(directory.glob("*.json"))
+    ]
     lines = [
         "# GATE math-recovery reports",
         "",
@@ -262,6 +272,7 @@ def import_paper(
                 detector_math=question.detector_math,
                 first_codes=question.first_codes,
                 issues_after=sorted({issue.code for issue in item.issues}),
+                math_runs=question.math_runs,
             )
         )
     for item in items:

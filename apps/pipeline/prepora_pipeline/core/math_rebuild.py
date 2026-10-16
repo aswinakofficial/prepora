@@ -41,6 +41,7 @@ __all__ = [
     "REBUILD_REASONS",
     "MathProfile",
     "RebuildResult",
+    "has_math_runs",
     "rebuild_math",
 ]
 
@@ -50,6 +51,7 @@ REBUILD_REASONS: dict[str, str] = {
     "no_base": "the rebuild found a sub- or superscript with nothing beside it",
     "unclear_level": "the rebuild found a script it couldn't place as clearly raised or lowered",
     "too_deep": "the rebuild found scripts nested more than two levels",
+    "options_changed": "the rebuild changed which options the question has",
     "overbar": "the rebuild found an overbar, which it doesn't rebuild",
     "fraction": "the rebuild found a fraction, which it doesn't rebuild",
     "unknown_symbol": "the rebuild found a symbol outside its table",
@@ -76,8 +78,9 @@ class MathProfile:
     script_shift: float  # a script's centre this far (× its base's size) off its base's is placed
     attach_gap: float  # a script starts within this of its base's right edge (or overlaps by it)
     glue_gap: float  # words closer than this are written together; a space is wider
+    column_gap: float  # a gap this wide between two words is a column break, never one formula
     bar_thickness: float  # a filled rectangle this thin or thinner is a bar, not a figure
-    bar_max_length: float  # a bar this long or longer is a table border
+    bar_max_length: float  # a bar this long or longer is a table border, not a bar
     math_fonts: tuple[str, ...]  # `font_family` names
     code_fonts: tuple[str, ...]  # passed to `is_code_line`
 
@@ -89,8 +92,9 @@ GATE_MATH = MathProfile(
     script_shift=0.12,  # Cambria Math raises/lowers a script's centre by 0.25-0.30 of the base
     attach_gap=2.5,
     glue_gap=1.2,
+    column_gap=12.0,  # as the gap an option marker starts a column after
     bar_thickness=2.0,  # the same limit as quality._is_figure; fraction bars are 0.7-1.1pt
-    bar_max_length=90.0,  # fraction bars are 7-35pt; table borders 42pt and up
+    bar_max_length=42.0,  # fraction bars are 7-35pt; table borders 42pt and up
     math_fonts=("cambriamath", "symbol", "symbolmt"),
     code_fonts=("courier", "consolas", "mono"),
 )
@@ -117,6 +121,7 @@ _PRIMES = {"′", "″", "'", "’"}
 # (A hyphen in a prose font stays prose, "B+-tree"; a minus in a math font is U+2212.)
 _MATH_SAFE = set("0123456789()[]+=<>*/|,.;:!?'\u2212")
 _PUNCTUATION = set(",.;:!?")
+_RELATIONS = set("=<>\u2264\u2265\u2260\u2248\u2261")
 _STRETCHABLE = set("()[]{}|.,;:'\u2032")
 _ASCII_LETTER = re.compile(r"[A-Za-z]+")
 _COMMAND_END = re.compile(r"\\[A-Za-z]+$")
@@ -124,6 +129,24 @@ _COMMAND_END = re.compile(r"\\[A-Za-z]+$")
 
 def _raw(word: Word) -> str:
     return word.raw_text if word.raw_text is not None else word.text
+
+
+def _is_math_word(word: Word, profile: "MathProfile") -> bool:
+    return font_family(word.fontname) in profile.math_fonts or _has_math_char(_raw(word))
+
+
+def has_math_runs(lines: list[Line], profile: "MathProfile") -> bool:
+    """Is there anything in these lines the rebuild would have to write: a math-font or math
+    character word, or a script-sized word? Independent of what the rebuild then does."""
+    words = [w for line in lines if not is_code_line(line, profile.code_fonts) for w in line.words]
+    sizes = [w.size for w in words if w.size]
+    if not sizes:
+        return False
+    body = median(sizes)
+    return any(
+        _is_math_word(w, profile) or (w.size and w.size < profile.script_size * body)
+        for w in words
+    )
 
 
 def _has_math_char(raw: str) -> bool:
@@ -325,26 +348,20 @@ def rebuild_math(
     count = 0
     for li, units in units_by_line.items():
         units.sort(key=lambda u: u.x0)
-        for built, members, box in _formulas(units, profile, ctx):
+        barriers = [w for w in work[li] if id(w) in fixed]
+        for built, members, box in _formulas(units, barriers, profile, ctx):
             count += 1
             replacements[id(members[0].e.word)] = built
             for u in members:
                 dropped.add(id(u.e.word))
             formula_boxes.append((li, box, len(members)))
-        # Prime glued after a superscript: x^2' is a double superscript in TeX.
-        for u, nxt in zip(units, units[1:], strict=False):
-            if (
-                nxt.e.word.text[:1] in _PRIMES
-                and nxt.x0 - u.x1 < profile.glue_gap
-                and any(g.level == "sup" for g in children.get(u.idx, []))
-            ):
-                ctx.fail("unclear_level")
 
     for idx, e in enumerate(eligible):
         if idx in consumed:
             dropped.add(id(e.word))
 
-    _find_bars(eligible, units_by_line, graphics, profile, ctx)
+    folded = [e.word for e in eligible if id(e.word) in dropped]
+    _find_bars(folded, eligible, graphics, profile, ctx)
     _find_stacked_fractions(eligible, units_by_line, formula_boxes, work, fixed, ctx)
     for idx, e in enumerate(eligible):
         if e.script and idx not in consumed:
@@ -421,6 +438,10 @@ def _hangs_off(e: _E, p: _E, profile: MathProfile) -> bool:
     """Is `e` a script-sized word placed as a script of `p`: smaller by `script_size`, starting at
     its right edge, with its centre inside p's box?"""
     if p is e or p.word.page != e.word.page or not e.size or not p.size:
+        return False
+    # Only a math word hangs off a math word: punctuation or prose glued to a display formula
+    # ("X," in 16pt and 12pt) isn't one of its scripts.
+    if not (_is_math_word(e.word, profile) and _is_math_word(p.word, profile)):
         return False
     if e.size >= profile.script_size * p.size or e.word.x0 < p.word.x0:
         return False
@@ -621,13 +642,19 @@ def _unit(
     return _Unit(e, idx, None, safe=safe, box=box)
 
 
-def _formulas(units: list[_Unit], profile: MathProfile, ctx: _Context):
+def _formulas(units: list[_Unit], barriers: list[Word], profile: MathProfile, ctx: _Context):
     """Yields (the Word replacing a formula, the units it folds in, its box) along one line."""
     i, n = 0, len(units)
     taken = [False] * n
 
     def glued(a: _Unit, b: _Unit) -> bool:
         return -profile.attach_gap <= b.x0 - a.x1 < profile.glue_gap
+
+    def apart(a: _Unit, b: _Unit) -> bool:
+        """A column gap, or a word the rebuild leaves alone (an option's "(B)"), between them."""
+        if b.x0 - a.x1 >= profile.column_gap:
+            return True
+        return any(a.x1 - 1.0 <= w.x0 and w.x1 <= b.x0 + 1.0 for w in barriers)
 
     while i < n:
         u = units[i]
@@ -640,6 +667,8 @@ def _formulas(units: list[_Unit], profile: MathProfile, ctx: _Context):
         j = i
         while j + 1 < n:
             v = units[j + 1]
+            if apart(units[j], v):
+                break
             if v.math and not v.prefix:
                 pass
             elif v.safe and glued(units[j], v):
@@ -684,6 +713,8 @@ def _formulas(units: list[_Unit], profile: MathProfile, ctx: _Context):
             previous = v
         assert latex is not None
         body = latex.latex.strip()
+        if _double_script(body):
+            ctx.fail("unclear_level")  # x^{2}' and x^{2}^{3} are double superscripts in TeX
         if body.endswith("\\{"):
             ctx.fail("stacked")  # the brace of a case split, which isn't rebuilt
         if suffix[:1].isdigit():  # a digit can't follow the closing marker
@@ -712,9 +743,26 @@ def _formulas(units: list[_Unit], profile: MathProfile, ctx: _Context):
         yield built, group, box
 
 
+def _double_script(body: str) -> bool:
+    """Is a `^{…}` followed by a prime or another `^` (spaces ignored)? KaTeX refuses both."""
+    at = body.find("^{")
+    while at != -1:
+        depth, k = 0, at + 1
+        while k < len(body):
+            depth += {"{": 1, "}": -1}.get(body[k], 0)
+            if depth == 0:
+                break
+            k += 1
+        rest = body[k + 1 :].lstrip()
+        if rest[:1] in ("'", "^"):
+            return True
+        at = body.find("^{", at + 2)
+    return False
+
+
 def _find_bars(
+    folded: list[Word],
     eligible: list[_E],
-    units_by_line: dict[int, list[_Unit]],
     graphics: list[Graphic],
     profile: MathProfile,
     ctx: _Context,
@@ -729,30 +777,27 @@ def _find_bars(
         and g.x1 - g.x0 > g.bottom - g.top
         and g.x1 - g.x0 < profile.bar_max_length
     ]
+    all_words = [e.word for e in eligible]
     if not bars:
         return
-    for units in units_by_line.values():
-        for u in units:
-            if not u.math:
+    for w in folded:
+        for bar in bars:
+            if bar.page != w.page:
                 continue
-            w = u.e.word
-            for bar in bars:
-                if bar.page != w.page:
-                    continue
-                overlap = min(bar.x1, w.x1) - max(bar.x0, w.x0)
-                if overlap < 0.5 * min(bar.x1 - bar.x0, w.x1 - w.x0):
-                    continue
-                if not -2.0 <= w.top - bar.bottom <= 6.0:
-                    continue
-                above = any(
-                    o.word is not w
-                    and o.word.page == bar.page
-                    and min(bar.x1, o.word.x1) - max(bar.x0, o.word.x0)
-                    >= 0.3 * min(bar.x1 - bar.x0, o.word.x1 - o.word.x0)
-                    and -4.0 <= bar.top - o.word.bottom <= 8.0
-                    for o in eligible
-                )
-                ctx.fail("fraction" if above else "overbar")
+            overlap = min(bar.x1, w.x1) - max(bar.x0, w.x0)
+            if overlap < 0.5 * min(bar.x1 - bar.x0, w.x1 - w.x0):
+                continue
+            if not -2.0 <= w.top - bar.bottom <= 6.0:
+                continue
+            above = any(
+                o is not w
+                and o.page == bar.page
+                and min(bar.x1, o.x1) - max(bar.x0, o.x0)
+                >= 0.3 * min(bar.x1 - bar.x0, o.x1 - o.x0)
+                and -4.0 <= bar.top - o.bottom <= 8.0
+                for o in all_words
+            )
+            ctx.fail("fraction" if above else "overbar")
 
 
 def _find_stacked_fractions(
@@ -784,7 +829,12 @@ def _find_stacked_fractions(
                 x1 = max(u.x1 for u in other)
                 overlap = min(box[2], x1) - max(box[0], x0)
                 if overlap >= 0.6 * (x1 - x0):
-                    ctx.fail("fraction")
+                    # Two rows that each state a relation are a system of equations, not a
+                    # numerator over a denominator.
+                    both = all(
+                        any(c in _RELATIONS for w in work[row] for c in w.text) for row in (li, lj)
+                    )
+                    ctx.fail("stacked" if both else "fraction")
             elif _inside_brackets(units_by_line[li], other):
                 ctx.fail("stacked")  # the other rows of a matrix: they sit inside its brackets
 
