@@ -1,7 +1,7 @@
 # ADR-016: Rebuilding text from the source's own PDF is parsing, not a revision
 
-- **Status:** Proposed, with [Spec 13](../specs/13-math-recovery.md) (accepted when the owner
-  approves Spec 13)
+- **Status:** Accepted, with [Spec 13](../specs/13-math-recovery.md) (the owner approved it on
+  2026-10-16). Knowledge-index §4a is amended as proposed below.
 - **Date:** 2026-10-16
 - **Design:** [docs/architecture/knowledge-index.md §4a](../architecture/knowledge-index.md#4a-intake-revisions-and-explanations-quality-as-data),
   rules 1–3 and the remediation ladder

@@ -3,13 +3,13 @@
 **Issue:** #78
 **Milestone:** Finish GATE
 **Depends on:** Spec 12 (the Markdown and LaTeX format; Done, #94)
-**Design:** [ADR-016](../adr/016-deterministic-rebuilds-are-parsing.md) (Proposed, accepted with
+**Design:** [ADR-016](../adr/016-deterministic-rebuilds-are-parsing.md) (Accepted with
 this spec): rebuilding text from the source's own PDF is parsing, not a revision.
 **Production database:** no migration. Production has no published GATE questions today (a
 read-only check during #94's review). Rebuilt questions reach production only when the owner re-runs
 `gate-import` against production and approves the batches (the owner's go-ahead, as for every
 import).
-**Status:** Draft, for the owner's approval
+**Status:** Ready (approved by the owner, 2026-10-16)
 **Owner decision (2026-10-04):** PDF first, AI only for the rest; AI transcription is Spec 15
 ([ADR-015](../adr/015-ai-assistance.md), 2026-10-04 amendment).
 
