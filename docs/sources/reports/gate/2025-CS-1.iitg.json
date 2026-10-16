@@ -22,7 +22,6 @@
     "recovered_now_ready": 8,
     "still_held": 7,
     "still_held_by_reason": {
-      "fraction": 1,
       "no_base": 2,
       "not_script": 5,
       "overbar": 2,
@@ -37,11 +36,10 @@
   "ready": 40,
   "retypeset": {
     "clean_with_math_runs": 21,
-    "kept": 3,
+    "kept": 2,
     "kept_by_reason": {
-      "fraction": 3,
-      "overbar": 1
+      "fraction": 2
     },
-    "retypeset": 18
+    "retypeset": 19
   }
 }

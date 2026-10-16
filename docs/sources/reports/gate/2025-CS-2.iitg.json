@@ -22,7 +22,7 @@
     "recovered_now_ready": 11,
     "still_held": 8,
     "still_held_by_reason": {
-      "fraction": 2,
+      "fraction": 1,
       "no_base": 1,
       "not_script": 5,
       "overbar": 2,

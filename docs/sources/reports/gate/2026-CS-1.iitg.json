@@ -24,7 +24,7 @@
       "fraction": 5,
       "no_base": 2,
       "not_script": 6,
-      "overbar": 4,
+      "overbar": 3,
       "stacked": 2
     }
   },
@@ -38,7 +38,6 @@
     "kept_by_reason": {
       "fraction": 3,
       "overbar": 2,
-      "unclear_level": 1,
       "unknown_symbol": 1
     },
     "retypeset": 18
