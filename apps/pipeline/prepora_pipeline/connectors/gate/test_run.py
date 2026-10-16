@@ -311,3 +311,155 @@ class TestGateImportExit:
     def test_a_bare_type_mismatch_or_invalid_question_is_a_parser_fault(self, monkeypatch):
         assert self._exit(monkeypatch, [(3, ["type_mismatch"])]) == 1
         assert self._exit(monkeypatch, [(3, ["invalid"])]) == 1
+
+
+# ─── Spec 13: the math rebuild in the importer
+
+OPEN, CLOSE = "﷐", "﷑"
+
+
+def _valid(_normalized):
+    return type("Report", (), {"issues": []})()
+
+
+class TestMathInTheImporter:
+    def test_a_formula_becomes_dollar_math_in_the_candidate(self):
+        options = {"A": f"{OPEN}2^{{17}}{CLOSE}", "B": "Two", "C": "x", "D": "y"}
+        question = _question(options=options)
+        question.text = f"Let {OPEN}Z_{{1}}{CLOSE} be a set."
+        item = _intake_item(question, _key(), PAPER, "gate/2099/cs/CS-1", "f" * 64, _valid)
+        assert item.candidate["question_text"] == "Let $Z_{1}$ be a set."
+        assert item.candidate["options"][0]["text"] == "$2^{17}$"
+
+    def test_a_fallback_candidate_uses_the_original_text(self):
+        # An image-only option can't be normalized; the held candidate must carry the text as
+        # extracted, never the rebuilt one with its markers.
+        question = _question(options={"A": "", "B": "x", "C": "y", "D": "z"})
+        question.original_text = "Let Z 1 be a set."
+        question.original_options = dict(question.options)
+        question.text = f"Let {OPEN}Z_{{1}}{CLOSE} be a set."
+        item = _intake_item(question, _key(), PAPER, "gate/2099/cs/CS-1", "f" * 64, None)
+        assert item.candidate["question_text"] == "Let Z 1 be a set."
+        assert OPEN not in str(item.candidate) and CLOSE not in str(item.candidate)
+
+    def test_a_marker_in_a_candidate_is_refused(self):
+        question = _question()
+        question.original_text = f"Let {OPEN}Z{CLOSE} be a set."
+        question.options = {}  # NAT disagrees with the key: the fallback candidate is built
+        with pytest.raises(ValueError, match="marker"):
+            _intake_item(question, _key(), PAPER, "gate/2099/cs/CS-1", "f" * 64, None)
+
+    def test_no_candidate_of_the_e2e_paper_holds_a_marker(self):
+        from ...core.answer_keys import join_by_number
+        from ...core.pdf_text import extract_pages
+        from .e2e_math_paper import KEY_ROWS, paper_pdf
+        from .key_parser import parse_answer_key
+        from .paper_parser import parse_paper
+        from .testing import key_pdf
+
+        questions = parse_paper(extract_pages(paper_pdf()))
+        keys = parse_answer_key(extract_pages(key_pdf(KEY_ROWS)))
+        join = join_by_number(questions, keys)
+        for question, key in join.matched:
+            item = _intake_item(
+                question, key, PAPER, "gate/2099/cs/CS-1", "f" * 64, _valid
+            )
+            assert OPEN not in str(item.candidate) and CLOSE not in str(item.candidate)
+
+    def test_the_report_counts_add_up_and_hold_no_text(self, tmp_path, monkeypatch):
+        from .run import write_report
+
+        monkeypatch.setattr("prepora_pipeline.stages.validate._exam_is_registered", lambda _: True)
+        from .e2e_math_paper import KEY_ROWS, paper_pdf
+
+        paper = PaperSpec(2099, "CS", "CS-1", "https://x.test/qp.pdf", "https://x.test/key.pdf")
+        files = {paper.qp_url: paper_pdf(), paper.key_url: key_pdf(KEY_ROWS)}
+        report = import_paper(
+            paper, fetch=files.__getitem__, store=_Store(), write_batch=lambda *a, **k: "b1",
+            intake=FakeIntake(), register=False,
+        )
+        counts = report.counts()
+        m, r = counts["math"], counts["retypeset"]
+        assert m["recovered"] + m["still_held"] == m["flagged"] == 3
+        assert r["retypeset"] + r["kept"] == r["clean_with_math_runs"] == 3
+        assert m["still_held_by_reason"] == {"fraction": 1}
+        assert r["kept_by_reason"] == {"unknown_symbol": 1}
+        assert counts["held_by_issues"] == {"math": 1}
+
+        [path] = write_report([report], tmp_path)
+        assert path.name == "2099-CS-1.iitg.json"
+        first = path.read_text()
+        write_report([report], tmp_path)
+        assert path.read_text() == first  # stable: no diff on a re-run
+        text = first + (tmp_path / "README.md").read_text()
+        assert "Z_{1}" not in text and "Let" not in text  # counts only
+        assert (tmp_path / "README.md").exists()
+        assert report.lines().count("  Q.7 kept as is: unknown_symbol") == 1
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("DATABASE_URL"), reason="needs DATABASE_URL")
+class TestUpgradeAgainstTheDatabase:
+    """gate-1 → gate-2 through intake's content hash (Spec 13, Decision 4)."""
+
+    def test_recovered_retypeset_and_kept_items_follow_the_hash_rules(self, monkeypatch):
+        import uuid
+
+        from prepora_pipeline.core import sync_sources_from_yaml
+        from prepora_pipeline.core.db import get_db_connection
+
+        from . import paper_parser
+        from .e2e_math_paper import KEY_ROWS, cleanup, paper_pdf
+
+        sync_sources_from_yaml()
+        sitting = f"E2E-{uuid.uuid4().hex[:6]}"
+        paper = PaperSpec(2099, "CS", sitting, f"https://x.test/{sitting}/qp.pdf",
+                          f"https://x.test/{sitting}/key.pdf")
+        files = {paper.qp_url: paper_pdf(), paper.key_url: key_pdf(KEY_ROWS)}
+        key = f"gate/2099/cs/{sitting}"
+
+        def query(sql, params=()):
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    rows = cur.fetchall() if cur.description else None
+                conn.commit()
+                return rows
+            finally:
+                conn.close()
+
+        def statuses():
+            return dict(query(
+                "SELECT number, status::text FROM intake_items WHERE paper_key = %s", (key,)
+            ))
+
+        def run():
+            return import_paper(paper, fetch=files.__getitem__, store=_Store())
+
+        try:
+            # What parser gate-1 recorded: no rebuild.
+            with monkeypatch.context() as old:
+                old.setattr(paper_parser, "_rebuild", lambda *a, **k: None)
+                first = run()
+            assert statuses()[1] == "held" and statuses()[4] == "held"
+            # A person published everything that was ready.
+            query("UPDATE intake_items SET status = 'published' WHERE paper_key = %s "
+                  "AND status = 'in_review'", (key,))
+            query("UPDATE scraped_questions SET status = 'approved' WHERE id = %s",
+                  (first.batch_id,))
+
+            second = run()
+            now = statuses()
+            for n in (1, 2, 3, 6):  # recovered (1, 3) and re-typeset published (2, 6): to review
+                assert now[n] == "in_review"
+            assert now[5] == "published" and now[7] == "published"   # unchanged text
+            assert now[4] == "held"                                  # still held, refreshed
+            [issues] = query("SELECT issues FROM intake_items WHERE paper_key = %s AND number = 4",
+                             (key,))[0:1]
+            assert any("fraction" in i["detail"] for i in issues[0])
+            assert second.in_batch == 4 and second.batch_id
+
+            third = run()
+            assert third.batch_id is None and third.recorded.inserted == 0  # idempotent
+        finally:
+            cleanup()

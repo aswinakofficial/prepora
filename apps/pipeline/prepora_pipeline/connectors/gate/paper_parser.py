@@ -200,7 +200,11 @@ def _join_split_labels(page: Page) -> Page:
             and merged[1].x0 - merged[0].x1 < 15
         ):
             first, number = merged[0], merged[1]
-            merged[:2] = [replace(first, text=f"Q.{number.text}", x1=number.x1)]
+            merged[:2] = [
+                replace(
+                    first, text=f"Q.{number.text}", raw_text=f"Q.{number.text}", x1=number.x1
+                )
+            ]
         words.extend(merged)
     return replace(page, words=words)
 

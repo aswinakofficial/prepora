@@ -241,3 +241,90 @@ class TestGarbleDetector:
     def test_a_tall_block_with_almost_no_words_is_a_figure(self):
         q = self._one([(120, 120, "Invented figure:"), (78, 300, "(A) One")])
         assert q.flags == ["figure"]
+
+
+# ─── Spec 13: the math rebuild in the parser (Decision 2). The invented paper is the e2e fixture's.
+
+
+@pytest.fixture(scope="module")
+def questions():
+    from .e2e_math_paper import paper_pdf
+
+    return {q.number: q for q in parse_paper(extract_pages(paper_pdf()))}
+
+
+class TestMathRebuild:
+    def test_a_question_held_for_math_is_recovered(self, questions):
+        q1 = questions[1]
+        assert q1.math_outcome == "recovered" and q1.flags == []
+        assert "﷐Z_{1}﷑" in q1.text
+        assert q1.original_text != q1.text and "Z" in q1.original_text
+        assert q1.detector_math == ["a row of sub- or superscripts"]
+
+    def test_a_recovered_question_keeps_its_figure_hold(self):
+        from .testing import make_pdf
+
+        items = [
+            (78, 120, "Q.1", "Helvetica", 10),
+            (120, 120, "Let ", "Helvetica", 10),
+            (145, 120, "Z", "Helvetica-Oblique", 10),
+            (152.5, 125, "1", "Helvetica-Oblique", 7),
+            (160, 120, "be drawn in the invented figure below.", "Helvetica", 10),
+        ]
+        [q] = parse_paper(extract_pages(make_pdf([items], boxes={0: [(150, 160, 60, 40)]})))
+        assert q.math_outcome == "recovered" and q.flags == ["figure"]
+
+    def test_a_question_that_needs_a_fraction_stays_held_with_the_original_text(self, questions):
+        q4 = questions[4]
+        assert q4.math_outcome == "still_held" and q4.math_reasons == ["fraction"]
+        assert "﷐" not in q4.text and q4.text == q4.original_text
+        details = [i.detail for i in q4.issues if i.code == "math"]
+        assert "the rebuild found a fraction, which it doesn't rebuild" in details
+        assert "a row of sub- or superscripts" in details  # the first run's, too
+
+    def test_a_question_with_math_runs_is_retypeset(self, questions):
+        for n in (2, 6):
+            assert questions[n].math_outcome == "retypeset" and questions[n].flags == []
+        assert questions[6].text.count("﷐") == 1
+        assert questions[2].options["A"] == "﷐2^{17}﷑"
+
+    def test_an_unmapped_symbol_keeps_the_question_as_it_was(self, questions):
+        q7 = questions[7]
+        assert q7.math_outcome == "kept" and q7.math_reasons == ["unknown_symbol"]
+        assert q7.text == q7.original_text and q7.options == q7.original_options
+        assert q7.flags == []
+
+    def test_a_thin_drawn_overbar_keeps_the_question_as_it_was(self):
+        from .testing import make_pdf
+
+        items = [
+            (78, 120, "Q.1", "Helvetica", 10),
+            (120, 120, "Is the invented event ", "Helvetica", 10),
+            (210, 120, "α", "Symbol", 10),
+            (222, 120, "possible?", "Helvetica", 10),
+        ]
+        pdf = make_pdf([items], boxes={0: [(209, 119, 7, 0.8)]})
+        [q] = parse_paper(extract_pages(pdf))
+        assert q.math_outcome == "kept" and "overbar" in q.math_reasons
+        assert q.text == q.original_text and q.flags == []
+
+    def test_a_question_without_math_is_byte_identical(self, questions):
+        q5 = questions[5]
+        assert q5.math_outcome == "none" and q5.text == q5.original_text
+        assert q5.options == q5.original_options
+
+    def test_an_unaccepted_rebuild_always_names_a_reason(self, questions):
+        for q in questions.values():
+            if q.math_outcome in ("still_held", "kept"):
+                assert q.math_reasons
+            else:
+                assert q.math_reasons == []
+
+    def test_a_split_label_keeps_raw_text_consistent(self):
+        from ...core.pdf_text import Page, Word
+        from .paper_parser import _join_split_labels
+
+        a = Word("Q.", 78, 84, 100, 110, 0, 10, "Helvetica", raw_text="Q.")
+        b = Word("4", 85, 90, 100, 110, 0, 10, "Helvetica", raw_text="4")
+        [joined] = _join_split_labels(Page(0, 600, 800, [a, b])).words
+        assert (joined.text, joined.raw_text) == ("Q.4", "Q.4")

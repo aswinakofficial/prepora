@@ -11,8 +11,6 @@ import os
 import re
 from pathlib import Path
 
-import pytest
-
 from prepora_pipeline.connectors.gate.testing import make_pdf
 from prepora_pipeline.core.markdown import escape_markdown_with_math
 from prepora_pipeline.core.math_rebuild import (
@@ -115,8 +113,12 @@ def case_subscript_row_below():
 
 def case_sub_and_super_on_one_base():
     return hand(
-        [W("x", 100, raw="\U0001d465"), W("i", 107, top=104, size=8.5, raw="\U0001d456"), W("2", 107, top=96, size=8.5),
-         W("here", 120, font=TIMES)]
+        [
+            W("x", 100, raw="\U0001d465"),
+            W("i", 107, top=104, size=8.5, raw="\U0001d456"),
+            W("2", 107, top=96, size=8.5),
+            W("here", 120, font=TIMES),
+        ]
     )
 
 
@@ -162,7 +164,12 @@ def case_letterlike_double_struck():
 
 def case_upright_names():
     return hand(
-        [W("log", 100), W("n", 120, raw="\U0001d45b"), W("matrix", 135), W("M", 178, raw="\U0001d440")]
+        [
+            W("log", 100),
+            W("n", 120, raw="\U0001d45b"),
+            W("matrix", 135),
+            W("M", 178, raw="\U0001d440"),
+        ]
     )
 
 

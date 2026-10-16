@@ -8,8 +8,8 @@ paper laid out like GATE, and its key, generated with reportlab and imported by 
 
 The paper is `GATE 2099`, sitting `E2E-<random>` (or `--sitting`, to import the same paper again).
 It prints one JSON object: {"paper_key", "sitting", "title", "batch_id", "lines"}, where `lines` are
-the import report's lines ("Q.7 kept as is: unknown_symbol", …). `--cleanup` deletes only year 2099's
-session and what hangs off it, and leaves the shared GATE registration alone.
+the import report's lines ("Q.7 kept as is: unknown_symbol", …). `--cleanup` deletes only year
+2099's session and what hangs off it, and leaves the shared GATE registration alone.
 
 What each invented question exercises (stems are distinct from each other and from Spec 12's e2e
 seeds):
