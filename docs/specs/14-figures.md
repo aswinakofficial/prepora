@@ -249,8 +249,10 @@ No figure in the fixture uses either colour.
 
 **How the hand-checked steps are run:**
 - Steps 11 and 12 need the real papers, which CI never fetches. The builder runs them locally and
-  puts the report diff, and a screenshot of each crop next to its PDF page, in the PR. The pilot PDFs
-  and the crops stay out of the repository (CLAUDE.md, Content policy).
+  puts the report diff and the per-question pass/fail list in the PR. The screenshots of each crop
+  next to its PDF page show official question text, so like the pilot PDFs and the crops they stay
+  out of the repository and the PR (CLAUDE.md, Content policy): the builder keeps them locally and
+  the lead checks them, as in Spec 13.
 - Any crop that's wrong in step 12 is a bug that blocks the merge.
 - **The production check is the owner's,** after release (Owner checkpoints).
 
