@@ -24,7 +24,7 @@ Work top to bottom. A step starts only when the steps it depends on are merged.
 | 7 | [Intake: quality as data](07-intake.md) | #69 | 5 | Done (#75); its migration (0019) was applied to production on 2026-10-13 |
 | 12 | [Math display: Markdown and LaTeX on every question surface](12-math-display.md) | #77 | 7 | Done (#94); migration 0020 applied to production on 2026-10-15 |
 | 13 | [Math recovery from the PDF](13-math-recovery.md) | #78 | 12 | Done (#100; ADR-016). Pilot: 184 ready / 76 held |
-| 14 | [Figures and image options from the PDF](14-figures.md) | #79 | 4 (**owner's R2 setup**), 12 | Draft |
+| 14 | [Figures and image options from the PDF](14-figures.md) | #79 | 4, 12, 13 | Draft, for the owner's approval |
 | 15 | [AI transcription for what the PDF can't give](15-ai-transcription.md) | #80 | 12–14 | Draft |
 | 8 | [Paper assembly: completing one paper from several sources](08-paper-editions.md) | #70 | 7, 13 | Draft |
 | 10 | [Explanations: data model and display](10-explanations.md) | #72 | 7 | Draft |
