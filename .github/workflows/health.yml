@@ -36,7 +36,7 @@ jobs:
           SMOKE_BASE_URL: ${{ inputs.base_url || 'https://prepora.xpar.in' }}
         run: pnpm exec playwright test -c playwright.smoke.config.ts
       - name: Open, update or close the incident
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           OUTCOME: ${{ steps.smoke.outcome }}
           BASE_URL: ${{ inputs.base_url || 'https://prepora.xpar.in' }}
